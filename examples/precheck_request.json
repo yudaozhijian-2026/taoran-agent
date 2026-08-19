@@ -1,0 +1,39 @@
+{
+  "context": {
+    "tenant_id": "tenant_demo",
+    "request_id": "precheck-demo-001",
+    "user_id": "EMP001",
+    "source": "jiandaoyun",
+    "form_revision": "draft-3"
+  },
+  "visit": {
+    "visit_date": "2026-08-18",
+    "employee_id": "EMP001",
+    "customer_id": "KH001",
+    "customer_type_ii": "opportunity",
+    "opportunity_id": "OPP001",
+    "opportunity_stage": "P3",
+    "visit_method": "face_to_face",
+    "is_appointment": true,
+    "participants": [
+      {"contact_id": "CONTACT001", "role": "final_decision_maker"}
+    ],
+    "purpose_code": "advance_opportunity",
+    "expected_key_result": "客户确认预算审批责任人并确定技术验证日期",
+    "process_description": "信息中心主任确认财务负责人负责预算审批，并同意8月25日进行技术验证。",
+    "customer_feedback": "需要重点验证历史数据同步能力。",
+    "self_assessment": "achieved",
+    "next_action_target_id": "CONTACT001",
+    "next_action_purpose": "确认技术验证范围和参会人员",
+    "next_action_expected_result": "客户书面确认验证清单与8月25日验证安排",
+    "next_contact_at": "2026-08-20T10:00:00+08:00",
+    "evidence_ids": ["EV001"],
+    "purpose_policy": {
+      "policy_version": "demo-2026-01",
+      "status": "published",
+      "allowed_purposes": ["advance_opportunity", "keep_relationship"],
+      "effective_from": "2026-01-01"
+    }
+  }
+}
+

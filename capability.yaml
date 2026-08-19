@@ -1,0 +1,30 @@
+agent_code: DSM-TAORAN-SCORING-AGENT
+version: 0.3.0
+capabilities:
+  - code: precheck_visit_record
+    mode: synchronous
+    target_latency_seconds: 12
+    side_effect: advisory_only
+  - code: evaluate_visit_effectiveness
+    mode: asynchronous
+    side_effect: audit_only
+  - code: adapt_jiandaoyun_visit
+    mode: synchronous
+    side_effect: none
+  - code: writeback_jiandaoyun_evaluation
+    mode: asynchronous
+    side_effect: configured_fields_only
+  - code: expose_q40_period_facts
+    mode: synchronous
+    enabled_by_default: false
+    side_effect: read_only
+  - code: batch_backfill_q40_facts
+    mode: asynchronous
+    enabled_by_default: false
+    side_effect: taoran_audit_only
+governance:
+  tenant_isolation: required
+  idempotency: required
+  input_snapshot_hash: required
+  evidence_traceability: required
+  ai_may_modify_facts: false

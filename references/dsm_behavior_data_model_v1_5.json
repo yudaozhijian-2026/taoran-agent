@@ -1,0 +1,1936 @@
+{
+  "schema_version": "1.5.0",
+  "model_code": "DSM-BEHAVIOR-DATA-MODEL",
+  "model_version": "V1.5",
+  "name": "DSM统一行为数据模型V1.5",
+  "status": "confirmed_baseline",
+  "confirmed_on": "2026-08-10",
+  "source_catalog": "saas_source_field_catalog_v1_3.json",
+  "scope": {
+    "source_workbooks": 27,
+    "source_fields": 621,
+    "runtime_confirmed_fields_pending_archive": 1,
+    "modeling_statement": "确认统一实体、关系、时间语义、来源追溯和分层原则；源系统中语义不明确的字段保留原值并进入待确认清单，不做静默改写。",
+    "source_revisions": [
+      {
+        "source_file": "拜访记录录入.xlsx",
+        "effective_on": "2026-08-07",
+        "previous_used_range": "A1:AI7",
+        "current_used_range": "A1:AM7",
+        "added_semantics": "拜访记录与商机项目及历史/最新阶段的显式关联"
+      },
+      {
+        "source_file": "拜访记录录入.xlsx",
+        "effective_on": "2026-08-07",
+        "previous_used_range": "A1:AM7",
+        "current_used_range": "A1:AQ7",
+        "added_semantics": "一次拜访记录直接携带下一行动目的、其他目的、期望关键结果和下次联系时间安排"
+      },
+      {
+        "source_file": "拜访记录录入.xlsx",
+        "effective_on": "2026-08-10",
+        "archive_status": "pending_updated_workbook",
+        "added_source_fields": [
+          "具体其他目的"
+        ],
+        "added_semantics": "Q03当前拜访目的选择其他时，直接保存本次拜访的具体其他目的；该字段已由业务确认，但更新后的物理工作簿尚未归档，因此不伪造列号、样例或文件哈希。"
+      },
+      {
+        "source_file": "销售代表缺勤记录表.xlsx",
+        "effective_on": "2026-08-10",
+        "archive_status": "pending_updated_workbook",
+        "added_source_fields": [
+          "缺勤日期",
+          "缺勤状态或是否生效"
+        ],
+        "added_semantics": "销售代表缺勤记录表仅保留历史月度对账；Q36和Q37已统一按国家法定工作日与销售代表工作日报日期差集推导缺勤，不再依赖具体缺勤日期字段。"
+      },
+      {
+        "source_file": "销售人员行动计划表.xlsx",
+        "effective_on": "2026-08-10",
+        "archive_status": "archived",
+        "used_range": "A1:I2",
+        "added_source_fields": [
+          "序号",
+          "行动",
+          "期望结果",
+          "负责人",
+          "计划完成时间",
+          "实际完成时间",
+          "结果回顾",
+          "销售团队",
+          "公司名称（通讯录）"
+        ],
+        "added_semantics": "首次为Q40提供月度改善行动计划、责任人、期限、实际完成和结果回顾的直接来源。"
+      }
+    ],
+    "retired_source_fields": [
+      {
+        "source_file": "销售代表工作日报.xlsx",
+        "source_headers": [
+          "当日项目会议总数",
+          "当日标书/建议书总数"
+        ],
+        "effective_on": "2026-08-07",
+        "handling": "从SaaS基础数据基线及源字段目录删除，不进入统一事实、派生指标或Q40评分统计。"
+      }
+    ],
+    "semantic_revisions": [
+      {
+        "effective_on": "2026-08-07",
+        "topic": "客户下一步行动计划来源优先级、完整性与自动同步",
+        "change": "拜访记录为默认来源；只有下次联系时间为空时，才从拜访计划制定表按销售代表、客户编号及当前拜访后的最早计划日期补取时间。目的和期望关键结果不从计划表回填。"
+      },
+      {
+        "effective_on": "2026-08-10",
+        "topic": "Q01逐日工作日历、Q02完整性、Q03具体其他目的及Q04多商机关联",
+        "change": "新增逐日工作日历与人员逐日调整实体；Q02面对面/视频记录同时缺少结束时间和拜访时长时整题数据不足；Q03直接映射具体其他目的；一次拜访关联多条商机时按商机编号拆为多条阶段快照。"
+      },
+      {
+        "effective_on": "2026-08-10",
+        "topic": "Q18/Q36计划方式契约与Q37国家法定工作日口径",
+        "change": "拜访计划制定表中的计划统一视为面对面拜访，适用于Q18计划接触和Q36次工作日计划；Q36以日报日期后的下一个个人有效工作日为目标日；2026-08-12确认Q37复用Q36口径，国家法定工作日无销售代表日报即缺勤，不再读取销售代表缺勤记录表。"
+      },
+      {
+        "effective_on": "2026-08-10",
+        "topic": "Q01重叠活动时间并集、Q08零分母及Q11客户分母",
+        "change": "Q01多个活动的占用时间按时间区间并集计算，重叠部分不重复累加，但不改变V3数量指标的记录折算口径；Q08目标或潜力客户数任一为0时直接0分；Q11计划覆盖客户分母为客户信息表全部客户编号去重数。"
+      },
+      {
+        "effective_on": "2026-08-10",
+        "topic": "Q40月度改善行动计划与执行闭环",
+        "change": "新增销售人员行动计划表并映射SalesImprovementActionPlan；Q40取负责人为被测销售人员且计划完成时间在测评周期内的全部计划，受控AI逐计划评价SMART、PDCA及期望结果与结果回顾的执行达成，代码按40%/60%聚合。"
+      },
+      {
+        "effective_on": "2026-08-12",
+        "topic": "Q16表外客户移出时间与测评期识别",
+        "change": "按销售代表直接读取表外客户信息表；存在记录即认定存在表外客户，系统不可变提交时间映射为客户移出时间，落入测评期即为期间移出，不再依赖客户信息表互斥核验或独立移出时间字段。"
+      },
+      {
+        "effective_on": "2026-08-12",
+        "topic": "Q18客户范围、实际/计划接触来源与时间窗口",
+        "change": "总客户按客户信息表客户编号去重并按客户类型II分层；实际接触按拜访记录的拜访日期、计划接触按周计划快照的计划拜访日期并按客户编号去重；总边界为测评开始月首日至结束月末日。"
+      },
+      {
+        "effective_on": "2026-08-12",
+        "topic": "Q22客户分类、分类标准与事实依据锚点",
+        "change": "具体客户分类以客户信息表客户类型II为准，分类标准以客户类型II定义及比例标准表为准，事实依据以当前企业配置的客户信息收集表为准；AI只输出标准清晰度和事实支持分类布尔事实。"
+      }
+    ]
+  },
+  "layers": [
+    {
+      "code": "source",
+      "name": "来源层",
+      "rule": "逐条保存外部记录、原始字段、附件定位、来源时间和内容哈希；不在此层修改业务事实。"
+    },
+    {
+      "code": "canonical",
+      "name": "统一事实层",
+      "rule": "使用稳定ID、明确主外键和有效期表达组织、客户、联系人、活动、商机及配置事实。"
+    },
+    {
+      "code": "derived",
+      "name": "派生指标层",
+      "rule": "日均量、覆盖率、完成率、月报和团队汇总均由统一事实及版本化口径计算，保存计算窗口和输入快照。"
+    },
+    {
+      "code": "evaluation",
+      "name": "评价结果层",
+      "rule": "Q01-Q40得分、证据、规则版本、数据质量状态和AI解释相互分离，正式结果不可原地覆盖。"
+    }
+  ],
+  "global_fields": [
+    "id",
+    "tenant_id",
+    "source_system",
+    "source_table",
+    "source_record_id",
+    "source_record_hash",
+    "source_observed_at",
+    "valid_from",
+    "valid_to",
+    "created_at",
+    "updated_at"
+  ],
+  "domains": [
+    {
+      "code": "organization",
+      "name": "组织、人员与时间",
+      "entities": [
+        {
+          "name": "Tenant",
+          "grain": "一个DSM客户企业",
+          "business_key": [
+            "tenant_id"
+          ],
+          "fields": [
+            "company_code",
+            "company_name",
+            "status"
+          ]
+        },
+        {
+          "name": "SalesTeam",
+          "grain": "企业内一个销售团队",
+          "business_key": [
+            "tenant_id",
+            "team_code"
+          ],
+          "fields": [
+            "team_name",
+            "manager_employee_id",
+            "status"
+          ]
+        },
+        {
+          "name": "SalesTerritory",
+          "grain": "企业内一个销售区域或销售责任单元",
+          "business_key": [
+            "tenant_id",
+            "territory_code"
+          ],
+          "fields": [
+            "territory_name",
+            "team_id",
+            "status"
+          ]
+        },
+        {
+          "name": "Employee",
+          "grain": "一个自然人销售人员",
+          "business_key": [
+            "tenant_id",
+            "employee_code"
+          ],
+          "fields": [
+            "account_id",
+            "display_name",
+            "gender",
+            "birth_date",
+            "joined_on",
+            "employment_status"
+          ]
+        },
+        {
+          "name": "EmployeeAssignment",
+          "grain": "人员在一段有效期内的一次岗位、团队、区域及经理关系",
+          "business_key": [
+            "employee_id",
+            "valid_from"
+          ],
+          "fields": [
+            "team_id",
+            "territory_id",
+            "manager_employee_id",
+            "position",
+            "is_proxy",
+            "included_in_monthly_assessment"
+          ]
+        },
+        {
+          "name": "FiscalPeriod",
+          "grain": "企业财年中的一个月度期间",
+          "business_key": [
+            "tenant_id",
+            "month_code"
+          ],
+          "fields": [
+            "fiscal_year",
+            "quarter_code",
+            "period_start",
+            "period_end",
+            "standard_workdays",
+            "company_occupied_days",
+            "effective_workdays"
+          ]
+        },
+        {
+          "name": "WorkCalendarDay",
+          "grain": "一个租户工作日历中的一个自然日",
+          "business_key": [
+            "tenant_id",
+            "calendar_date",
+            "calendar_version"
+          ],
+          "fields": [
+            "calendar_date",
+            "iso_year",
+            "iso_week",
+            "weekday",
+            "is_national_workday",
+            "is_company_workday",
+            "workday_fraction",
+            "day_type",
+            "reason",
+            "calendar_source_type",
+            "calendar_source_ref",
+            "calendar_version",
+            "source_content_hash"
+          ],
+          "baseline_authority": "国家法定工作日、法定节假日及调休工作日逐日快照"
+        },
+        {
+          "name": "EmployeeWorkdayAdjustment",
+          "grain": "一名销售代表在一个自然日的工作日调整",
+          "business_key": [
+            "employee_id",
+            "calendar_date",
+            "source_record_id"
+          ],
+          "fields": [
+            "calendar_date",
+            "adjustment_type",
+            "workday_fraction_delta",
+            "reason",
+            "calendar_event_ref",
+            "absence_status"
+          ],
+          "confirmed_source": "销售代表工作日报.xlsx/日报日期与WorkCalendarDay差集",
+          "absence_rule": "国家法定工作日无该销售代表日报时生成缺勤调整，个人当日workday_fraction调整为0"
+        },
+        {
+          "name": "EmployeeAbsenceAdjustment",
+          "grain": "人员在一个财月的扣除工作天数对账记录",
+          "business_key": [
+            "employee_id",
+            "month_code",
+            "source_record_id"
+          ],
+          "fields": [
+            "deducted_workdays",
+            "reason"
+          ],
+          "usage": "仅作月度对账与历史兼容；Q36/Q37的逐日扣除必须使用EmployeeWorkdayAdjustment"
+        }
+      ]
+    },
+    {
+      "code": "customer",
+      "name": "客户、联系人与现场信息",
+      "entities": [
+        {
+          "name": "Customer",
+          "grain": "企业客户池中的一个客户组织",
+          "business_key": [
+            "tenant_id",
+            "customer_code"
+          ],
+          "fields": [
+            "customer_name",
+            "legal_name",
+            "entered_at",
+            "country_region",
+            "province",
+            "city",
+            "district",
+            "address_detail",
+            "phone",
+            "website",
+            "industry_note",
+            "owner_employee_id",
+            "team_id",
+            "territory_id",
+            "status"
+          ]
+        },
+        {
+          "name": "CustomerClassificationSnapshot",
+          "grain": "客户在一个时间点的一组分类与整体关系判断",
+          "business_key": [
+            "customer_id",
+            "effective_at"
+          ],
+          "fields": [
+            "category_i",
+            "category_ii",
+            "category_iii",
+            "category_iv",
+            "overall_relationship_level",
+            "evidence_ref_id"
+          ]
+        },
+        {
+          "name": "Contact",
+          "grain": "一个客户联系人",
+          "business_key": [
+            "tenant_id",
+            "contact_code"
+          ],
+          "fields": [
+            "customer_id",
+            "contact_name",
+            "department",
+            "mobile",
+            "telephone",
+            "job_title",
+            "email",
+            "is_valid",
+            "invalid_reason"
+          ]
+        },
+        {
+          "name": "CustomerContactAssessment",
+          "grain": "联系人在一个时间点的决策角色、影响力和关系水平",
+          "business_key": [
+            "contact_id",
+            "effective_at"
+          ],
+          "fields": [
+            "decision_role",
+            "influence_level",
+            "relationship_level",
+            "attitude",
+            "evidence_ref_id"
+          ]
+        },
+        {
+          "name": "CustomerInformationCollectionEvent",
+          "grain": "针对一个客户完成的一次现场信息收集",
+          "business_key": [
+            "tenant_id",
+            "source_record_id"
+          ],
+          "fields": [
+            "customer_id",
+            "collector_employee_id",
+            "collected_at",
+            "collection_type",
+            "information_quality_status",
+            "attachment_id"
+          ]
+        },
+        {
+          "name": "CustomerAsset",
+          "grain": "安装或存在于客户现场的一台设备或一项设备事实",
+          "business_key": [
+            "tenant_id",
+            "asset_code"
+          ],
+          "fields": [
+            "customer_id",
+            "asset_type",
+            "serial_number",
+            "brand",
+            "model",
+            "installed_at",
+            "installed_location",
+            "responsible_contact_id",
+            "procurement_method",
+            "contract_expires_on",
+            "service_provider",
+            "lifecycle_status",
+            "source_attributes"
+          ]
+        },
+        {
+          "name": "AssetMetricObservation",
+          "grain": "一台设备在一个读取时间点的一项数值",
+          "business_key": [
+            "asset_id",
+            "metric_code",
+            "observed_at"
+          ],
+          "fields": [
+            "metric_code",
+            "metric_value",
+            "unit"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "activity",
+      "name": "拜访计划、执行与日报",
+      "entities": [
+        {
+          "name": "VisitPlan",
+          "grain": "一个销售代表的一份周拜访计划",
+          "business_key": [
+            "tenant_id",
+            "plan_code"
+          ],
+          "fields": [
+            "owner_employee_id",
+            "team_id",
+            "territory_id",
+            "week_start",
+            "status",
+            "submitted_at"
+          ]
+        },
+        {
+          "name": "VisitPlanItem",
+          "grain": "周计划中的一次计划拜访",
+          "business_key": [
+            "visit_plan_id",
+            "customer_id",
+            "planned_date",
+            "source_record_id"
+          ],
+          "fields": [
+            "customer_id",
+            "customer_segment_at_plan",
+            "planned_date",
+            "purpose_code",
+            "other_purpose",
+            "expected_key_result",
+            "attachment_id"
+          ]
+        },
+        {
+          "name": "VisitPlanSnapshot",
+          "grain": "周计划在一个快照时间点的不可变版本",
+          "business_key": [
+            "visit_plan_id",
+            "snapshot_at"
+          ],
+          "fields": [
+            "snapshot_at",
+            "snapshot_hash",
+            "snapshot_items"
+          ]
+        },
+        {
+          "name": "VisitEvent",
+          "grain": "一次实际发生或记录的客户拜访/沟通活动",
+          "business_key": [
+            "tenant_id",
+            "visit_record_code"
+          ],
+          "fields": [
+            "owner_employee_id",
+            "customer_id",
+            "visit_plan_item_id",
+            "visit_date",
+            "started_at",
+            "ended_at",
+            "submitted_at",
+            "visit_method",
+            "source_conversion_ratio",
+            "source_composite_visit_quantity",
+            "recomputed_composite_visit_quantity",
+            "conversion_policy_version",
+            "check_in_identifier",
+            "check_in_status",
+            "check_in_exception_reason",
+            "duration_minutes",
+            "is_appointment",
+            "purpose_code",
+            "other_purpose",
+            "expected_key_result",
+            "process_description",
+            "self_evaluation",
+            "manager_comment"
+          ]
+        },
+        {
+          "name": "VisitNextAction",
+          "grain": "一次拜访记录形成的一条下一行动安排",
+          "business_key": [
+            "visit_event_id",
+            "source_record_id"
+          ],
+          "fields": [
+            "next_action_purpose_code",
+            "next_action_other_purpose",
+            "next_expected_key_result",
+            "next_contact_at",
+            "evidence_ref_id",
+            "next_contact_at_source",
+            "fallback_visit_plan_item_id",
+            "is_complete_next_visit_plan",
+            "sync_status",
+            "synced_visit_plan_item_id",
+            "synced_at"
+          ]
+        },
+        {
+          "name": "VisitOpportunityStageSnapshot",
+          "grain": "一次拜访记录关联的一条商机阶段上下文快照；同一拜访可按商机编号关联多条",
+          "business_key": [
+            "visit_event_id",
+            "opportunity_code",
+            "source_record_id"
+          ],
+          "fields": [
+            "opportunity_id",
+            "opportunity_code",
+            "opportunity_name",
+            "historical_stage",
+            "latest_stage_at_source",
+            "observed_at",
+            "evidence_ref_id"
+          ]
+        },
+        {
+          "name": "VisitParticipant",
+          "grain": "人员或联系人参与一次拜访的关系",
+          "business_key": [
+            "visit_event_id",
+            "participant_type",
+            "participant_id"
+          ],
+          "fields": [
+            "participant_type",
+            "employee_id",
+            "contact_id",
+            "raw_participant_name",
+            "participation_role"
+          ]
+        },
+        {
+          "name": "DailyWorkReport",
+          "grain": "销售代表一个工作日的一份日报",
+          "business_key": [
+            "tenant_id",
+            "daily_report_code"
+          ],
+          "fields": [
+            "employee_id",
+            "report_date",
+            "next_workday",
+            "reported_metrics",
+            "insufficient_activity_explanation",
+            "manager_comment",
+            "attachment_id"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "opportunity",
+      "name": "商机项目及变化",
+      "entities": [
+        {
+          "name": "Opportunity",
+          "grain": "一个持续存在的销售商机项目",
+          "business_key": [
+            "tenant_id",
+            "opportunity_code"
+          ],
+          "fields": [
+            "customer_id",
+            "owner_employee_id",
+            "opportunity_name",
+            "entered_at",
+            "expected_close_period",
+            "procurement_method",
+            "need_description",
+            "budget_amount",
+            "budget_note",
+            "current_stage",
+            "forecast_category",
+            "result_status",
+            "source_customer_segment",
+            "win_strategy",
+            "total_contract_amount",
+            "total_sales_amount",
+            "gross_margin_rate",
+            "gross_profit_amount",
+            "record_status"
+          ]
+        },
+        {
+          "name": "OpportunityProduct",
+          "grain": "商机中的一个产品明细",
+          "business_key": [
+            "opportunity_id",
+            "source_record_id",
+            "line_number"
+          ],
+          "fields": [
+            "product_category_i",
+            "product_category_ii",
+            "product_model",
+            "quantity",
+            "unit_price",
+            "contract_amount",
+            "sales_amount",
+            "cost_amount",
+            "gross_margin_rate"
+          ]
+        },
+        {
+          "name": "OpportunityStakeholder",
+          "grain": "联系人参与一个商机决策链的时间点关系",
+          "business_key": [
+            "opportunity_id",
+            "contact_id",
+            "effective_at"
+          ],
+          "fields": [
+            "decision_role",
+            "relationship_level",
+            "influence_level",
+            "project_attitude"
+          ]
+        },
+        {
+          "name": "OpportunityCompetitor",
+          "grain": "一个商机中的一个友商/竞争对手事实",
+          "business_key": [
+            "opportunity_id",
+            "competitor_name",
+            "source_record_id"
+          ],
+          "fields": [
+            "competitor_name",
+            "competitor_summary",
+            "other_information"
+          ]
+        },
+        {
+          "name": "OpportunityEvent",
+          "grain": "商机新增、提前、推迟、取消、赢单或输单的一次状态变化",
+          "business_key": [
+            "opportunity_id",
+            "event_type",
+            "occurred_at",
+            "source_record_id"
+          ],
+          "fields": [
+            "event_type",
+            "occurred_at",
+            "previous_opportunity_code",
+            "new_opportunity_code",
+            "previous_close_period",
+            "new_close_period",
+            "reason_code",
+            "reason_manifestation",
+            "reason_detail",
+            "manager_confirmation_status"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "policy",
+      "name": "企业标准与版本化策略",
+      "entities": [
+        {
+          "name": "BehaviorPolicy",
+          "grain": "一个租户在一段有效期内的一项行为标准",
+          "business_key": [
+            "tenant_id",
+            "policy_type",
+            "policy_version"
+          ],
+          "fields": [
+            "policy_type",
+            "policy_version",
+            "effective_from",
+            "effective_to",
+            "status",
+            "configuration",
+            "approved_by"
+          ]
+        }
+      ],
+      "policy_types": [
+        "visit_method_conversion",
+        "golden_time_window",
+        "visit_purpose_by_customer_segment",
+        "customer_segment_definition_and_ratio",
+        "customer_information_collection_requirement",
+        "sales_rep_kpi",
+        "sales_team_kpi"
+      ]
+    },
+    {
+      "code": "reporting",
+      "name": "派生指标与月度复盘",
+      "entities": [
+        {
+          "name": "MetricObservation",
+          "grain": "一个主体在一个计算窗口的一项版本化派生指标",
+          "business_key": [
+            "subject_type",
+            "subject_id",
+            "metric_code",
+            "period_code",
+            "calculation_version"
+          ],
+          "fields": [
+            "subject_type",
+            "subject_id",
+            "metric_code",
+            "metric_value",
+            "unit",
+            "period_code",
+            "window_start",
+            "window_end",
+            "calculation_version",
+            "input_snapshot_hash"
+          ]
+        },
+        {
+          "name": "MonthlyReview",
+          "grain": "个人、团队或公司在一个财月的一份月度复盘",
+          "business_key": [
+            "subject_type",
+            "subject_id",
+            "month_code"
+          ],
+          "fields": [
+            "review_text",
+            "manager_comment",
+            "metric_snapshot_id",
+            "submitted_at",
+            "q39_dimension_scores",
+            "q39_ai_rule_version",
+            "q39_score"
+          ]
+        },
+        {
+          "name": "SalesImprovementActionPlan",
+          "grain": "一个销售人员的一项改善行动计划",
+          "business_key": [
+            "tenant_id",
+            "action_plan_code"
+          ],
+          "fields": [
+            "action_description",
+            "expected_result",
+            "owner_employee_id",
+            "planned_completion_date",
+            "actual_completion_date",
+            "result_review",
+            "team_id",
+            "company_id",
+            "plan_month_code",
+            "completion_status"
+          ]
+        }
+      ]
+    },
+    {
+      "code": "assessment_and_evidence",
+      "name": "诊断、证据与质量",
+      "entities": [
+        {
+          "name": "AssessmentRequest",
+          "grain": "针对一个人员和时间窗口发起的一次诊断请求",
+          "business_key": [
+            "tenant_id",
+            "request_code"
+          ],
+          "fields": [
+            "subject_employee_id",
+            "period_start",
+            "period_end",
+            "status",
+            "failure_reason",
+            "requested_by"
+          ]
+        },
+        {
+          "name": "AssessmentArtifact",
+          "grain": "诊断请求生成的一份报告或访问资源",
+          "business_key": [
+            "assessment_request_id",
+            "artifact_type",
+            "version"
+          ],
+          "fields": [
+            "artifact_type",
+            "uri",
+            "file_ref",
+            "content_hash"
+          ]
+        },
+        {
+          "name": "SourceRecord",
+          "grain": "从外部系统取得的一条不可变原始记录版本",
+          "business_key": [
+            "tenant_id",
+            "source_system",
+            "source_table",
+            "external_record_id",
+            "source_version"
+          ],
+          "fields": [
+            "source_payload",
+            "source_created_at",
+            "source_updated_at",
+            "ingested_at",
+            "content_hash"
+          ]
+        },
+        {
+          "name": "Attachment",
+          "grain": "一个受权限管理的文件或图片",
+          "business_key": [
+            "tenant_id",
+            "content_hash"
+          ],
+          "fields": [
+            "file_name",
+            "media_type",
+            "storage_uri",
+            "source_uri",
+            "content_hash"
+          ]
+        },
+        {
+          "name": "EvidenceRef",
+          "grain": "一条评价证据对来源记录或附件的精确引用",
+          "business_key": [
+            "evaluation_id",
+            "source_record_id",
+            "field_path"
+          ],
+          "fields": [
+            "source_record_id",
+            "attachment_id",
+            "field_path",
+            "event_time",
+            "excerpt_hash"
+          ]
+        },
+        {
+          "name": "DataQualityIssue",
+          "grain": "一次导入或评价发现的一项数据质量问题",
+          "business_key": [
+            "run_id",
+            "issue_code",
+            "source_record_id",
+            "field_path"
+          ],
+          "fields": [
+            "severity",
+            "issue_code",
+            "message",
+            "resolution_status"
+          ]
+        }
+      ]
+    }
+  ],
+  "source_table_mappings": [
+    {
+      "source_file": "销售代表结构.xlsx",
+      "role": "master",
+      "targets": [
+        "Tenant",
+        "SalesTeam",
+        "SalesTerritory",
+        "Employee",
+        "EmployeeAssignment"
+      ]
+    },
+    {
+      "source_file": "公司财年月历.xlsx",
+      "role": "reference",
+      "targets": [
+        "FiscalPeriod"
+      ]
+    },
+    {
+      "source_file": "销售代表缺勤记录表.xlsx",
+      "role": "transaction",
+      "targets": [
+        "EmployeeWorkdayAdjustment",
+        "EmployeeAbsenceAdjustment"
+      ],
+      "mapping_rule": "仅映射历史EmployeeAbsenceAdjustment作月度对账；Q01/Q36/Q37的逐日EmployeeWorkdayAdjustment由国家法定工作日与销售代表工作日报日期差集生成。"
+    },
+    {
+      "source_file": "客户信息表.xlsx",
+      "role": "master_and_snapshot",
+      "targets": [
+        "Customer",
+        "CustomerClassificationSnapshot"
+      ]
+    },
+    {
+      "source_file": "客户联系人.lsx.xlsx",
+      "role": "master_and_snapshot",
+      "targets": [
+        "Contact",
+        "CustomerContactAssessment"
+      ]
+    },
+    {
+      "source_file": "客户现场信息收集表.xlsx",
+      "role": "transaction",
+      "targets": [
+        "CustomerInformationCollectionEvent",
+        "Attachment"
+      ]
+    },
+    {
+      "source_file": "客户OA设备信息表.xlsx",
+      "role": "master_and_observation",
+      "targets": [
+        "CustomerAsset",
+        "AssetMetricObservation"
+      ]
+    },
+    {
+      "source_file": "会议设备信息表.xlsx",
+      "role": "master",
+      "targets": [
+        "CustomerAsset"
+      ]
+    },
+    {
+      "source_file": "客户净水设备信息表.xlsx",
+      "role": "master",
+      "targets": [
+        "CustomerAsset"
+      ]
+    },
+    {
+      "source_file": "拜访计划制定表.xlsx",
+      "role": "transaction_and_next_action_time_fallback",
+      "targets": [
+        "VisitPlan",
+        "VisitPlanItem",
+        "VisitNextAction"
+      ]
+    },
+    {
+      "source_file": "拜访计划（周计划快照）.xlsx",
+      "role": "immutable_snapshot",
+      "targets": [
+        "VisitPlanSnapshot"
+      ]
+    },
+    {
+      "source_file": "拜访记录录入.xlsx",
+      "role": "transaction_next_action_and_opportunity_snapshot",
+      "targets": [
+        "VisitEvent",
+        "VisitNextAction",
+        "VisitOpportunityStageSnapshot",
+        "VisitParticipant",
+        "Attachment"
+      ]
+    },
+    {
+      "source_file": "销售代表工作日报.xlsx",
+      "role": "report_and_snapshot",
+      "targets": [
+        "DailyWorkReport",
+        "MetricObservation"
+      ]
+    },
+    {
+      "source_file": "商机项目信息表.xlsx",
+      "role": "master_and_snapshot",
+      "targets": [
+        "Opportunity",
+        "OpportunityProduct",
+        "OpportunityStakeholder",
+        "OpportunityCompetitor"
+      ]
+    },
+    {
+      "source_file": "推迟及提前商机项目记录表.xlsx",
+      "role": "immutable_event",
+      "targets": [
+        "OpportunityEvent",
+        "SourceRecord"
+      ]
+    },
+    {
+      "source_file": "拜访方式-折算比例xlsx.xlsx",
+      "role": "policy",
+      "targets": [
+        "BehaviorPolicy:visit_method_conversion"
+      ]
+    },
+    {
+      "source_file": "拜访黄金时间标准.xlsx",
+      "role": "policy",
+      "targets": [
+        "BehaviorPolicy:golden_time_window"
+      ]
+    },
+    {
+      "source_file": "拜访目的设置表.xlsx",
+      "role": "policy",
+      "targets": [
+        "BehaviorPolicy:visit_purpose_by_customer_segment"
+      ]
+    },
+    {
+      "source_file": "客户类型II（定义及比例标准）xlsx.xlsx",
+      "role": "policy",
+      "targets": [
+        "BehaviorPolicy:customer_segment_definition_and_ratio"
+      ]
+    },
+    {
+      "source_file": "客户信息收集要求标准.xlsx",
+      "role": "policy",
+      "targets": [
+        "BehaviorPolicy:customer_information_collection_requirement"
+      ]
+    },
+    {
+      "source_file": "销售代表KPI评分标准.xlsx",
+      "role": "policy",
+      "targets": [
+        "BehaviorPolicy:sales_rep_kpi"
+      ]
+    },
+    {
+      "source_file": "销售团队KPI评分标准.xlsx",
+      "role": "policy",
+      "targets": [
+        "BehaviorPolicy:sales_team_kpi"
+      ]
+    },
+    {
+      "source_file": "销售代表活动月报表.xlsx",
+      "role": "derived_snapshot",
+      "targets": [
+        "MetricObservation",
+        "MonthlyReview"
+      ]
+    },
+    {
+      "source_file": "销售人员行动计划表.xlsx",
+      "role": "workflow",
+      "targets": [
+        "SalesImprovementActionPlan"
+      ],
+      "field_mapping": {
+        "序号": "action_plan_code",
+        "行动": "action_description",
+        "期望结果": "expected_result",
+        "负责人": "owner_employee_id",
+        "计划完成时间": "planned_completion_date",
+        "实际完成时间": "actual_completion_date",
+        "结果回顾": "result_review",
+        "销售团队": "team_id",
+        "公司名称（通讯录）": "company_id"
+      },
+      "derived_fields": {
+        "plan_month_code": "计划完成时间按公司财年月历映射到财月；没有可用财月时保留自然月并登记口径来源",
+        "completion_status": "实际完成时间和结果回顾均非空时为completed；只有一项时为partial并登记质量问题"
+      }
+    },
+    {
+      "source_file": "销售团队活动月报表.xlsx",
+      "role": "derived_snapshot",
+      "targets": [
+        "MetricObservation",
+        "MonthlyReview"
+      ]
+    },
+    {
+      "source_file": "公司销售活动月报表.xlsx",
+      "role": "derived_snapshot",
+      "targets": [
+        "MetricObservation",
+        "MonthlyReview"
+      ]
+    },
+    {
+      "source_file": "AI诊断申请表.xlsx",
+      "role": "workflow",
+      "targets": [
+        "AssessmentRequest",
+        "AssessmentArtifact"
+      ]
+    }
+  ],
+  "controlled_value_mappings": {
+    "customer_segment": {
+      "潜力客户": "potential",
+      "目标客户": "target",
+      "商机客户": "opportunity"
+    },
+    "contact_decision_role_legacy": {
+      "决策者": "final_decision_maker",
+      "影响者": "key_influencer",
+      "使用者": "general_influencer",
+      "其他": "no_influence"
+    },
+    "relationship_level_legacy": {
+      "零级": 0,
+      "一级": 1,
+      "二级": 2,
+      "三级": 3,
+      "四级": 4,
+      "五级": 5
+    },
+    "visit_method": {
+      "面对面拜访": "face_to_face",
+      "视频会议": "video",
+      "电话拜访": "phone",
+      "微信/邮件/QQ沟通": "asynchronous_message"
+    },
+    "visit_self_evaluation": {
+      "达到目的": "achieved",
+      "部分达到目的": "partially_achieved",
+      "未达到目的": "not_achieved"
+    },
+    "opportunity_result": {
+      "进行中": "open",
+      "赢单": "won",
+      "输单": "lost",
+      "取消": "cancelled",
+      "推迟": "delayed"
+    },
+    "opportunity_stage_p1_p5": {
+      "P1": "可以获得参与",
+      "P2": "获得提方案的机会",
+      "P3": "许可参与商务谈判的机会",
+      "P4": "赢得客户的订单",
+      "P5": "完成合同"
+    }
+  },
+  "quality_rules": [
+    {
+      "code": "DQ-001",
+      "rule": "任何跨表关联必须优先使用编号，不得仅凭人员名、团队名或客户名连接。"
+    },
+    {
+      "code": "DQ-002",
+      "rule": "统一ID由平台生成；外部编号与来源系统、来源表共同构成可追溯业务键。"
+    },
+    {
+      "code": "DQ-003",
+      "rule": "计划快照、客户分类、联系人关系和商机状态均带有效时间，历史记录不可覆盖。"
+    },
+    {
+      "code": "DQ-004",
+      "rule": "月报和日报中的汇总数字属于派生快照；存在明细事实时必须从明细复算并记录差异。"
+    },
+    {
+      "code": "DQ-005",
+      "rule": "Excel日期序列转换为带时区日期/时间，同时保留原始值和来源单元格。"
+    },
+    {
+      "code": "DQ-006",
+      "rule": "设备编码在租户内应唯一；重复编码进入冲突队列，不自动合并客户设备。"
+    },
+    {
+      "code": "DQ-007",
+      "rule": "商机产品、决策联系人和友商信息从宽表拆为子实体，空白续行只继承明确的父商机来源记录。"
+    },
+    {
+      "code": "DQ-008",
+      "rule": "附件只保存受控对象引用和内容哈希，评价证据不得依赖不可访问的本地文件名。"
+    },
+    {
+      "code": "DQ-009",
+      "rule": "数据不足、无记录和业务零值分别表达，禁止将空值直接改写为0。"
+    },
+    {
+      "code": "DQ-010",
+      "rule": "所有租户级标准必须版本化并具备生效区间；评分结果锁定使用的策略版本。"
+    },
+    {
+      "code": "DQ-011",
+      "rule": "销售代表工作日报中的“当日项目会议总数”和“当日标书/建议书总数”为停用字段，不得采集、派生或参与Q40评分统计。"
+    },
+    {
+      "code": "DQ-012",
+      "rule": "Q01综合拜访数量按拜访记录逐条使用生效折算策略计算1÷折算数量比例；来源记录中的折算比例和折算后数量仅用于对账，差异必须保留为数据质量证据。"
+    },
+    {
+      "code": "DQ-013",
+      "rule": "Q02拜访结束时间优先使用来源记录的实际结束时间；缺失时用实际开始时间加拜访时长补算。两者同时存在但不一致时保留原始结束时间并记录差异。"
+    },
+    {
+      "code": "DQ-014",
+      "rule": "拜访记录关联商机时，历史商机阶段与来源时点的最新商机阶段必须分别保存；禁止用最新阶段覆盖历史阶段，商机编号为空时不得仅按商机名称自动关联。"
+    },
+    {
+      "code": "DQ-015",
+      "rule": "拜访记录是客户下一步行动的默认来源；下一步行动目的和下次拜访期望关键结果不得从计划表猜测补齐。仅当下次联系客户时间为空时，允许按销售代表、客户编号匹配当前拜访日期之后最早的计划拜访日期作为时间回退值，并保存来源计划引用。完整性在回退后按目的、期望关键结果、时间三字段均非空判断。"
+    },
+    {
+      "code": "DQ-016",
+      "rule": "完整下一步行动自动同步到拜访计划制定表时必须使用tenant_id与来源拜访记录编码形成幂等键；已有回退计划只建立关联，不重复创建。计划表或系统元数据无法保存来源拜访记录编码时，禁止无溯源重复写入。"
+    },
+    {
+      "code": "DQ-017",
+      "rule": "Q01、Q02、Q05、Q06、Q35、Q36和Q37的工作日必须由带版本和来源哈希的逐日WorkCalendarDay确定，基线参照国家法定工作日、法定节假日和调休工作日。结束月份为当前月时只物化至锁定的实际评分截止日；人员缺勤按国家法定工作日与销售代表工作日报日期集合的差集逐日推导，无日报工作日视为缺勤并从个人有效工作日排除。"
+    },
+    {
+      "code": "DQ-018",
+      "rule": "Q02活动数量分母只包含面对面拜访和视频会议。任一纳入诊断期的合格方式记录同时缺少实际拜访结束时间和拜访时长时，整题判为数据不足，不允许排除该记录后继续评分。"
+    },
+    {
+      "code": "DQ-019",
+      "rule": "Q03本次拜访目的为其他时，VisitEvent.other_purpose直接读取拜访记录的具体其他目的，不得再从拜访目的文本派生。更新后的源工作簿归档前，该字段按用户确认的运行时字段契约接入并保留来源元数据。"
+    },
+    {
+      "code": "DQ-020",
+      "rule": "同一拜访记录可关联多条商机。连接器必须按商机编号拆分为多条VisitOpportunityStageSnapshot并保留同一visit_event_id；禁止只取第一条商机，编号缺失或多值位置无法对齐时判为数据不足或冲突。"
+    },
+    {
+      "code": "DQ-021",
+      "rule": "Q36必须以日报日期后的下一个个人有效工作日为目标日，并从拜访计划制定表读取计划。日报日期次日只作对账，不可代替日历解析或作为计划事实来源；计划表正常可读但无记录是0条计划，数据源或日历缺失则是数据不足。"
+    },
+    {
+      "code": "DQ-022",
+      "rule": "Q01如果汇总多个拜访活动的占用时长，必须先按销售代表和自然日将有效时间区间合并，再计算并集分钟数；重叠部分不得重复累加。Q01拜访数量仍按记录和生效折算比例计算。"
+    },
+    {
+      "code": "DQ-023",
+      "rule": "Q08的目标客户去重数或潜力客户去重数任一为0时，不进行除零或偏差推断，直接返回0分并保留三类客户计数证据。"
+    },
+    {
+      "code": "DQ-024",
+      "rule": "Q11六项角色覆盖与完整性指标的共享分母必须是测评范围内客户信息表全部客户编号去重数，禁止从计划表、拜访记录或联系人表反推分母。"
+    },
+    {
+      "code": "DQ-025",
+      "rule": "Q12只读取采购潜力、采购时间和友商信息对应的结构化字段；附件、图片和上传文件不做解析。三组结构化字段均为空时，即使附件存在也必须返回0分。"
+    },
+    {
+      "code": "DQ-026",
+      "rule": "Q13个人及团队成员的信息收集覆盖比例分母统一为测评截止时客户信息表中归属销售代表的全部客户编号去重数，禁止继续使用拜访记录形成的实际覆盖客户数。"
+    },
+    {
+      "code": "DQ-027",
+      "rule": "Q14周拜访活动数量只包含面对面拜访和视频会议；电话、微信邮件QQ及其他方式不进入周新增信息收集客户标准。"
+    },
+    {
+      "code": "DQ-028",
+      "rule": "Q18四个比例子项的分母为0时，对应子项得0分并保留原权重；禁止标记不适用、除零、权重重分配或把0分母改成数据不足。"
+    },
+    {
+      "code": "DQ-029",
+      "rule": "Q19任一客户类型分母为0时对应25%客户类型子项得0分；全部客户分母为0时平均角色类别子项得0分，所有权重保持不变。"
+    },
+    {
+      "code": "DQ-030",
+      "rule": "Q32结果=输单时以商机记录系统创建时间作为默认输单时间；管理者介入必须发生在默认输单时间之前。联合拜访使用实际拜访时间，点评或行动建议使用不可变首次提交时间，时间无法证明在输单前时不得计入。"
+    },
+    {
+      "code": "DQ-031",
+      "rule": "Q35正常打卡比较考勤时间与实际拜访时间；禁止使用商机计划时间、商机创建时间或其他商机时间替代实际拜访时间。"
+    },
+    {
+      "code": "DQ-032",
+      "rule": "Q36第一项分母为考核期内能够解析出下一有效或未来法定工作日的已提交日报有效工作日数；截至评分日无日报的法定工作日视为缺勤并排除。评分截止前已提交、但计划日期晚于评分截止日的下一工作日计划允许进入评分。"
+    },
+    {
+      "code": "DQ-033",
+      "rule": "拜访计划制定表中的计划统一视为面对面拜访，Q18和Q36不得因该表没有计划方式字段而判为数据不足；拜访记录中的实际接触仍只接受面对面拜访和视频会议。"
+    },
+    {
+      "code": "DQ-034",
+      "rule": "Q40从销售人员行动计划表取负责人为被测销售人员且计划完成时间在测评周期内的行动计划；计划完成时间为空不得用实际完成时间替代。行动或期望结果为空时SMART为0分；执行结果以期望结果和结果回顾对照为核心，实际完成时间只作完成与时效证据。"
+    },
+    {
+      "code": "DQ-035",
+      "rule": "Q16按销售代表直接读取表外客户信息表；SourceRecord.source_created_at必须取简道云系统提交时间并作为客户移出时间。系统提交时间缺失时不得用最后更新时间或业务字段入表时间替代，相关测评判为数据不足。"
+    },
+    {
+      "code": "DQ-036",
+      "rule": "Q18实际接触必须按拜访记录的拜访日期、计划接触必须按拜访计划（周计划快照）的计划拜访日期限定在测评开始月首日至结束月末日内，并按客户编号去重；缺少客户编号或对应日期的记录不得进入分子。"
+    },
+    {
+      "code": "DQ-037",
+      "rule": "Q22不得从信息收集表反推或覆盖客户类型II，也不得从客户信息表文本臆造分类标准；分类、标准、事实分别锁定客户信息表、客户类型II定义及比例标准表和当前企业配置的信息收集表，并保留客户编号与记录ID证据链。"
+    },
+    {
+      "code": "DQ-038",
+      "rule": "Q13允许读取同团队全部当前在职销售人员的客户、信息收集和拜访数据，但只能用于内存中的匿名团队平均聚合；评分结果、报告和记录级证据不得输出其他成员姓名、记录编号或个人比例。"
+    },
+    {
+      "code": "DQ-039",
+      "rule": "Q34商机客户的客户共识必须同时具备拜访记录中的明确肯定一致性表述和具体下一行动；不同意、未确认、不认可、未承诺、未约定等否定表达不得命中。"
+    },
+    {
+      "code": "DQ-040",
+      "rule": "Q37-v2周合格率固定以公司标准日均拜访数量×4.5为分母；目的项仅检查周计划快照的拜访目的是否非空，目的为其他时具体其他目的也必须非空；不再读取上次拜访、商机阶段或AI语义事实。"
+    },
+    {
+      "code": "DQ-041",
+      "rule": "Q34-v4的两项比例分母均为测评周期内所有面对面拜访记录；AI必须完成五项检查后给出完全达成、部分达成或未达成结论并与评价字段比较；同客户上一访可跨测评周期，Q34所有目的和下一行动信息仅取拜访记录，不得回退到拜访计划表。"
+    }
+  ],
+  "q40_domain_coverage": [
+    {
+      "questions": "Q01-Q06",
+      "domains": [
+        "organization",
+        "activity",
+        "policy"
+      ]
+    },
+    {
+      "questions": "Q07-Q16",
+      "domains": [
+        "customer",
+        "activity",
+        "policy"
+      ]
+    },
+    {
+      "questions": "Q17-Q26",
+      "domains": [
+        "customer",
+        "activity",
+        "policy"
+      ]
+    },
+    {
+      "questions": "Q27-Q32",
+      "domains": [
+        "opportunity",
+        "customer",
+        "activity"
+      ]
+    },
+    {
+      "questions": "Q33-Q38",
+      "domains": [
+        "activity",
+        "opportunity",
+        "organization",
+        "reporting"
+      ]
+    },
+    {
+      "questions": "Q39-Q40",
+      "domains": [
+        "reporting",
+        "assessment_and_evidence"
+      ]
+    }
+  ],
+  "resolved_questions": [
+    {
+      "id": "OQ-28",
+      "resolved_on": "2026-08-12",
+      "topic": "Q40 SMART、PDCA与执行结果评分量表",
+      "decision": "Q40-v1采用固定0—4分锚点；AI逐计划输出SMART、PDCA和执行结果分及理由，代码计算计划质量平均、跨计划平均和40%/60%最终加权。",
+      "evidence": "业务确认执行结果对照期望结果和结果回顾，数据范围为负责人匹配且计划完成时间在测评周期内的全部行动计划。"
+    },
+    {
+      "id": "OQ-08",
+      "resolved_on": "2026-08-07",
+      "topic": "拜访方式折算",
+      "decision": "折算数量比例是除数；单条综合拜访数量按1÷折算数量比例计算。简道云现有折算比例和折算后的综合拜访数量用于逐条对账，不作为权威计算输入。",
+      "evidence": "真实简道云记录中电话拜访折算比例7.5对应折算后数量0.13333333。"
+    },
+    {
+      "id": "OQ-10",
+      "resolved_on": "2026-08-07",
+      "topic": "拜访记录关联商机阶段",
+      "decision": "新版拜访记录录入表增加商机项目名称、历史商机阶段、最新商机阶段和商机编号，统一映射为VisitOpportunityStageSnapshot；历史与最新阶段不得互相覆盖。",
+      "evidence": "拜访记录录入.xlsx范围由A1:AI7扩展为A1:AM7。"
+    },
+    {
+      "id": "OQ-11",
+      "resolved_on": "2026-08-07",
+      "topic": "拜访记录下一行动字段",
+      "decision": "更正版拜访记录直接提供下一步行动目的、下一次具体其他目的、下次拜访期望的关键结果和下次联系客户时间安排，统一映射为VisitNextAction；Q04、Q33和Q34不再依赖未来计划推断这四项信息。",
+      "evidence": "拜访记录录入.xlsx范围由A1:AM7扩展为A1:AQ7。"
+    },
+    {
+      "id": "OQ-12",
+      "resolved_on": "2026-08-07",
+      "topic": "客户下一步行动计划来源优先级与完整性",
+      "decision": "默认从拜访记录读取下一步行动目的、期望关键结果和下次联系时间；目的、期望关键结果和解析后的时间均非空即为完整计划。仅时间为空时，按销售代表、客户编号取得当前拜访日期之后最早的计划拜访日期作为回退时间。完整计划自动幂等同步到拜访计划制定表。",
+      "supersedes": "修正OQ-11中“任何下一行动字段均不依赖未来计划”的表述；目的与期望结果仍不得回退，只有时间允许按确认规则回退。",
+      "evidence": "2026-08-07业务确认口径。"
+    },
+    {
+      "id": "OQ-13",
+      "resolved_on": "2026-08-10",
+      "topic": "Q01按完整周拆分",
+      "decision": "引入外部日历适配层并物化为逐日WorkCalendarDay；按ISO周一至周日生成周编号，再叠加企业日历与人员逐日调整。评分只读取已锁定快照，不在评分时实时调用外部日历。",
+      "evidence": "公司财年月历仅提供月度有效工作天数，无法唯一拆分到自然周；iCalendar采用RFC 5545，法定节假日以国务院年度通知为权威基线。"
+    },
+    {
+      "id": "OQ-14",
+      "resolved_on": "2026-08-10",
+      "topic": "Q02活动分母与时间完整性",
+      "decision": "活动数量分母只包含面对面拜访和视频会议；任一合格记录同时缺少结束时间和拜访时长时整题数据不足。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-15",
+      "resolved_on": "2026-08-10",
+      "topic": "Q03具体其他目的",
+      "decision": "拜访记录录入新增本次拜访的具体其他目的，直接映射VisitEvent.other_purpose。",
+      "evidence": "2026-08-10业务确认；更新工作簿待归档。"
+    },
+    {
+      "id": "OQ-16",
+      "resolved_on": "2026-08-10",
+      "topic": "Q04一访多商机",
+      "decision": "同一客户可有多个商机，一条拜访记录可同时选择多条商机；按商机编号拆分并逐条保存阶段快照。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-05",
+      "resolved_on": "2026-08-10",
+      "topic": "联系人历史",
+      "decision": "关系水平、影响力度和关系位置可以从联系人表数据日志检索；连接器将日志物化为带valid_from/valid_to的CustomerContactAssessment历史快照，供Q24比较拜访前后关系变化。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-07",
+      "resolved_on": "2026-08-10",
+      "topic": "商机正式阶段",
+      "decision": "正式阶段固定为P1-P5：P1可以获得参与、P2获得提方案的机会、P3许可参与商务谈判的机会、P4赢得客户的订单、P5完成合同。历史评分比较评估截止日的当前最新阶段。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-17",
+      "resolved_on": "2026-08-10",
+      "topic": "Q12附件与空结构化字段",
+      "decision": "附件不解析；采购潜力、采购时间和友商信息三组结构化字段均为空时Q12得0分。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-18",
+      "resolved_on": "2026-08-10",
+      "topic": "Q13计划覆盖分母",
+      "decision": "Q13第一项个人和团队比例分母改为客户信息表中的计划覆盖客户数，与Q11计划覆盖客户定义一致。",
+      "evidence": "2026-08-10业务确认并授权更新V3标准。"
+    },
+    {
+      "id": "OQ-19",
+      "resolved_on": "2026-08-10",
+      "topic": "Q14周拜访方式",
+      "decision": "Q14周拜访活动数量仅统计面对面拜访和视频会议。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-20",
+      "resolved_on": "2026-08-10",
+      "topic": "Q18零分母",
+      "decision": "Q18任一比例子项分母为0时对应子项得0分，权重不重分配。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-21",
+      "resolved_on": "2026-08-10",
+      "topic": "Q19零分母",
+      "decision": "Q19任一客户类型或全部客户子项分母为0时对应子项得0分，权重不重分配。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-22",
+      "resolved_on": "2026-08-10",
+      "topic": "Q32管理介入时点",
+      "decision": "结果=输单时以商机记录系统创建时间作为默认输单时间；管理者介入必须发生在默认输单时间之前。",
+      "evidence": "2026-08-12业务确认口径，替代等待系统审计输单事件时间的旧限制。"
+    },
+    {
+      "id": "OQ-23",
+      "resolved_on": "2026-08-10",
+      "topic": "Q35实际拜访时间勘误",
+      "decision": "Q35正常打卡比较打卡时间和实际拜访时间，原商机拜访时间为文字错误。",
+      "evidence": "2026-08-10业务确认并授权更新V3标准。"
+    },
+    {
+      "id": "OQ-24",
+      "resolved_on": "2026-08-10",
+      "topic": "Q36正常日报分母",
+      "decision": "Q36第一项分母为考核期内销售代表有效工作日数量。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-25",
+      "resolved_on": "2026-08-10",
+      "topic": "Q18计划方式契约",
+      "decision": "拜访计划制定表中的计划统一视为面对面拜访，可直接进入Q18计划接触统计；不再保留计划方式待确认问题。",
+      "evidence": "2026-08-10业务确认口径。"
+    },
+    {
+      "id": "OQ-26",
+      "resolved_on": "2026-08-10",
+      "topic": "Q40月度改善行动来源",
+      "decision": "销售人员行动计划表作为Q40月度改善行动计划和执行结果的直接来源，原文件名及九个物理字段保持不变。",
+      "evidence": "2026-08-10业务提供《销售人员行动计划表.xlsx》并要求接入40题评分。"
+    },
+    {
+      "id": "OQ-27",
+      "resolved_on": "2026-08-12",
+      "topic": "Q39月度总结与8维月报事实",
+      "decision": "Q39直接读取销售代表活动月报表8个既有统计维度和销售代表月度总结；受控AI比较事实与总结，不生成月报。Q40第三项可使用月度总结文本及Q39评价作为参考。",
+      "evidence": "2026-08-12业务确认口径。"
+    },
+    {
+      "id": "OQ-28",
+      "resolved_on": "2026-08-12",
+      "topic": "Q13团队全员数据访问与匿名输出",
+      "decision": "允许连接器无个人过滤读取同团队全部当前在职销售人员的Q13所需数据计算团队平均；报告只输出被测人指标和匿名团队平均，不输出其他成员明细。",
+      "evidence": "2026-08-12业务确认并授权直接处理。"
+    },
+    {
+      "id": "OQ-29",
+      "resolved_on": "2026-08-12",
+      "topic": "Q34商机客户共识证据门槛",
+      "decision": "拜访记录中出现同意、确认、认可、承诺、约定、达成一致等明确肯定内容，并且同一记录具有具体下一行动，两项同时成立才作为客户共识证据。",
+      "evidence": "2026-08-12业务确认并授权按建议调整。"
+    },
+    {
+      "id": "OQ-30",
+      "resolved_on": "2026-08-12",
+      "topic": "Q37-v2周标准与目的设定确定性规则",
+      "decision": "上一次拜访结果优先读取最近一次拜访的评价字段，过程详细描述作为补充证据；评价为空时才允许过程描述回退。",
+      "evidence": "2026-08-12业务确认口径。"
+    },
+    {
+      "id": "OQ-31",
+      "resolved_on": "2026-08-14",
+      "topic": "Q34-v4面对面分母、AI三分类与跨周期上一访来源",
+      "decision": "Q34两项比例的分母均为测评周期内所有面对面拜访记录；AI完成五项检查后给出完全达成、部分达成或未达成结论，再与拜访记录评价字段比较；同客户最近上一访不限测评周期，所有目的与下一行动仅从拜访记录获取，不回退到拜访计划表。",
+      "evidence": "2026-08-14业务确认。"
+    }
+  ],
+  "open_questions": [
+    {
+      "id": "OQ-01",
+      "severity": "high",
+      "topic": "组织编码",
+      "question": "源表中的销售团队编码与销售区域编码在不同表中是否分别代表团队和人员责任区，还是存在历史混用？",
+      "handling": "当前保持SalesTeam与SalesTerritory分离，并保留原始字段。"
+    },
+    {
+      "id": "OQ-02",
+      "severity": "high",
+      "topic": "设备状态",
+      "question": "OA、会议及净水设备表中的“是否是尸体”准确业务含义是什么？",
+      "handling": "统一模型仅保存lifecycle_status和原值，未确认前不映射为报废或无效。"
+    },
+    {
+      "id": "OQ-03",
+      "severity": "high",
+      "topic": "客户编号",
+      "question": "KH与OA前缀是否属于同一客户编号空间，是否存在历史迁移或跨表别名？",
+      "handling": "按原编号保留并建立CustomerAlias后再合并，当前不按前缀拆客户。"
+    },
+    {
+      "id": "OQ-04",
+      "severity": "high",
+      "topic": "设备编码重复",
+      "question": "样例中同一OA设备编码出现在多个客户，需确认是导出样例问题、设备复用还是编码非唯一。",
+      "handling": "触发DQ-006冲突，不自动覆盖。"
+    },
+    {
+      "id": "OQ-06",
+      "severity": "medium",
+      "topic": "月报口径",
+      "question": "公司、团队和个人月报中的覆盖率、综合拜访量及KPI是否均可由明细复算，现有历史口径是否发生过版本变化？",
+      "handling": "月报作为派生快照保留，另行复算并比较差异。"
+    },
+    {
+      "id": "OQ-09",
+      "severity": "medium",
+      "topic": "公司财年月历",
+      "question": "公司财年月历源表没有公司名称/编号，导出记录应归属哪个租户以及是否所有企业共用？",
+      "handling": "导入时必须由连接器租户上下文补充tenant_id，不允许创建全局默认归属。"
+    }
+  ],
+  "integration_rules": [
+    {
+      "code": "ACTIVITY-TIME-UNION-V1",
+      "name": "重叠活动时间并集",
+      "applicable_questions": [
+        "Q01",
+        "Q02"
+      ],
+      "source_fields": [
+        "VisitEvent.started_at",
+        "VisitEvent.ended_at",
+        "VisitEvent.duration_minutes"
+      ],
+      "interval_resolution": "ended_at优先；为空时使用started_at+duration_minutes",
+      "grouping": "tenant_id + employee_id + calendar_date",
+      "formula": "occupied_minutes = duration(union(all valid [started_at, resolved_ended_at) intervals))",
+      "overlap_rule": "重叠时间只计一次，相邻区间可合并但不改变来源记录数量",
+      "quantity_boundary": "Q01数量指标继续按记录折算计算，时间并集只服务于时长和冲突类指标。"
+    },
+    {
+      "code": "ASSESSMENT-SCORING-CUTOFF-V1",
+      "name": "诊断月份与实际评分截止日双日期口径",
+      "confirmed_on": "2026-08-14",
+      "timezone": "Asia/Shanghai",
+      "diagnosis_period_end": "用户选择的诊断结束月份最后一日，仅用于完整月份范围和报告周期展示。",
+      "scoring_cutoff_date": "诊断结束月份等于来源快照锁定时所在月份时，取来源快照锁定日期；历史结束月份取该月最后一日。",
+      "snapshot_rule": "首次评分锁定source_snapshot_cutoff_at和scoring_cutoff_date，普通重跑复用；强制重新取数时才重新锁定。",
+      "actual_data_rule": "实际拜访、工作日报和逐日工作日统计截至scoring_cutoff_date。",
+      "plan_data_rule": "计划记录按source_snapshot_cutoff_at判断是否已经提交；已提交计划即使计划日期晚于scoring_cutoff_date仍可供Q05/Q36/Q37使用。",
+      "week_rule": "Q01、Q06排除scoring_cutoff_date所在的未结束ISO自然周；Q37允许按当前周已发生的个人有效工作日评分。"
+    },
+    {
+      "code": "WORKDAY-CALENDAR-RESOLUTION-V2",
+      "name": "Q01/Q02/Q05/Q06/Q35/Q36/Q37共享逐日工作日历解析",
+      "external_adapter": {
+        "transport": "优先使用RFC 5545 iCalendar导入；也可由Google Calendar API、Microsoft Graph calendarView或企业HR日历连接器实现",
+        "provider_neutral": true,
+        "scoring_access": "评分时禁止实时调用；连接器预先物化逐日快照并锁定版本、来源引用和内容哈希"
+      },
+      "base_calendar": "国家法定工作日、法定节假日和调休工作日逐日快照",
+      "source_priority": [
+        "国务院年度节假日与调休通知形成的锁定逐日快照",
+        "经租户批准且与国家基线对账的外部日历/HR日历物化结果",
+        "企业财年月历的月度有效工作天数仅作对账"
+      ],
+      "resolution": {
+        "week_definition": "ISO自然周，周一开始、周日结束",
+        "company_workday": "Q36/Q37以is_national_workday为日基线；企业月历不用于反推逐日日期",
+        "employee_valid_workday": "is_national_workday=true且该销售代表当日已提交工作日报",
+        "absence_source": "销售代表工作日报.xlsx/日报日期与WorkCalendarDay差集",
+        "next_workday": "对给定日期取之后calendar_date最小的employee_valid_workday",
+        "complete_week": "诊断窗口完整覆盖周一至周日、周日不晚于scoring_cutoff_date，且该周所有日历记录来自同一已锁定calendar_version；Q37当前周部分工作日评分不使用此完整周限制",
+        "monthly_reconciliation": "逐日企业工作日合计必须与公司财年月历对应月份有效工作天数对账；不一致时登记冲突"
+      },
+      "insufficient_conditions": [
+        "只有月度有效工作天数而没有逐日工作日记录",
+        "销售代表工作日报整体不可读或日报日期字段缺失，无法逐日推导人员缺勤",
+        "诊断周跨越日历版本或存在未解析日期"
+      ],
+      "external_references": [
+        "https://www.rfc-editor.org/info/rfc5545/",
+        "https://www.gov.cn/zhengce/zhengceku/202511/content_7047091.htm"
+      ]
+    },
+    {
+      "code": "VISIT-MULTI-OPPORTUNITY-LINK-V1",
+      "name": "拜访记录多商机关联拆分",
+      "source_file": "拜访记录录入.xlsx",
+      "source_fields": [
+        "关联商机阶段信息/商机项目名称",
+        "关联商机阶段信息/历史商机阶段",
+        "关联商机阶段信息/最新商机阶段",
+        "关联商机阶段信息/商机编号"
+      ],
+      "cardinality": "VisitEvent 1:N VisitOpportunityStageSnapshot",
+      "identity_rule": "以商机编号为每条关联的稳定标识；一条拜访选择N条商机时拆成N条快照并共享visit_event_id",
+      "alignment_rule": "名称、历史阶段、最新阶段与商机编号必须按源系统关联项逐条对齐，不按分隔符位置猜测错位值",
+      "quality_gate": "商机编号缺失、重复或多值无法对齐时，不允许只取第一条或按名称自动匹配，登记数据不足或冲突"
+    },
+    {
+      "code": "VISIT-NEXT-ACTION-RESOLUTION-V1",
+      "name": "客户下一步行动计划解析与同步",
+      "primary_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "fields": {
+          "purpose": "下一步行动目的",
+          "other_purpose": "下一次具体其他目的",
+          "expected_key_result": "下次拜访期望的关键结果",
+          "next_contact_at": "下次联系客户时间安排"
+        }
+      },
+      "time_fallback": {
+        "trigger": "拜访记录的下次联系客户时间安排为空",
+        "source_file": "拜访计划制定表.xlsx",
+        "source_field": "计划拜访日期",
+        "match_keys": [
+          "销售代表",
+          "客户编号"
+        ],
+        "temporal_condition": "计划拜访日期严格晚于当前拜访记录的拜访日期",
+      "selection": "按计划拜访日期升序取得最早计划；同日多条时依次按计划编码、来源记录ID升序确定唯一记录",
+      "fill_scope": "只补充next_contact_at及来源引用，不使用计划表回填目的、其他目的或期望关键结果",
+      "missing_key_or_match_handling": "销售代表或客户编号为空、或没有符合时间条件的计划时，next_contact_at保持缺失并判为不完整；禁止按客户名称回退关联"
+      },
+      "completeness": {
+        "evaluation_order": "先执行时间来源优先级解析，再判断完整性",
+        "required_non_empty": [
+          "next_action_purpose_code",
+          "next_expected_key_result",
+          "next_contact_at"
+        ],
+        "complete_when": "三个必填字段均非空时，is_complete_next_visit_plan=true",
+        "other_purpose_rule": "下一步行动目的为其他时，下一次具体其他目的属于质量必填；缺失时登记质量问题，但不改写用户确认的三字段完整性定义"
+      },
+      "automatic_sync": {
+        "target_file": "拜访计划制定表.xlsx",
+        "trigger": "is_complete_next_visit_plan=true",
+        "field_mapping": {
+          "next_action_purpose_code": "拜访目的",
+          "next_action_other_purpose": "具体其他目的",
+          "next_expected_key_result": "期望得到的关键结果",
+          "next_contact_at": "计划拜访日期"
+        },
+        "identity_mapping": {
+          "owner_employee_id": "销售代表",
+          "customer_id": "客户编号"
+        },
+        "idempotency_key": "tenant_id + source_visit_record_code",
+        "behavior": "以幂等upsert同步；已有由同一拜访记录生成的计划时更新，不重复新增。若时间来自已存在的回退计划，则关联该计划并避免重复创建。",
+        "lineage_requirement": "系统元数据必须保存来源拜访记录编码；当前Excel表无该列时由连接器映射元数据承载。"
+      }
+    },
+    {
+      "code": "CONTACT-ASSESSMENT-HISTORY-V1",
+      "name": "联系人关系与影响力度历史解析",
+      "source_type": "联系人表数据日志或版本化联系人导出",
+      "source_keys": ["客户编号", "联系人编号"],
+      "source_fields": ["关系水平", "影响力度", "项目态度", "变更时间或系统审计时间"],
+      "canonical_target": "CustomerContactAssessment",
+      "temporal_mapping": {
+        "effective_from": "本次变更的系统审计时间",
+        "effective_to": "同一客户—联系人下一次变更时间；没有后续变更时为空",
+        "as_of_selection": "按评估或拜访时点选择valid_from<=时点且valid_to>时点的唯一快照"
+      },
+      "quality_gate": "只有当前值而没有日志或历史版本时，不得倒推出关系提升、影响力度变化或拜访前关系位置。"
+    },
+    {
+      "code": "OPPORTUNITY-STAGE-P1-P5-V1",
+      "name": "正式商机阶段字典与当前阶段比较",
+      "dictionary": {
+        "P1": "可以获得参与",
+        "P2": "获得提方案的机会",
+        "P3": "许可参与商务谈判的机会",
+        "P4": "赢得客户的订单",
+        "P5": "完成合同"
+      },
+      "current_stage_source": "商机项目信息表.xlsx/项目当前阶段",
+      "visit_stage_sources": ["关联商机阶段信息/历史商机阶段", "关联商机阶段信息/最新商机阶段"],
+      "comparison_rule": "评分比较评估截止日锁定快照中的当前最新阶段；历史阶段只作演进证据，不覆盖当前阶段。",
+      "unlinked_visit_rule": "拜访无商机编号时按客户编号检索活跃商机并由AI结合文本与项目特征匹配；多候选无法唯一匹配时要求确认。"
+    },
+    {
+      "code": "Q32-DEFAULT-LOSS-TIME-V1",
+      "name": "Q32默认输单时间",
+      "source_type": "商机项目信息表及记录系统元数据",
+      "canonical_target": "Opportunity.default_loss_at",
+      "mapping": {
+        "result": "结果=输单",
+        "default_loss_at": "该条商机数据的系统创建时间",
+        "opportunity_id": "商机项目编号"
+      },
+      "period_rule": "Q32本期输单按结果=输单且default_loss_at落在考核期内筛选。",
+      "management_intervention_cutoff": "Q32第三项只接受发生时间严格早于default_loss_at的管理者介入证据；联合拜访使用实际拜访时间，点评或行动建议使用不可变首次提交时间。",
+      "forbidden_fallbacks": ["记录最后更新时间", "Excel文件时间", "数据接入时间"],
+      "missing_time_rule": "缺少系统创建时间时登记数据质量问题，不猜测默认输单时间。"
+    },
+    {
+      "code": "VISIT-FIRST-SUBMISSION-AND-24H-V1",
+      "name": "拜访记录不可变首次提交与24小时起点",
+      "submitted_at_source": "业务系统提供且后续编辑不可覆盖的首次提交时间",
+      "canonical_target": "VisitEvent.submitted_at",
+      "baseline_precedence": ["ended_at", "started_at + duration_minutes", "started_at"],
+      "timely_when": "submitted_at减解析后的基准时间小于或等于24小时",
+      "forbidden_fallbacks": ["最后更新时间", "SourceRecord.ingested_at", "Excel文件创建或修改时间", "拜访日期", "计划拜访日期"],
+      "insufficient_conditions": ["submitted_at缺失", "started_at和ended_at同时缺失"]
+    },
+    {
+      "code": "DAILY-REFLECTION-EXPLANATION-V1",
+      "name": "日报数量标准与统一说明字段",
+      "quantity_standard": "销售代表KPI评分标准.xlsx/公司标准日均拜访数量",
+      "daily_total": "销售代表工作日报.xlsx/当日综合拜访总数",
+      "explanation_field": "销售代表工作日报.xlsx/当日综合拜访总数不足公司规定标准时，需上报当日具体工作安排",
+      "required_when": "当日综合拜访总数低于公司标准日均拜访数量",
+      "check_in_comparison": "Q35正常打卡比较考勤时间与实际拜访时间；原标准中的商机拜访时间已更正为实际拜访时间。",
+      "missing_golden_time_configuration_rule": "Q35未匹配当前公司/团队黄金时间配置时，依赖配置的第4、5、6项各直接记0分，第1、2、3项继续正常评分，整题不转为证据不足。",
+      "reuse_scope": ["当日数量不足说明", "打卡偏差原因与改善", "黄金时间不足原因与改善"],
+      "evidence_rule": "同一原文可被多个Q35子项引用，但每个子项必须独立判定具体性、客观性和改善行动并保留证据引用。"
+    },
+    {
+      "code": "Q13-INFORMATION-COVERAGE-AND-CONTACTS-V3",
+      "name": "Q13季度计划覆盖与拜访联系人解析",
+      "effective_on": "2026-08-10",
+      "grain": "employee_id + calendar_quarter_id",
+      "sources": {
+        "information_collection": "客户现场信息收集表.xlsx/添加日期、销售代表、销售团队、客户编号",
+        "planned_coverage": "客户信息表.xlsx/销售代表、销售团队、客户编号",
+        "visit_contacts": "拜访记录录入.xlsx/联系人信息/关联数据-主键",
+        "team_population": "销售代表结构.xlsx/销售人员编号、销售团队、在职状态"
+      },
+      "metrics": {
+        "personal_collection_ratio": "季度信息收集客户编号去重数÷测评截止时计划覆盖客户编号去重数",
+        "team_average_ratio": "同团队全部当前在职人员personal_collection_ratio算术平均；计划覆盖为0或无收集活动成员按0进入平均并保留证据",
+        "personal_to_team_multiple": "被评估人员personal_collection_ratio÷team_average_ratio",
+        "multi_contact_collection_ratio": "有信息收集活动且季度拜访累计接触至少两个不同联系人的客户数÷季度信息收集客户数"
+      },
+      "contact_identity": "优先使用VisitParticipant.participant_id，即拜访记录的联系人信息/关联数据-主键；同一联系人多次拜访只计一次",
+      "quarter_rule": "考核期跨季度时逐季度生成Q13综合分，再取季度综合分算术平均",
+      "overall_formula": "无信息收集表得0；有表且两项可计算时为0.8+第一项得分×25%+第二项得分×55%",
+      "quality_gates": [
+        "客户编号为空不得按客户名称自动补齐",
+        "团队平均为0时第一项数据不足",
+        "拜访联系人源字段整体缺失或无法解析时第二项数据不足"
+      ],
+      "rule_version": "Q13-v1",
+      "release_status": "released",
+      "team_access": "无个人过滤读取同团队全部当前在职人员，仅用于匿名团队平均",
+      "privacy_rule": "只输出被测人指标和匿名团队平均，不输出其他成员姓名、记录编号或个人比例",
+      "supersedes": ["Q13实际覆盖客户分母", "Q13联系人参与来源待确认"]
+    },
+    {
+      "code": "Q05-WEEKLY-PLAN-FOUR-METRIC-V1",
+      "name": "Q05周计划四项覆盖与质量解析",
+      "effective_on": "2026-08-10",
+      "snapshot_source": "拜访计划（周计划快照）.xlsx",
+      "population_source": "客户信息表.xlsx在各月或周快照截止时的客户分类",
+      "metrics": {
+        "daily_plan_quantity": "实际工作日计划编码去重数达到公司标准日均拜访数量的工作日占比",
+        "opportunity_plan_quality": "商机客户全计划硬门槛；通过后计算有时间安排且目的逻辑合格的商机客户占比",
+        "monthly_target_coverage": "月度计划覆盖目标客户编号去重数除以当月目标客户总数，并对月得分取平均",
+        "quarterly_potential_coverage": "同季度潜力客户仅在首次计划月份计入，第1/2/3月目标份额为40%/35%/25%，对要求完成程度评分"
+      },
+      "identity_rules": ["客户按客户编号去重", "计划按计划编码去重", "禁止按客户名称补齐缺失编号"],
+      "potential_month_targets": {"1": 0.4, "2": 0.35, "3": 0.25},
+      "supersedes": ["Q05目标客户与潜力客户按计划日期及首次入表时间判断先后", "Q05需要下周拜访商机从计划表同源形成分母", "Q05三项平均"],
+      "overall_formula": "四项子指标得分算术平均"
+    },
+    {
+      "code": "Q39-EXISTING-MONTHLY-REPORT-REVIEW-V1",
+      "name": "Q39既有活动月报与月度总结评价",
+      "effective_on": "2026-08-12",
+      "source_file": "销售代表活动月报表.xlsx",
+      "canonical_target": "MonthlyReview + MetricObservation",
+      "grain": "tenant_id + sales_rep_id + report_year + report_month",
+      "source_rule": "只读取DSM系统已有月报统计和销售代表月度总结；AI不得生成、修改、补齐或重算月报数据。",
+      "dimension_count": 8,
+      "dimensions": [
+        "本月日均拜访量",
+        "收集客户信息数",
+        "总客户数",
+        "潜力/目标/商机客户结构",
+        "本考核期间客户覆盖率",
+        "本月目标客户覆盖率",
+        "本季度潜力客户覆盖率",
+        "目标客户整体关系水平得分（均分）"
+      ],
+      "ai_boundary": "AI只对系统事实与月度总结的一致性、原因和对策质量选择固定0—4档；最终平均分由代码计算。",
+      "aggregation": "测评期各月8项得分算术平均；未提交总结月份8项均为0；无活动月报为0。"
+    },
+    {
+      "code": "Q40-ACTION-PLAN-SCORING-V1",
+      "name": "Q40测评周期行动计划与执行评分",
+      "effective_on": "2026-08-12",
+      "source_file": "销售人员行动计划表.xlsx",
+      "canonical_target": "SalesImprovementActionPlan",
+      "grain": "tenant_id + owner_employee_id + assessment_period + action_plan_code",
+      "period_resolution": "负责人匹配被测销售人员，计划完成时间在测评开始日至结束日；不得用实际完成时间替代计划完成时间",
+      "plan_quality_inputs": [
+        "action_description",
+        "expected_result",
+        "owner_employee_id",
+        "planned_completion_date"
+      ],
+      "execution_inputs": [
+        "actual_completion_date",
+        "result_review"
+      ],
+      "metrics": {
+        "smart_score": "逐计划按具体、可衡量、可实现、相关、期限五项固定锚点评0—4分",
+        "pdca_score": "逐计划按计划、执行、检查、改进四环固定锚点评0—4分",
+        "plan_quality_score": "单项=(SMART+PDCA)÷2，再取测评周期全部计划平均",
+        "execution_result_score": "逐计划对照期望结果和结果回顾评0—4分，再取测评周期全部计划平均"
+      },
+      "overall_formula": "测评周期无计划得0分；Q40=全部计划质量平均分×40%+全部执行结果平均分×60%",
+      "quality_gates": [
+        "负责人或计划完成时间为空的记录不进入测评周期计划集合并登记质量问题",
+        "行动或期望结果为空时SMART为0分",
+        "结果回顾为空时执行结果为0分，实际完成时间不能替代结果回顾",
+        "AI只输出逐计划三项分数与理由，不得直接修改最终Q40分"
+      ],
+      "rule_version": "Q40-v1",
+      "ai_rule_version": "DSM-Q40-ACTION-PLAN-AI-v1",
+      "release_status": "released"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+product_code: dsm-taoran-visit-agent
+product_name: DSM TAORAN 拜访智能体
+version: 0.3.0
+status: q33_q34_integrated_baseline
+deployment_modes:
+  - standalone
+  - dsm_module
+interaction_sources:
+  - jiandaoyun
+  - dsm
+  - api
+scenarios:
+  - visit_precheck
+  - visit_effectiveness_evaluation
+  - q40_integration_reserved_disabled_by_default
+data_model:
+  code: DSM-BEHAVIOR-DATA-MODEL
+  version: V1.5
+rule_status: integrated_baseline
+scoring:
+  q33_max_score: 100
+  q34_max_score: 100
+  total_max_score: 200
+submission_policy: advisory_only
+q40_integration:
+  enabled_by_default: false
+  activation: explicit_opt_in
+  outbound_write_to_q40: false

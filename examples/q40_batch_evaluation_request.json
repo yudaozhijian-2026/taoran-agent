@@ -1,0 +1,44 @@
+{
+  "tenant_id": "tenant_demo",
+  "request_id": "q40-backfill-202608-001",
+  "requested_by": "DSM-Q40-AGENT",
+  "required_rule_version": "TAORAN-Q33-Q34-200-V1",
+  "evaluations": [
+    {
+      "context": {
+        "tenant_id": "tenant_demo",
+        "request_id": "q40-backfill-BFJL202608180001-v1",
+        "user_id": "Q40-SERVICE",
+        "source": "dsm",
+        "source_record_id": "BFJL202608180001"
+      },
+      "visit_record_code": "BFJL202608180001",
+      "visit": {
+        "visit_date": "2026-08-18",
+        "employee_id": "EMP001",
+        "customer_id": "KH001",
+        "customer_type_ii": "opportunity",
+        "opportunities": [
+          {
+            "opportunity_id": "OPP001",
+            "historical_stage": "P2",
+            "current_stage": "P3"
+          }
+        ],
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "advance_opportunity",
+        "expected_key_result": "客户确认技术验证日期和预算审批责任人",
+        "process_description": "信息中心主任确认财务负责人负责预算审批，并同意8月25日进行技术验证。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "确认技术验证范围和参会人员",
+        "next_action_expected_result": "客户书面确认验证清单与8月25日验证安排",
+        "next_contact_at": "2026-08-20T10:00:00+08:00",
+        "actual_start_at": "2026-08-18T09:00:00+08:00",
+        "actual_end_at": "2026-08-18T10:00:00+08:00",
+        "submitted_at": "2026-08-18T11:00:00+08:00"
+      },
+      "opportunity_updated": true
+    }
+  ]
+}

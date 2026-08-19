@@ -1,0 +1,289 @@
+{
+  "mapping_version": "visit-copy-ai-evaluation-xlsx-2026-08-18",
+  "status": "copy_widget_ids_synced",
+  "source_workbook": "references/拜访记录录入_AI测评.xlsx",
+  "source_sheet": "拜访记录录入_AI测评",
+  "source_application_id": "60fe7ad79ca2d000075dfab1",
+  "source_entry_id": "6a8408b7c5a0d9454090a5bc",
+  "source_entry_name": "拜访记录录入_AI测评",
+  "field_reference_mode": "widget_id_with_field_name_fallback",
+  "fields": {
+    "visit_date": {
+      "field_name": "拜访日期",
+      "widget_id": "_widget_1574480762008",
+      "api_name": "_widget_1574480762008",
+      "widget_type": "datetime"
+    },
+    "employee_id": {
+      "field_name": "销售代表（通讯录）",
+      "aliases": [
+        "销售代表"
+      ],
+      "widget_id": "_widget_1574314917310",
+      "api_name": "_widget_1574314917310",
+      "widget_type": "user"
+    },
+    "customer_id": {
+      "field_name": "客户编号",
+      "widget_id": "_widget_1574314917498",
+      "api_name": "_widget_1574314917498",
+      "widget_type": "text"
+    },
+    "customer_type_ii": {
+      "field_name": "客户分类II",
+      "widget_id": "_widget_1574488843654",
+      "api_name": "_widget_1574488843654",
+      "widget_type": "text"
+    },
+    "visit_method": {
+      "field_name": "拜访方式",
+      "widget_id": "_widget_1574488844101",
+      "api_name": "_widget_1574488844101",
+      "widget_type": "combo"
+    },
+    "is_appointment": {
+      "field_name": "是否预约",
+      "widget_id": "_widget_1574484940223",
+      "api_name": "_widget_1574484940223",
+      "widget_type": "combo"
+    },
+    "purpose_code": {
+      "field_name": "拜访目的",
+      "widget_id": "_widget_1574487515265",
+      "api_name": "_widget_1574487515265",
+      "widget_type": "combo"
+    },
+    "other_purpose": {
+      "field_name": "具体其他目的",
+      "widget_id": "_widget_1785555283119",
+      "api_name": "_widget_1785555283119",
+      "widget_type": "text"
+    },
+    "expected_key_result": {
+      "field_name": "想取得的关键结果",
+      "widget_id": "_widget_1627492918701",
+      "api_name": "_widget_1627492918701",
+      "widget_type": "text"
+    },
+    "process_description": {
+      "field_name": "过程详细描述",
+      "widget_id": "_widget_1574484940277",
+      "api_name": "_widget_1574484940277",
+      "widget_type": "textarea"
+    },
+    "self_assessment": {
+      "field_name": "评价",
+      "widget_id": "_widget_1574488844083",
+      "api_name": "_widget_1574488844083",
+      "widget_type": "combo"
+    },
+    "next_action_purpose": {
+      "field_name": "下一次行动目的",
+      "widget_id": "_widget_1574488844353",
+      "api_name": "_widget_1574488844353",
+      "widget_type": "combo"
+    },
+    "next_action_other_purpose": {
+      "field_name": "下一次具体其他目的",
+      "widget_id": "_widget_1785555283134",
+      "api_name": "_widget_1785555283134",
+      "widget_type": "text"
+    },
+    "next_action_expected_result": {
+      "field_name": "下次拜访期望的关键结果",
+      "widget_id": "_widget_1635904515206",
+      "api_name": "_widget_1635904515206",
+      "widget_type": "text"
+    },
+    "next_contact_at": {
+      "field_name": "下一次联系客户时间安排",
+      "widget_id": "_widget_1574488844406",
+      "api_name": "_widget_1574488844406",
+      "widget_type": "datetime"
+    },
+    "actual_start_at": {
+      "field_name": "实际拜访开始时间",
+      "widget_id": "_widget_1785914421532",
+      "api_name": "_widget_1785914421532",
+      "widget_type": "datetime"
+    },
+    "actual_end_at": {
+      "field_name": "实际拜访结束时间",
+      "widget_id": "_widget_1785914421533",
+      "api_name": "_widget_1785914421533",
+      "widget_type": "datetime"
+    },
+    "duration_minutes": {
+      "field_name": "拜访时长",
+      "widget_id": "_widget_1574488844326",
+      "api_name": "_widget_1574488844326",
+      "widget_type": "text"
+    },
+    "evidence_ids": {
+      "field_name": "上传相关文件",
+      "aliases": [
+        "微信/QQ/邮件截图"
+      ],
+      "widget_id": "_widget_1574488844290",
+      "api_name": "_widget_1574488844290",
+      "widget_type": "upload"
+    }
+  },
+  "system_fields": {
+    "submitted_at": "_createTime",
+    "source_record_id": "_id"
+  },
+  "subforms": {
+    "participants": {
+      "field": {
+        "field_name": "联系人信息",
+        "widget_id": "_widget_1574484940098",
+        "api_name": "_widget_1574484940098",
+        "widget_type": "subform"
+      },
+      "children": {
+        "contact_id": {
+          "field_name": "关联数据-主键",
+          "widget_id": "_widget_1416718540131",
+          "api_name": "_widget_1416718540131",
+          "widget_type": "text"
+        }
+      }
+    },
+    "opportunities": {
+      "field": {
+        "field_name": "关联商机阶段信息",
+        "widget_id": "_widget_1785314290795",
+        "api_name": "_widget_1785314290795",
+        "widget_type": "subform"
+      },
+      "children": {
+        "opportunity_id": {
+          "field_name": "商机编号",
+          "widget_id": "_widget_1785314290802",
+          "api_name": "_widget_1785314290802",
+          "widget_type": "text"
+        },
+        "historical_stage": {
+          "field_name": "历史商机阶段",
+          "widget_id": "_widget_1785314290798",
+          "api_name": "_widget_1785314290798",
+          "widget_type": "text"
+        },
+        "current_stage": {
+          "field_name": "最新商机阶段",
+          "widget_id": "_widget_1785314290799",
+          "api_name": "_widget_1785314290799",
+          "widget_type": "combo"
+        }
+      }
+    }
+  },
+  "record_fields": {
+    "visit_record_code": {
+      "field_name": "拜访记录编码",
+      "widget_id": "_widget_1681282235095",
+      "api_name": "_widget_1681282235095",
+      "widget_type": "sn"
+    },
+    "manager_comment": {
+      "field_name": "经理点评",
+      "widget_id": "_widget_1574561817504",
+      "api_name": "_widget_1574561817504",
+      "widget_type": "text"
+    }
+  },
+  "value_maps": {
+    "customer_type_ii": {
+      "潜力客户": "potential",
+      "目标客户": "target",
+      "商机客户": "opportunity"
+    },
+    "visit_method": {
+      "面对面拜访": "face_to_face",
+      "视频会议": "video",
+      "电话拜访": "phone",
+      "微信/QQ/邮件沟通": "asynchronous_message",
+      "微信/邮件/QQ沟通": "asynchronous_message"
+    },
+    "self_assessment": {
+      "完全达到": "achieved",
+      "达到目的": "achieved",
+      "部分达到": "partially_achieved",
+      "部分达到目的": "partially_achieved",
+      "未达到": "not_achieved",
+      "未达到目的": "not_achieved"
+    },
+    "is_appointment": {
+      "是": true,
+      "已预约": true,
+      "否": false,
+      "未预约": false
+    }
+  },
+  "output_fields": {
+    "total_score": {
+      "field_name": "AI评分",
+      "widget_id": "_widget_1787037882562",
+      "api_name": "_widget_1787037882562",
+      "widget_type": "text"
+    },
+    "ai_opinion": {
+      "field_name": "AI反馈意见",
+      "widget_id": "_widget_1787037882560",
+      "api_name": "_widget_1787037882560",
+      "widget_type": "textarea"
+    }
+  },
+  "available_field_names": [
+    "标题",
+    "销售代表（通讯录）",
+    "拜访日期",
+    "客户名称",
+    "拜访方式",
+    "拜访记录签到识别",
+    "实际拜访开始时间",
+    "实际拜访结束时间",
+    "考勤时间",
+    "时间状态",
+    "异常原因说明",
+    "拜访时长",
+    "通话时长",
+    "微信/QQ/邮件截图",
+    "上传相关文件",
+    "联系人信息.关联数据-主键",
+    "参加拜访人员",
+    "联合拜访打卡识别",
+    "是否预约",
+    "拜访目的",
+    "具体其他目的",
+    "想取得的关键结果",
+    "过程详细描述",
+    "评价",
+    "经理点评",
+    "下一次行动目的",
+    "下一次具体其他目的",
+    "下次拜访期望的关键结果",
+    "下一次联系客户时间安排",
+    "客户分类I",
+    "客户分类II",
+    "客户分类III",
+    "客户分类IV",
+    "国家/地区",
+    "关联商机阶段信息.历史商机阶段",
+    "关联商机阶段信息.最新商机阶段",
+    "关联商机阶段信息.商机编号",
+    "拜访记录编码",
+    "折算比例",
+    "折算后的综合拜访数量",
+    "销售代表",
+    "公司名称（通讯录）",
+    "销售团队（通讯录）",
+    "销售团队",
+    "客户编号",
+    "AI评分",
+    "AI反馈意见"
+  ],
+  "last_schema_sync_at": "2026-08-18T08:38:30.501177+00:00",
+  "source_data_modify_time": "2026-08-18T07:04:20.711Z"
+}

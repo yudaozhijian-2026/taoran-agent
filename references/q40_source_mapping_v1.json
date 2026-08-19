@@ -1,0 +1,2445 @@
+{
+  "schema_version": "1.0.0",
+  "mapping_code": "DSM-Q40-SOURCE-MAPPING",
+  "mapping_version": "V1",
+  "status": "in_progress",
+  "updated_on": "2026-08-14",
+  "standard_version": "V3",
+  "model_version": "DSM-BEHAVIOR-DATA-MODEL/V1.5",
+  "governance_principle": "数据源映射独立于Q40 V3标准保存；2026-08-11业务方授权审计确定性规则与AI边界，已将Q09、Q13、Q14、Q20、Q26、Q33、Q38中可直接计算的‘AI检查/估计’改为系统确定性公式。2026-08-12已发布Q09-v1与Q13-v1；Q13团队明细仅用于内存聚合，正式输出只保留匿名团队平均。",
+  "questions": {
+    "Q01": {
+      "mapping_status": "calendar_adapter_confirmed_runtime_gate_required",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；当前未结束自然周一律不进入Q01完整周指标。",
+      "prompt": "我对自己每天的拜访活动数量是有最低要求的",
+      "confirmed_on": "2026-08-12",
+      "mapping_scope": "解决月度有效工作天数无法准确拆到自然周的问题；引入外部日历适配层并物化为逐日工作日历快照。",
+      "source_tables": [
+        "公司财年月历.xlsx",
+        "销售代表工作日报.xlsx",
+        "拜访记录录入.xlsx"
+      ],
+      "calendar_resolution": {
+        "canonical_targets": [
+          "WorkCalendarDay",
+          "EmployeeWorkdayAdjustment"
+        ],
+        "adapter_standard": "RFC 5545 iCalendar；可由Google Calendar、Microsoft Graph或企业HR日历连接器实现",
+        "source_priority": [
+          "企业明确维护的逐日工作日历",
+          "租户批准的外部日历或HR日历事件",
+          "国务院年度节假日及调休通知加周一至周五基线"
+        ],
+        "week_definition": "ISO自然周，周一开始、周日结束",
+        "materialization_rule": "评分前生成逐日快照并锁定calendar_version、来源引用和内容哈希；评分时禁止实时调用外部日历",
+        "valid_workday_rule": "企业工作日经人员逐日调整后workday_fraction大于0",
+        "monthly_reconciliation": "逐日企业工作日合计与公司财年月历有效工作天数对账"
+      },
+      "activity_time_aggregation": {
+        "confirmed_on": "2026-08-10",
+        "rule": "同一销售代表同一日的多个拜访活动时间区间重叠时，活动占用时间按所有有效区间的时间并集计算，重叠部分只计一次。",
+        "interval_resolution": "区间结束时间优先取实际拜访结束时间；缺失时用实际拜访开始时间+拜访时长解析。",
+        "quantity_boundary": "Q01 V3的拜访数量仍按拜访记录和生效折算比例计算；时间并集只用于活动占用时长、时间冲突和证据展示，不把重叠记录自动删除或合并为一条拜访数量。",
+        "canonical_fields": [
+          "VisitEvent.started_at",
+          "VisitEvent.ended_at",
+          "VisitEvent.duration_minutes"
+        ]
+      },
+      "insufficient_conditions": [
+        "只有月度有效工作天数而没有逐日日期时，不能平均分摊到周，判为数据不足。",
+        "销售代表工作日报整体不可读或日报日期字段缺失时，无法逐日推导人员缺勤，判为数据不足。",
+        "日历日期缺失、跨版本或与月度有效工作天数冲突时，不进入正式评分。"
+      ]
+    },
+    "Q02": {
+      "mapping_status": "visit_method_and_interval_completeness_confirmed",
+      "missing_golden_time_standard_rule": "未配置适用于当前公司/团队的拜访黄金时间标准时，直接记E=0分，状态为SCORED并正常输出报告，不判为证据不足。",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；黄金时间总时长只累计至实际评分截止日的国家法定工作日。",
+      "prompt": "我的黄金工作时间（比如上午9：30-11：30；下午2：30-4：30）基本被客户拜访或推进动作填满",
+      "confirmed_on": "2026-08-12",
+      "source_tables": [
+        "拜访黄金时间标准.xlsx",
+        "拜访记录录入.xlsx"
+      ],
+    "activity_scope": {
+      "qualifying_visit_methods": [
+        "面对面拜访"
+      ],
+      "activity_count_denominator": "诊断期内拜访方式为面对面拜访的全部有效拜访记录数量",
+      "other_methods": "视频会议、电话、微信/QQ/邮件等方式不进入时间占用或活动数量分母、分子"
+    },
+    "interval_resolution": {
+      "priority": "优先使用实际拜访结束时间；缺失时使用实际拜访开始时间加拜访时长",
+      "incomplete_record_rule": "单条面对面拜访同时缺少实际拜访结束时间和拜访时长时，登记DQ-H01-02-MISSING-END-AND-DURATION并排除该条，使用其余有效面对面拜访继续评分；仅当排除后没有任何可计算记录时才判为数据不足。"
+    }
+    },
+    "Q03": {
+      "mapping_status": "runtime_field_confirmed_archive_pending",
+      "prompt": "每一次客户拜访前，我都会明确本次拜访要推进的具体目标和想取得的关键成果",
+      "confirmed_on": "2026-08-10",
+      "source_tables": [
+        "拜访记录录入.xlsx"
+      ],
+      "source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "拜访目的",
+          "具体其他目的",
+          "想取得的关键结果",
+          "过程详细描述"
+        ],
+        "field_mapping": {
+          "VisitEvent.purpose_code": "拜访目的",
+          "VisitEvent.other_purpose": "具体其他目的"
+        }
+      },
+      "calculation_mapping": {
+        "other_purpose_rule": "本次拜访目的选择其他时，具体其他目的是该拜访目的的具体解释和描述，作为解析后的实际拜访目的直接参与价值链目的识别与具体性判断；不得仅因原始枚举为其他判为不符合。具体其他目的为空时视为目的缺失；解析后为协助项目实施时不计入价值链驱动拜访；不得与下一次具体其他目的混用。"
+      },
+      "archive_note": "该字段已由业务确认在DSM SaaS拜访记录录入表中增加；收到更新工作簿前只更新模型契约，不伪造源字段目录中的列号、样例值和文件哈希。"
+    },
+    "Q04": {
+      "mapping_status": "next_action_and_multi_opportunity_mapping_confirmed",
+      "prompt": "我能够避免进行没有明确目的的客户拜访",
+      "confirmed_on": "2026-08-10",
+      "mapping_scope": "覆盖Q04第三项的下一次拜访目的逻辑一致性，并确认同一客户多商机时，一条拜访记录可同时关联多条商机。",
+      "source_tables": [
+        "拜访记录录入.xlsx"
+      ],
+      "source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "销售代表",
+          "拜访日期",
+          "客户编号",
+          "拜访目的",
+          "想取得的关键结果",
+          "过程详细描述",
+          "评价",
+          "下一步行动目的",
+          "下一次具体其他目的",
+          "下次拜访期望的关键结果",
+          "下次联系客户时间安排"
+          ,"关联商机阶段信息/商机项目名称"
+          ,"关联商机阶段信息/历史商机阶段"
+          ,"关联商机阶段信息/最新商机阶段"
+          ,"关联商机阶段信息/商机编号"
+        ]
+      },
+      "opportunity_linkage": {
+        "canonical_target": "VisitOpportunityStageSnapshot",
+        "cardinality": "VisitEvent 1:N VisitOpportunityStageSnapshot",
+        "rule": "同一拜访记录选择多条商机时，按商机编号逐条拆分并共享拜访记录编码；Q04判断本次目的、结果和后续逻辑时应检查全部已关联商机，不得只取第一条。",
+        "quality_gate": "商机编号为空、重复或多值字段无法逐条对齐时判为数据不足或冲突，禁止仅按商机名称自动匹配。"
+      },
+      "calculation_mapping": {
+        "grain": "拜访记录编码",
+        "rule": "AI结合本次拜访目的、关键结果、过程和评价，判断同一记录中的下一步行动目的及具体其他目的是否形成合理承接。",
+        "direct_linkage": "下一行动目的及具体其他目的与当前拜访同属一条记录，以拜访记录编码直接归属；Q04目的字段不从未来计划回填。",
+        "missing_data": "下一行动目的为空时保留为缺失证据；时间字段可按共享规则回退，但不影响Q04目的来源。",
+        "score_thresholds": "沿用Q04判断标准V3：一致记录占比90%、80%、70%、60%对应4、3、2、1、0分。"
+      }
+    },
+    "Q05": {
+      "mapping_status": "four_snapshot_metrics_confirmed",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；工作日分母截至实际评分截止日，但评分截止前已经提交的未来计划继续进入相应计划指标。",
+      "prompt": "我知道按照什么原则去安排下周拜访活动",
+      "confirmed_on": "2026-08-10",
+      "standard_change": "Q05由原三项排序判断更新为周计划快照四项覆盖与质量判断；原同日入表时间排序和需要下周拜访商机分母规则不再适用。",
+      "source_tables": [
+        "拜访计划（周计划快照）.xlsx",
+        "客户信息表.xlsx",
+        "商机项目信息表.xlsx",
+        "拜访目的设置表.xlsx",
+        "销售代表KPI评分标准.xlsx"
+      ],
+      "snapshot_rule": "全部计划指标只读取对应系统版本、租户和周的生效周计划快照；DSM SaaS默认每周一12:00，其他版本读取租户配置。截止后修改不得回写历史评分。",
+      "identity_rule": "客户均以客户编号去重，计划以计划编码去重；客户编号为空不得按客户名称自动合并。",
+      "submetrics": [
+        {
+          "metric_code": "Q05_DAILY_PLAN_QUANTITY_COMPLIANCE",
+          "standard_component": "周计划快照中每日计划拜访数量达标工作日占比",
+          "plan_source": {
+            "source_file": "拜访计划（周计划快照）.xlsx",
+            "sheet_name": "周拜访计划制定",
+            "fields": ["周计划快照时间", "计划编码", "公司名称", "销售代表", "销售团队", "计划拜访日期", "客户编号"]
+          },
+          "reference_source": {
+            "source_file": "销售代表KPI评分标准.xlsx",
+            "sheet_name": "销售代表KPI评分标准",
+            "lookup_fields": ["公司名称（通讯录）", "销售团队"],
+            "value_field": "公司标准日均拜访数量"
+          },
+          "workday_source": "WorkCalendarDay与EmployeeWorkdayAdjustment在评分前形成的锁定实际工作日快照",
+          "calculation_mapping": {
+            "daily_plan_quantity": "按销售代表、计划拜访日期统计生效快照中的计划编码去重数。",
+            "compliant_day": "实际工作日的每日计划拜访数量大于或等于生效的公司标准日均拜访数量。",
+            "ratio": "达标实际工作日数量÷实际工作日数量。",
+            "score_thresholds": "≥90%、≥80%、≥70%、≥50%、<50%对应4、3、2、1、0分。"
+          }
+        },
+        {
+          "metric_code": "Q05_OPPORTUNITY_CUSTOMER_PLAN_AND_PURPOSE",
+          "standard_component": "所有商机客户有计划，且时间安排与拜访目的符合逻辑",
+          "customer_source": {
+            "source_file": "客户信息表.xlsx",
+            "sheet_name": "客户信息表",
+            "fields": ["销售代表", "客户编号", "客户类型II", "销售团队"]
+          },
+          "plan_source": {
+            "source_file": "拜访计划（周计划快照）.xlsx",
+            "sheet_name": "周拜访计划制定",
+            "fields": ["周计划快照时间", "计划编码", "销售代表", "计划拜访日期", "客户类型II", "拜访目的", "具体其他目的", "期望得到的关键结果", "客户编号"]
+          },
+          "opportunity_context_source": {
+            "source_file": "商机项目信息表.xlsx",
+            "sheet_name": "商机项目信息表",
+            "fields": ["商机项目编号", "客户编号", "项目当前阶段", "商机项目信息状态", "结果", "公司业绩确认"]
+          },
+          "purpose_policy_source": {
+            "source_file": "拜访目的设置表.xlsx",
+            "sheet_name": "拜访目的设置表",
+            "fields": ["客户类型", "拜访目的"]
+          },
+          "calculation_mapping": {
+            "population": "周计划快照截止时客户信息表中客户类型II=商机客户的客户编号去重集合。",
+            "hard_gate": "任一商机客户在对应计划周期没有任何周计划快照记录时，本子项直接得0分。",
+            "valid_plan": "客户有计划日期，且拜访目的符合客户类型允许目的；AI结合活跃商机当前P1—P5阶段、最近拜访结果和期望关键结果判断目的逻辑。",
+            "ratio": "有时间安排且目的符合逻辑的商机客户数÷全部商机客户数。",
+            "score_thresholds_after_gate": "全部商机客户均有计划时，比例≥90%、≥70%、≥50%、<50%对应4、3、2、1分。"
+          },
+        "structured_ai_fact": "拜访目的逻辑判断必须提供逐客户、逐计划结构化证据；AI按V3标准自动判断并由规则引擎落分，不需要人工候选事实确认。"
+        },
+        {
+          "metric_code": "Q05_MONTHLY_TARGET_PLAN_COVERAGE",
+          "standard_component": "目标客户月度计划覆盖率得分并取月平均",
+          "customer_source": {
+            "source_file": "客户信息表.xlsx",
+            "sheet_name": "客户信息表",
+            "fields": ["销售代表", "客户编号", "客户类型II", "销售团队"]
+          },
+          "plan_source": {
+            "source_file": "拜访计划（周计划快照）.xlsx",
+            "sheet_name": "周拜访计划制定",
+            "fields": ["周计划快照时间", "计划编码", "销售代表", "计划拜访日期", "客户类型II", "客户编号"]
+          },
+          "calculation_mapping": {
+            "monthly_population": "每个评估月份锁定客户快照中客户类型II=目标客户的客户编号去重集合。",
+            "monthly_planned": "该月全部生效周计划快照中至少出现一次的目标客户编号去重集合。",
+            "monthly_ratio": "月度已计划目标客户数÷月度目标客户总数。",
+            "monthly_score": "月度覆盖率≥100%、≥95%、≥90%、≥85%、<85%对应4、3、2、1、0分。",
+            "submetric_score": "考核期各可计算月份得分的算术平均值；不使用原目标/潜力客户先后排序。"
+          }
+        },
+        {
+          "metric_code": "Q05_QUARTERLY_POTENTIAL_PLAN_COVERAGE",
+          "standard_component": "潜力客户按季度第1/2/3月40%/35%/25%节奏去重覆盖",
+          "customer_source": {
+            "source_file": "客户信息表.xlsx",
+            "sheet_name": "客户信息表",
+            "fields": ["销售代表", "客户编号", "客户类型II", "销售团队"]
+          },
+          "plan_source": {
+            "source_file": "拜访计划（周计划快照）.xlsx",
+            "sheet_name": "周拜访计划制定",
+            "fields": ["周计划快照时间", "计划编码", "销售代表", "计划拜访日期", "客户类型II", "客户编号"]
+          },
+          "calculation_mapping": {
+            "quarter_population": "季度各月锁定客户快照中客户类型II=潜力客户的客户编号去重集合。",
+            "deduplication": "同一潜力客户同季度只计一次；在首次进入生效周计划快照的季度月份计入该月新增覆盖。",
+            "monthly_required_share": {"quarter_month_1": 0.4, "quarter_month_2": 0.35, "quarter_month_3": 0.25},
+            "requirement_attainment": "当月新增去重计划覆盖率÷对应月份要求比例，并封顶为100%。",
+            "monthly_score": "要求完成程度≥95%、≥90%、≥85%、≥80%、<80%对应4、3、2、1、0分。",
+            "submetric_score": "考核期内各可计算季度月份得分的算术平均值。"
+          }
+        }
+      ],
+      "overall_formula": "四项子指标得分的算术平均值。",
+      "zero_population_rule": "任一子指标缺少必要的周计划快照、客户分类、实际工作日或KPI标准时判为数据不足，不自动按0分；商机客户漏排硬门槛除外。",
+      "superseded_rules": [
+        "需要下周拜访的商机从拜访计划制定表同源形成分母。",
+        "目标客户与潜力客户按计划日期和SourceRecord.source_created_at判断先后。",
+        "三项得分平均。"
+      ]
+    },
+    "Q06": {
+      "mapping_status": "q06_deterministic_rule_released",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；当前未结束自然周一律排除。",
+      "prompt": "我通常能够主动提前安排好下周的拜访活动，并按照计划执行",
+      "confirmed_on": "2026-08-07",
+      "source_tables": [
+        "拜访计划（周计划快照）.xlsx",
+        "拜访记录录入.xlsx"
+      ],
+      "confirmed_decisions": [
+        "周计划符合率按照客户数计算，并以客户编号去重。",
+        "客户在计划对应的自然周内发生实际拜访即可计为执行，不要求实际拜访日期等于计划拜访日期。",
+        "同一客户在同一周计划多次而实际完成一次时，按客户编号去重后只计一次计划客户和一次已完成客户。",
+        "实际完成只统计拜访方式为面对面拜访或视频会议的记录。",
+        "周计划快照中的计划均为面对面拜访或视频会议计划，分母不再保留计划方式待确认问题。",
+        "周计划快照时间由不同版本DSM系统的用户自定义。",
+        "DSM SaaS版本的周计划快照时间为每周一中午12点。"
+      ],
+      "snapshot_policy": {
+        "source_file": "拜访计划（周计划快照）.xlsx",
+        "timestamp_field": "周计划快照时间",
+        "configuration_mode": "按DSM系统版本和租户配置",
+        "customizable": true,
+        "timezone": "使用租户配置时区",
+        "dsm_saas_default": {
+          "weekday": "Monday",
+          "local_time": "12:00:00",
+          "display_text": "每周一中午12点"
+        },
+        "rule": "以评价所用DSM系统版本的生效配置确定快照截止时间；DSM SaaS未覆盖配置时采用每周一12:00。"
+      },
+      "plan_method_scope_confirmation": "周计划快照均为面对面拜访或视频会议计划；虽然快照物理表没有单独的计划拜访方式字段，但该表业务契约已确认只保存这两类计划，因此可直接进入Q06计划客户分母。",
+      "submetrics": [
+        {
+          "metric_code": "Q06_QUALIFIED_WEEKLY_PLAN_RATIO",
+          "standard_component": "诊断期完整周中周计划数量安排合格周占比",
+          "source": {
+            "source_file": "拜访计划（周计划快照）.xlsx",
+            "sheet_name": "周拜访计划制定",
+            "fields": [
+              "周计划快照时间",
+              "计划编码",
+              "公司名称",
+              "销售代表",
+              "销售团队",
+              "计划拜访日期",
+              "客户编号"
+            ]
+          },
+          "calculation_mapping": {
+            "diagnosis_window": "只取诊断期内完整自然周",
+            "snapshot_cutoff": "按snapshot_policy读取对应系统版本和租户的周计划快照",
+        "ratio": "完整周计划编码去重数量达到公司标准日均拜访数量×该周国家法定工作日数时视为合格；合格完整周数除以完整周总数",
+            "score_thresholds": "沿用Q06判断标准V3：95%、80%、65%、50%对应4、3、2、1、0分"
+          }
+        },
+        {
+          "metric_code": "Q06_WEEKLY_PLAN_EXECUTION_COMPLIANCE",
+          "standard_component": "诊断周期内完整周的周计划平均符合率",
+          "plan_source": {
+            "source_file": "拜访计划（周计划快照）.xlsx",
+            "sheet_name": "周拜访计划制定",
+            "fields": [
+              "周计划快照时间",
+              "计划编码",
+              "销售代表",
+              "计划拜访日期",
+              "客户编号"
+            ]
+          },
+          "actual_source": {
+            "source_file": "拜访记录录入.xlsx",
+            "sheet_name": "拜访记录录入",
+            "fields": [
+              "拜访记录编码",
+              "销售代表",
+              "拜访日期",
+              "拜访方式",
+              "客户编号"
+            ]
+          },
+          "calculation_mapping": {
+            "grain": "销售代表、完整自然周、客户编号",
+            "planned_customer_set": "从该周生效快照中取得客户编号非空的计划客户集合，按客户编号去重",
+            "visited_customer_set": "从拜访记录中取得同一销售代表在计划周内、拜访方式为面对面拜访或视频会议且客户编号非空的客户集合，按客户编号去重",
+            "matched_customer_set": "计划客户集合与实际拜访客户集合按销售代表和客户编号取交集",
+            "repeat_rule": "同一客户同周计划多次、符合条件的实际拜访一次时，计划集合和完成集合均按客户编号只计一次",
+            "qualifying_visit_methods": [
+              "面对面拜访",
+              "视频会议"
+            ],
+            "weekly_ratio": "匹配客户数除以计划客户数",
+            "date_rule": "实际拜访日期位于计划对应自然周内即可，不要求等于计划拜访日期",
+            "diagnosis_average": "诊断期各完整周的周计划符合率做算术平均",
+            "score_thresholds": "沿用Q06判断标准V3：80%、70%、60%、50%对应4、3、2、1、0分",
+            "missing_customer_id": "客户编号为空的计划或拜访记录登记为数据质量问题，不使用客户名称自动合并"
+          }
+        }
+      ],
+    "open_execution_questions": [],
+    "human_confirmation_required": false
+    },
+    "Q07": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我会追求覆盖更多的客户，无论客户当前有没有没有明确需求或购买意向",
+      "confirmed_on": "2026-08-11",
+      "mapping_scope": "确认客户数量标准、独立采购决策链、客户标准合理性和实际客户数量四项确定性映射。",
+      "source_tables": [
+        "销售代表KPI评分标准.xlsx",
+        "客户信息表.xlsx",
+        "拜访记录录入.xlsx",
+        "商机项目信息表.xlsx"
+      ],
+      "standard_source": {
+        "source_file": "销售代表KPI评分标准.xlsx",
+        "sheet_name": "销售代表KPI评分标准",
+        "lookup_fields": [
+          "公司名称（通讯录）",
+          "销售团队"
+        ],
+        "daily_visit_standard_field": "公司标准日均拜访数量",
+        "customer_count_standard_field": "公司标准客户数量"
+      },
+      "confirmed_calculation": {
+        "minimum_visit_quantity_for_25_days": "公司标准日均拜访数量×25",
+        "customer_standard_reasonableness_deviation": "ABS(公司标准客户数量÷(公司标准日均拜访数量×25)-1)",
+        "actual_customer_count": "客户信息表中当前销售代表的客户编号去重数",
+        "actual_customer_count_deviation": "ABS(实际客户数量÷公司标准客户数量-1)",
+        "decision_chain_denominator": "商机项目信息表中当前销售代表的客户编号去重数",
+        "independent_decision_chain_customer": "同一客户任一商机的采购决策或采购决策链字段有有效填写内容即计入",
+        "decision_chain_rate": "独立采购决策链客户编号去重数÷商机客户编号去重数；分母为0时该项比例按0处理",
+        "decision_chain_thresholds": "大于等于100%、90%、80%、70%、低于70%对应4、3、2、1、0分",
+        "deviation_score_thresholds": "绝对偏差率小于等于5%、15%、20%、25%、大于25%对应4、3、2、1、0分",
+        "composite_score": "1+独立采购决策链得分×35%+客户标准合理性得分×20%+实际客户数量准确性得分×20%"
+      },
+      "execution_contract": {
+        "rule_version": "Q07-v1",
+        "customer_scope": "连接器按测评销售代表优先匹配成员字段后读取客户信息表和商机项目信息表",
+        "customer_dedup_key": "客户编号",
+        "multiple_opportunities": "同一客户多个商机只计一个客户；任一商机填写采购决策链即可判为有独立采购决策链",
+        "empty_customer_standard": "公司标准客户数量为空时整题按V3计0分",
+        "missing_daily_visit_standard": "客户数量标准存在但公司标准日均拜访数量缺失时不猜分，返回数据不足",
+        "source_truncation": "任一来源达到读取上限时不计算正式分"
+      },
+      "open_execution_questions": []
+    },
+    "Q08": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我对客户池进行了持续管理，并保持结构清晰",
+      "confirmed_on": "2026-08-10",
+      "mapping_scope": "确认SaaS企业比例标准按潜力客户、目标客户、商机客户顺序保存为5.5:3:1.5；Q08原V3文本保持不变，执行时使用企业生效配置计算商机/目标和目标/潜力两个标准比值。",
+      "source_tables": [
+        "客户信息表.xlsx",
+        "客户类型II（定义及比例标准）xlsx.xlsx"
+      ],
+      "confirmed_decisions": [
+        "SaaS标准表的比例顺序固定为潜力客户:目标客户:商机客户。",
+        "当前默认标准为5.5:3:1.5，即潜力客户55%、目标客户30%、商机客户15%。",
+        "Q08分别比较实际商机/目标与标准商机/目标、实际目标/潜力与标准目标/潜力的绝对偏差率。",
+        "企业存在生效自定义比例时优先使用企业配置；未配置时使用5.5:3:1.5。",
+        "客户类型II为空时按潜力客户处理。",
+        "Q08客户数量直接按照评价时客户信息表中的当前客户类型II统计，不使用历史分类快照回溯。",
+        "评价时目标客户数或潜力客户数任一为0时，Q08综合得分直接为0分。"
+      ],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": [
+          "销售代表",
+          "客户编号",
+          "公司名称（通讯录）",
+          "客户类型II",
+          "销售团队"
+        ],
+        "canonical_targets": [
+          "Customer",
+          "CustomerClassificationSnapshot"
+        ]
+      },
+      "ratio_policy_source": {
+        "source_file": "客户类型II（定义及比例标准）xlsx.xlsx",
+        "sheet_name": "客户类型II（定义及比例标准）",
+        "fields": [
+          "公司名称",
+          "潜力客户数占比标准",
+          "目标客户数占比标准",
+          "商机客户数占比标准",
+          "不同客户类型比例标准（潜力客户数：目标客户数：商机客户数）"
+        ],
+        "canonical_target": "BehaviorPolicy:customer_segment_definition_and_ratio",
+        "confirmed_default": {
+          "potential_customer_ratio": 0.55,
+          "target_customer_ratio": 0.3,
+          "opportunity_customer_ratio": 0.15,
+          "ratio_text": "5.5:3:1.5"
+        }
+      },
+      "calculation_mapping": {
+        "grain": "租户、销售代表、评价截止时间对应的客户信息表当前状态",
+        "customer_population": "客户信息表中当前归属该销售代表的全部客户；按客户编号去重，客户编号为空时登记数据质量问题",
+        "classification_rule": "直接读取客户信息表当前客户类型II；为空按潜力客户；不回溯历史分类快照",
+        "actual_opportunity_target_ratio": "商机客户去重数除以目标客户去重数",
+        "standard_opportunity_target_ratio": "生效商机客户占比标准除以生效目标客户占比标准；默认值为0.15/0.30=0.5",
+        "opportunity_target_deviation": "ABS(实际商机/目标比值除以标准商机/目标比值-1)",
+        "actual_target_potential_ratio": "目标客户去重数除以潜力客户去重数",
+        "standard_target_potential_ratio": "生效目标客户占比标准除以生效潜力客户占比标准；默认值为0.30/0.55",
+        "ratio_order_validation": "企业配置须满足潜力客户占比标准≥目标客户占比标准≥商机客户占比标准；反向旧值视为顺序错误，不得覆盖V3默认5.5:3:1.5",
+        "target_potential_deviation": "ABS(实际目标/潜力比值除以标准目标/潜力比值-1)",
+        "score_thresholds": "两个绝对偏差率均按小于等于10%、15%、20%、25%、大于25%对应4、3、2、1、0分；Q08综合得分为两项得分算术平均值",
+        "zero_population_rule": "目标客户去重数=0 OR 潜力客户去重数=0 时，不执行除法和偏差计算，Q08直接返回SCORED 0分，并保留客户分类计数证据。"
+      },
+      "execution_contract": {
+        "rule_version": "Q08-v1",
+        "scoring_method": "q08_deterministic",
+        "default_standard_ratio": "商机客户:目标客户:潜力客户=1.5:3:5.5",
+        "counting_field": "客户信息表.客户类型II",
+        "score_formula": "(商机/目标偏差得分+目标/潜力偏差得分)÷2",
+        "published_on": "2026-08-11"
+      },
+      "open_execution_questions": [],
+      "resolved_source_questions": [
+        "2026-08-10已确认目标客户或潜力客户数为0时Q08为0分。"
+      ]
+    },
+    "Q09": {
+      "mapping_status": "deterministic_rule_ready",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；当前月和当前季度的已发生自然日比例以实际评分截止日计算。",
+      "prompt": "我接触的客户数量保持在较高水平且呈现增长趋势",
+      "confirmed_on": "2026-08-10",
+      "source_tables": [
+        "客户信息表.xlsx",
+        "拜访记录录入.xlsx",
+        "销售代表KPI评分标准.xlsx"
+      ],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": [
+          "销售代表",
+          "客户编号",
+          "客户类型II",
+          "销售团队"
+        ]
+      },
+      "actual_contact_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "销售代表",
+          "拜访日期",
+          "拜访方式",
+          "客户编号"
+        ],
+        "qualifying_visit_methods": [
+          "面对面拜访",
+          "视频会议"
+        ],
+        "identity_rule": "实际接触按销售代表、客户编号和统计窗口去重；同一客户多次拜访只计一个已覆盖客户"
+      },
+      "customer_count_standard_source": {
+        "source_file": "销售代表KPI评分标准.xlsx",
+        "sheet_name": "销售代表KPI评分标准",
+        "lookup_fields": [
+          "公司名称（通讯录）",
+          "销售团队"
+        ],
+        "value_field": "公司标准客户数量"
+      },
+      "projection_mapping": {
+        "algorithm_owner": "系统日历适配器按确定性公式识别评价截止日所属月份、季度和期间边界；AI不得估算期间、比例或分数",
+        "target_rule": "目标客户每个自然月至少覆盖一次；仅面对面拜访或视频会议计为实际接触",
+        "target_elapsed_fraction": "当前自然月从月初至评价截止日的已发生日历天数除以该月日历总天数",
+        "target_projected_covered_count": "MIN(当前目标客户总数, 当前月已实际接触目标客户去重数 ÷ 当前月已发生比例)",
+        "target_full_coverage_probability": "目标客户预计覆盖数除以当前目标客户总数",
+        "potential_rule": "潜力客户每个自然季度至少覆盖一次；仅面对面拜访或视频会议计为实际接触",
+        "potential_elapsed_fraction": "当前自然季度从季初至评价截止日的已发生日历天数除以该季度日历总天数",
+        "potential_projected_covered_count": "MIN(当前潜力客户总数, 当前季度已实际接触潜力客户去重数 ÷ 当前季度已发生比例)",
+        "potential_full_coverage_probability": "潜力客户预计覆盖数除以当前潜力客户总数",
+        "opportunity_rule": "商机客户默认100%覆盖，不要求存在面对面或视频会议实际记录；预计覆盖数直接取当前商机客户总数",
+        "projection_caps": "所有预计覆盖数量不超过对应客户类型总数，所有覆盖可能性限制在0至100%",
+        "insufficient_rule": "评价截止日或期间边界无法确定、客户编号缺失导致无法去重、或目标/潜力分母为0时，对应指标判为数据不足"
+      },
+      "growth_mapping": {
+        "last_quarter_actual_covered": "上季度面对面或视频会议实际接触客户去重集合，与上季度商机客户默认覆盖集合取并集后的客户数",
+        "current_quarter_projected_covered": "当前季度线性外推的目标客户预计覆盖数＋潜力客户预计覆盖数＋当前商机客户总数；跨类型按客户编号去重",
+        "growth_rate": "当前季度预计覆盖客户数除以上季度实际覆盖客户数减1",
+        "zero_denominator": "上季度实际覆盖客户数为0时判为数据不足，不直接生成无穷增长率"
+      },
+      "discount_mapping": "客户信息表当前客户编号去重数低于公司标准客户数量时，按MIN(1,表内客户数÷客户数量标准)对基础得分打折",
+      "execution_contract": {
+        "automatic_scoring": true,
+        "rule_version": "Q09-v1",
+        "ai_final_score_forbidden": true,
+        "adapter": "上季度起始日至评价截止日跨期间锁定快照读取",
+        "published_on": "2026-08-12"
+      },
+      "open_execution_questions": []
+    },
+    "Q10": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我的销售机会主要来自于自己的客户覆盖而不是外部线索",
+      "confirmed_on": "2026-08-10",
+      "source_tables": [
+        "客户信息表.xlsx",
+        "商机项目信息表.xlsx"
+      ],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": [
+          "入表时间",
+          "客户编号",
+          "销售代表"
+        ],
+        "canonical_mapping": {
+          "Customer.entered_at": "入表时间"
+        },
+        "migration_rule": "客户历史迁移时间统一采用客户信息表中的入表时间，不另取文件时间、导入时间或推测时间"
+      },
+      "opportunity_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "sheet_name": "商机项目信息表",
+        "fields": [
+          "入表时间",
+          "商机项目编号",
+          "客户编号",
+          "销售代表"
+        ],
+        "canonical_mapping": {
+          "Opportunity.entered_at": "入表时间"
+        }
+      },
+      "calculation_mapping": {
+        "join_key": "租户、客户编号；禁止按客户名称关联",
+        "system_guard": "DSM系统必须先有客户才能提交商机，因此商机入表时间早于客户入表时间属于无效输入或迁移数据冲突",
+        "working_day_difference": "使用锁定版本WorkCalendarDay统计客户入表次日至商机入表当日（含）的中国法定工作日数",
+        "non_flow_opportunity": "商机入表时间比客户入表时间晚超过5个企业工作日",
+        "evaluation_population": "评测期内入表的商机项目，按商机项目编号去重",
+        "ratio": "非流量商机项目数除以评测期新入表商机项目总数",
+        "no_new_opportunity": "评测期内没有新商机入表时沿用V3默认4分",
+        "invalid_record_handling": "缺少客户编号、缺少客户或商机入表时间、商机早于客户的记录分类登记到anomaly_registry；不使用客户名称回退关联"
+      },
+      "execution_contract": {
+        "rule_version": "Q10-v1",
+        "scoring_method": "q10_deterministic",
+        "evidence_field_policy": "保留表单schema已识别的_widget_*业务字段，只排除非schema系统元数据",
+        "ai_may_change_final_score": false
+      }
+    },
+    "Q11": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我清楚客户的组织架构及关键决策人或关键影响者是谁",
+      "confirmed_on": "2026-08-10",
+      "source_tables": [
+        "客户信息表.xlsx",
+        "客户联系人.lsx.xlsx",
+        "商机项目信息表.xlsx"
+      ],
+      "customer_population_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": [
+          "客户编号",
+          "公司名称（通讯录）",
+          "销售代表",
+          "销售团队"
+        ],
+        "denominator_rule": "Q11六项指标中的‘计划覆盖客户数’统一解释为测评范围内客户信息表的全部客户编号去重数，不从计划表、拜访记录或联系人表反推分母。",
+        "missing_customer_id": "客户编号为空的客户记录登记数据质量问题，不得按客户名称自动合并。"
+      },
+      "contact_source": {
+        "source_file": "客户联系人.lsx.xlsx",
+        "sheet_name": "客户联系人",
+        "fields": [
+          "客户编号",
+          "联系人编号",
+          "联系人姓名",
+          "部门",
+          "职务",
+          "手机",
+          "关系水平",
+          "影响力度",
+          "是否有效联系人"
+        ],
+        "canonical_targets": [
+          "Contact",
+          "CustomerContactAssessment"
+        ],
+        "authoritative_rule": "联系人姓名、部门、职务、手机及联系人主数据统一以客户联系人表为权威来源"
+      },
+      "opportunity_link_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "sheet_name": "商机项目信息表",
+        "fields": [
+          "商机项目编号",
+          "客户编号",
+          "采购决策/联系人编号"
+        ],
+        "linkage_rule": "商机决策链只提供商机与联系人编号关系；联系人详细信息从客户联系人表取得",
+        "consistency_rule": "已确认两表联系人数据一致，不设置字段冲突裁决；仍要求联系人编号和客户编号可关联"
+      },
+      "completeness_mapping": {
+        "required_non_empty_fields": [
+          "联系人姓名",
+          "部门",
+          "职务",
+          "手机"
+        ],
+        "complete_when": "四个必填字段全部非空才算该联系人信息完整；任一字段为空即不完整",
+        "role_source_field": "客户联系人.影响力度",
+        "direct_role_values": {
+          "最终决策者": "final_decision_maker",
+          "关键影响者": "key_influencer",
+          "一般影响者": "general_influencer",
+          "有一般影响力者": "general_influencer",
+          "无影响力者": "no_influence"
+        },
+        "legacy_role_aliases": {
+          "影响者": "key_influencer",
+          "决策者": "final_decision_maker",
+          "使用者": "general_influencer",
+          "其他": "no_influence"
+        },
+        "role_mapping": "影响者=关键影响者，决策者=最终决策者，使用者=有一般影响力者，其他=无影响力者；保留源值和映射版本",
+        "customer_complete_rule": "对应角色至少存在一名有效且四个必填字段完整的联系人时，该客户在该角色的信息完整指标中计为完成",
+        "shared_denominator": "六项指标分母均为测评范围内客户信息表全部客户编号去重数"
+      },
+      "execution_contract": {
+        "rule_version": "Q11-v1",
+        "scoring_method": "q11_deterministic",
+        "role_mapping_version": "Q11-CONTACT-INFLUENCE-v1",
+        "published_on": "2026-08-11"
+      }
+    },
+    "Q12": {
+      "mapping_status": "configured_collection_forms_ai_dimension_ready",
+      "prompt": "我对客户当前的需求相关情况有清楚的结构化了解包括且不限于采购潜力，未来采购时间和当下有接触的友商",
+      "confirmed_on": "2026-08-10",
+      "source_tables": [
+        "客户信息收集要求标准.xlsx中为当前企业配置的信息收集表"
+      ],
+      "source": {
+        "source_file": "客户OA设备信息表.xlsx",
+        "sheet_name": "客户OA设备信息表",
+        "canonical_targets": [
+          "CustomerAsset",
+          "AssetMetricObservation"
+        ]
+      },
+      "ai_dimension_mapping": {
+        "procurement_potential": [
+          "设备类型",
+          "设备类型II",
+          "设备具体型号",
+          "彩色速度",
+          "彩色总读数",
+          "彩色AMCV",
+          "黑白速度",
+          "黑白总读数",
+          "黑白AMCV",
+          "是否是尸体",
+          "其他信息"
+        ],
+        "procurement_timing": [
+          "设备安装时间",
+          "计数器读取日期",
+          "合同到期时间"
+        ],
+        "competitor_information": [
+          "设备品牌",
+          "设备的采购方式",
+          "维修服务提供商"
+        ],
+        "analysis_rule": "AI读取配置信息收集表的全部已识别业务字段；不要求存在同名的采购潜力、采购时间、友商信息字段。可从设备类型、型号、数量、读数、AMCV、安装时间、合同到期、品牌、采购方式、供应商及维修服务商等业务值语义推断三维事实",
+        "specificity_rule": "AI对三维内容分别输出present、specificity_ratio、summary、evidence_record_ids和evidence_fields；有事实的维度必须回引真实记录及字段",
+        "cross_form_rule": "当企业使用会议设备信息表、客户净水设备信息表或其他配置信息收集表时，使用同一三维语义分析和评分合同"
+      },
+      "attachment_handling": {
+        "rule": "客户信息收集记录只有附件、上传文件、图片或其他非结构化附加字段时，不解析附件内容，不做OCR、图像识别或文本抽取，也不把附件存在本身视为三维信息证据。",
+        "structured_field_authority": "所有在表单schema中已识别且有实际值的业务字段均可作为AI三维语义分析证据；附件只有元数据时不猜测文件内容。"
+      },
+      "zero_rule": {
+        "condition": "当前企业配置的客户信息收集表在测评范围内没有记录。",
+        "result": "Q12返回SCORED 0分；只要有记录，即使没有三维同名字段，也必须先完成AI语义分析。"
+      },
+      "execution_contract": {
+        "q12_rule_version": "Q12-AI-DIMENSION-v1",
+        "q15_rule_version": "Q15-AI-QUALITY-v1",
+        "ai_fact_rule_version": "DSM-INFORMATION-LIGHT-SEMANTIC-FACT-AI-v2",
+        "ai_payload_contract": "原始信息收集记录保留于快照；AI仅接收字段名和每项最多320字符的业务值，并返回三维存在性、具体程度及可核验证据字段。",
+        "automatic_scoring": true
+      }
+    },
+    "Q13": {
+      "mapping_status": "q13_v1_released",
+      "prompt": "我会主动获取并验证客户信息，而不是被动接受",
+      "confirmed_on": "2026-08-10",
+      "mapping_scope": "Q13不使用下一行动计划；按考核季度计算个人信息收集客户占计划覆盖客户比例、团队成员比例平均值，以及信息收集客户的拜访联系人覆盖。计划覆盖客户沿用Q11确认口径，为客户信息表中归属销售代表的全部客户编号去重集合。",
+      "source_tables": [
+        "客户信息收集要求标准.xlsx",
+        "当前企业配置的全部客户信息收集表",
+        "客户信息表.xlsx",
+        "拜访记录录入.xlsx",
+        "销售代表结构.xlsx"
+      ],
+      "quarter_window": {
+        "grain": "销售代表×自然季度",
+        "period_rule": "只读取考核期与自然季度交集内、当前企业配置的全部客户信息收集表记录和拜访记录；考核期跨季度时逐季度计算Q13综合分，再取季度综合分算术平均。"
+      },
+      "collection_source": {
+        "source_file": "客户信息收集要求标准.xlsx中当前企业配置的全部信息收集表",
+        "sheet_name": "系统中的客户信息收集表（按公司动态解析）",
+        "fields": ["添加日期", "销售代表", "销售团队", "客户编号"],
+        "customer_rule": "季度内在当前企业配置的任一信息收集表成功提交至少一条记录的客户编号去重集合；跨表重复记录只计一个客户。"
+      },
+      "planned_coverage_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": ["销售代表", "销售团队", "客户编号"],
+        "denominator_rule": "计划覆盖客户数为测评范围内、测评截止时客户信息表中归属该销售代表的全部客户编号去重数；不得从拜访记录反推实际覆盖客户作为分母。",
+        "shared_definition": "与Q11的计划覆盖客户数定义一致。"
+      },
+      "visit_contact_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+      "fields": ["拜访日期", "销售代表", "客户编号", "拜访记录编码", "联系人信息/关联数据-主键"],
+      "schema_path": {
+        "parent_widget_label": "联系人信息",
+        "parent_widget_type": "subform",
+        "child_widget_label": "关联数据-主键",
+        "value_rule": "逐行读取子表单字段值并按销售代表、客户编号和季度去重"
+      },
+      "contact_rule": "按销售代表、客户编号和季度汇总全部有效拜访记录中的联系人关联主键并去重；同一联系人多次拜访只计一次。"
+      },
+      "team_population_source": {
+        "source_file": "销售代表结构.xlsx",
+        "sheet_name": "销售代表结构",
+        "fields": ["销售人员编号", "销售人员姓名", "销售团队", "在职状态"],
+        "population_rule": "团队平均包含同一团队内所有当前在职销售人员，不只包含发生过信息收集活动或纳入月度考核的人员。"
+      },
+      "first_metric": {
+        "personal_ratio": "个人季度信息收集客户编号去重数÷测评截止时个人计划覆盖客户编号去重数。",
+        "team_average_ratio": "同团队所有当前在职人员各自季度信息收集客户占计划覆盖客户比例的算术平均值。",
+        "member_zero_rule": "团队成员计划覆盖客户数大于0但无信息收集活动时个人比例为0；计划覆盖客户数为0时个人比例按0进入团队平均并保留零分母证据。",
+        "relative_multiple": "被评估人员个人比例÷团队平均比例。",
+        "score_thresholds": "倍数≥1.2、≥1.0、≥0.8、<0.8对应4、3、2、1分。",
+        "zero_team_average": "团队平均比例为0时该指标判为数据不足，不生成无穷倍数。"
+      },
+      "second_metric": {
+        "population": "季度内有信息收集活动的客户编号去重集合。",
+        "qualified_customer": "同一销售代表、同一客户、同一季度的拜访记录中累计出现至少两个不同联系人关联主键。",
+        "ratio": "有信息收集活动且接触至少两个不同联系人的客户数÷有信息收集活动的客户数。",
+        "score_thresholds": "比例≥80%、≥60%、≥40%、<40%对应4、3、2、1分。",
+        "missing_contact_behavior": "联系人字段存在但为空时该客户不进入分子；源字段整体缺失或无法解析时判为数据不足。"
+      },
+      "overall_formula": "信息收集表不可用时得0分；可用且两项可计算时，综合得分=0.8+第一项得分×25%+第二项得分×55%。",
+      "identity_rule": "客户按客户编号、联系人按联系人关联主键去重；缺少客户编号不得按客户名称自动合并。",
+      "privacy_contract": {
+        "team_data_access": "允许无个人过滤读取同团队全部当前在职销售人员的Q13所需数据，仅用于计算团队平均",
+        "output_rule": "只输出被测人指标与匿名团队平均，不输出其他成员姓名、记录编号或个人比例",
+        "evidence_rule": "团队全量快照只保留表单级证据引用，不向报告返回其他成员记录级引用"
+      },
+      "execution_contract": {
+        "rule_version": "Q13-v1",
+        "automatic_scoring": true,
+        "ai_final_score_forbidden": true,
+        "team_adapter": "同团队全部当前在职销售人员无个人过滤全量读取并匿名聚合"
+      },
+      "superseded_rules": [
+        "个人和团队比例使用拜访记录形成的实际覆盖客户数作为分母。",
+        "第二项联系人参与来源待确认。"
+      ]
+    },
+    "Q14": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我会规定具体的时间点，去完成对所有的客户信息收集",
+      "confirmed_on": "2026-08-10",
+      "source_tables": [
+        "客户信息收集要求标准.xlsx",
+        "当前企业配置的全部客户信息收集表",
+        "客户信息表.xlsx",
+        "拜访记录录入.xlsx"
+      ],
+      "completion_source": {
+        "source_file": "客户信息收集要求标准.xlsx中当前企业配置的全部信息收集表",
+        "sheet_name": "系统中的客户信息收集表（按公司动态解析）",
+        "fields": [
+          "添加日期",
+          "销售代表",
+          "销售团队",
+          "客户编号",
+          "相关文件上传"
+        ],
+        "completion_rule": "当前企业配置的任一信息收集表成功提交一条记录即视为该客户完成信息收集，不要求同一客户提交多条；跨表按客户编号去重",
+        "completed_count": "已完成客户数，不按人员数或上传文件数统计"
+      },
+      "all_customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": [
+          "销售代表",
+          "销售团队",
+          "客户编号"
+        ],
+        "denominator_rule": "全部客户为客户信息表中当前归属该销售代表的全部客户编号去重集合"
+      },
+      "calculation_mapping": {
+        "overall_completion_rate": "已完成客户编号去重数除以客户信息表全部客户编号去重数",
+        "full_completion": "完成率达到100%直接按V3得4分",
+        "weekly_new_completed": "按客户首次成功提交信息收集记录的添加日期归入自然周，同一客户后续重复记录不再计新增完成",
+        "weekly_visit_quantity": "沿用V3从拜访记录统计当周拜访活动数量，仅计面对面拜访和视频会议，用于完成率低于70%时除以2、达到70%且低于100%时除以3的周新增标准",
+        "qualifying_visit_methods": ["面对面拜访", "视频会议"],
+        "missing_customer_id": "信息收集记录或客户信息记录缺少客户编号时登记数据质量问题，不按客户名称自动合并",
+        "zero_week_standard": "周标准为0且无新增完成时该周完成率为0；有新增完成时按100%封顶"
+      },
+      "execution_contract": {"rule_version": "Q14-v1", "automatic_scoring": true, "ai_final_score_forbidden": true}
+    },
+    "Q15": {
+      "mapping_status": "dynamic_collection_forms_ai_quality_ready",
+      "prompt": "我会把收集到的信息，按照标准进行整理和记录",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["客户信息收集要求标准.xlsx中为当前企业配置的信息收集表"],
+      "collection_source": {
+        "source_file": "客户信息收集要求标准.xlsx中当前企业配置的全部信息收集表",
+        "sheet_name": "系统中的客户信息收集表（按公司动态解析）",
+        "fields": ["添加日期", "销售代表", "客户编号", "相关文件上传", "设备编码"],
+        "canonical_targets": ["CustomerInformationCollectionEvent", "Attachment"],
+        "dynamic_selection_rule": "该表仅为通用示例；运行时以客户信息收集要求标准中当前企业的‘系统中的客户信息收集表’为准"
+      },
+      "quality_standard_source": {
+        "source_file": "客户信息收集要求标准.xlsx",
+        "role": "三维填写质量判断标准"
+      },
+      "ai_quality_mapping": {
+        "dimensions": ["采购潜力", "采购时间", "友商信息"],
+        "evidence_scope": "动态读取当前企业配置的信息收集表，使用全部已识别业务字段完成三维AI语义分析。",
+        "scoring_rule": "没有客户现场信息收集记录时按V3得0分；有记录时，AI按采购潜力、采购时间、友商信息三个维度逐项检查完整性、具体性和可验证性，再依V3给出0—4分。",
+        "lineage_rule": "每个维度的结论必须回引收集记录ID和真实字段标签；附件只有元数据时不臆测内容。"
+      }
+    },
+    "Q16": {
+      "mapping_status": "deterministic_rule_with_ai_facts_ready",
+      "prompt": "我会根据收集到的信息去决定客户是否需要保留，而不是凭感觉",
+      "confirmed_on": "2026-08-12",
+      "source_tables": ["表外客户信息表", "客户信息收集要求标准.xlsx中为当前企业配置的信息收集表"],
+      "off_table_source": {
+        "source_object": "表外客户信息表",
+        "connector_status": "已通过简道云连接器发现并读取，不要求另行提供物理Excel工作簿。",
+        "required_connector_contract": ["销售代表（优先成员字段）", "客户编号", "系统记录提交时间元数据"],
+        "rule": "按被测销售代表直接检索表外客户信息表；存在记录即认定该销售代表存在表外客户，不再要求与客户信息表做互斥核验。",
+        "removal_time_rule": "表外客户信息表记录的系统提交时间就是客户移出时间；禁止使用最后更新时间或入表时间业务字段替代。"
+      },
+      "procurement_potential_source": {
+        "source_file": "客户信息收集要求标准.xlsx中当前企业配置的全部信息收集表",
+        "link_key": "客户编号",
+        "assessment": "对考核期内移出表外客户，AI按客户现场信息收集记录及其附件检查采购潜力相关信息是否完整。"
+      },
+      "calculation_mapping": {
+        "removed_population": "被测销售代表名下表外客户信息表记录中，系统提交时间落入测评期的客户编号去重集合；客户编号缺失时以来源记录ID保留为一名移出客户并登记质量问题。",
+        "no_removed_customer": "当前企业已配置客户信息收集表且考核期无移出表外客户时，沿用V3得4分。",
+        "completeness_ratio": "采购潜力相关信息完整的移出表外客户编号去重数除以考核期移出表外客户编号去重数。",
+        "insufficient_rule": "连接器未返回系统提交时间元数据时，不能确定记录是否在测评期内，判为数据不足；不再等待独立移出时间字段。"
+      },
+      "execution_contract": {
+        "rule_version": "Q16-v1",
+        "population_and_period_filter": "确定性规则",
+        "procurement_potential_completeness": "AI逐客户输出布尔事实并回引记录ID和字段",
+        "final_formula_and_score": "确定性规则",
+        "thresholds": {"4": ">=100%", "3": ">=90%", "2": ">=80%", "1": ">=70%", "0": "<70%"}
+      }
+    },
+    "Q17": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我有计划地保持与客户的沟通频率",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["拜访记录录入.xlsx", "客户信息表.xlsx"],
+      "visit_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": ["拜访记录编码", "销售代表", "拜访日期", "拜访方式", "客户编号"],
+        "qualifying_visit_methods": ["面对面拜访", "视频会议"],
+        "counting_rule": "沟通次数按合格拜访记录次数统计；拜访记录编码去重后，每条记录计1次，不按客户编号压缩为一次。"
+      },
+      "classification_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": ["销售代表", "客户编号", "客户类型II"],
+        "as_of_rule": "采用测评当时客户信息表中的当前客户分类；不使用拜访发生时分类，也不回溯历史分类快照。"
+      },
+      "frequency_mapping": {
+        "商机客户": "每个自然月合格沟通记录不少于2次",
+        "目标客户": "每个自然月合格沟通记录不少于1次",
+        "潜力客户": "每个自然季度合格沟通记录不少于1次",
+        "result_ratio": "满足当前分类对应频率标准的客户编号去重数除以客户信息表当前客户编号去重总数；分值阈值沿用V3。"
+      },
+      "execution_contract": {
+        "rule_version": "Q17-v1",
+        "join_key": "客户编号",
+        "automatic_scoring": true
+      }
+    },
+    "Q18": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我会主动安排与客户的面对面沟通，即使客户没有要求见面",
+      "confirmed_on": "2026-08-12",
+      "mapping_scope": "Q18客户分母、实际/计划接触来源、客户编号去重、日期字段及测评月边界均已确认；正式规则可确定性执行。",
+      "source_tables": [
+        "客户信息表.xlsx",
+        "拜访记录录入.xlsx",
+        "拜访计划（周计划快照）.xlsx"
+      ],
+      "confirmed_decisions": [
+        "Q18第一项权重40%；完整下一行动计划或没有前次拜访下一行动字段但存在合格未来计划，均算有安排。",
+        "Q18第二至第四项中的实际接触和计划接触仅接受面对面拜访和视频会议。",
+        "计划接触客户数只读取拜访计划（周计划快照），按计划拜访日期和客户编号统计。",
+        "实际接触客户数只读取拜访记录录入，按拜访日期和客户编号统计；实际接触仍只接受面对面拜访和视频会议。",
+        "总客户数读取客户信息表，按客户编号去重，并以客户类型II形成商机、目标、潜力客户分母。",
+        "总取数边界为测评开始月份第一天至测评结束月份最后一天；V3商机两周、目标一月、潜力一季度窗口以结束月最后一天为截止且不得早于总边界。"
+      ],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": [
+          "销售代表",
+          "客户编号",
+          "客户类型II",
+          "销售团队"
+        ],
+        "canonical_targets": [
+          "Customer",
+          "CustomerClassificationSnapshot"
+        ]
+      },
+      "next_action_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "销售代表",
+          "拜访日期",
+          "客户编号",
+          "下一步行动目的",
+          "下一次具体其他目的",
+          "下次拜访期望的关键结果",
+          "下次联系客户时间安排"
+        ],
+        "canonical_target": "VisitNextAction"
+      },
+      "candidate_calculation_mapping": {
+        "grain": "销售代表、客户编号",
+        "as_of_rule": "在评价截止时间之前，按拜访日期和来源提交时间取得客户最新一条有效拜访记录。",
+        "candidate_arranged_customer": "满足任一条件即计为有安排：A. 按共享规则解析后，下一步行动目的、下次拜访期望的关键结果、下次联系时间三项均非空；B. 最新前次拜访记录的下一步行动目的、期望结果和时间均为空或不存在前次拜访记录，但评价截止日后存在该销售代表对该客户的最早合格未来计划。",
+        "future_plan_only_rule": "仅有未来计划也算安排；计划必须严格晚于评价截止日并可按销售代表＋客户编号关联。拜访计划制定表中的计划统一视为面对面拜访，直接满足Q18计划方式契约。",
+        "precedence_rule": "若前次拜访已填写部分下一行动字段但未达到共享完整性，不能用一条孤立未来计划掩盖缺失，按不完整处理并登记数据质量问题。",
+        "expected_result_role": "下次拜访期望的关键结果已确认为完整计划必填字段。",
+        "weight": 0.4,
+        "zero_denominator_rule": "总客户数为0时第一项得0分，不重分配40%权重。",
+        "status": "Q18第一项安排识别、总客户分母、记录有效期与零分母口径均已确认。"
+      },
+      "time_fallback_source": {
+        "source_file": "拜访计划（周计划快照）.xlsx",
+        "sheet_name": "拜访计划（周计划快照）",
+        "fields": [
+          "计划编码",
+          "销售代表",
+          "计划拜访日期",
+          "客户编号",
+          "周计划快照时间"
+        ]
+      },
+      "contact_coverage_mapping": {
+        "qualifying_visit_methods": [
+          "面对面拜访",
+          "视频会议"
+        ],
+        "actual_contact_source": {
+          "source_file": "拜访记录录入.xlsx",
+          "fields": [
+            "销售代表",
+            "拜访日期",
+            "拜访方式",
+            "客户编号"
+          ],
+          "canonical_target": "VisitEvent"
+        },
+        "planned_contact_source": {
+          "source_file": "拜访计划（周计划快照）.xlsx",
+          "fields": [
+            "计划编码",
+            "销售代表",
+            "计划拜访日期",
+            "客户类型II",
+            "客户编号",
+            "周计划快照时间"
+          ],
+          "canonical_target": "VisitPlanSnapshot",
+          "method_contract": "计划接触直接按周计划快照中的计划记录统计并按客户编号去重；实际接触仍仅接受面对面拜访或视频会议。"
+        },
+        "assessment_window": {
+          "start": "测评开始时间所在月份第一天（含）",
+          "end": "测评结束时间所在月份最后一天（含）",
+          "actual_contact_date_field": "拜访记录录入.拜访日期",
+          "planned_contact_date_field": "拜访计划（周计划快照）.计划拜访日期",
+          "deduplication_key": "客户编号"
+        },
+        "zero_denominator_rule": "商机、目标或潜力客户子项的分母为0时，该20%子项得0分；不做除法、不标记不适用，也不向其他子项重分配权重。",
+        "submetrics": [
+          {
+            "metric_code": "Q18_OPPORTUNITY_CONTACT_COVERAGE",
+            "customer_type": "商机客户",
+            "window": "两周",
+            "weight": 0.2
+          },
+          {
+            "metric_code": "Q18_TARGET_CONTACT_COVERAGE",
+            "customer_type": "目标客户",
+            "window": "一个月",
+            "weight": 0.2
+          },
+          {
+            "metric_code": "Q18_POTENTIAL_CONTACT_COVERAGE",
+            "customer_type": "潜力客户",
+            "window": "一个季度",
+            "weight": 0.2
+          }
+        ]
+      },
+      "shared_rule_reference": "shared_rules.customer_next_visit_plan_resolution",
+      "overall_zero_denominator_policy": "四个子项逐项处理零分母：对应子项得0分，原40%/20%/20%/20%权重保持不变。",
+      "open_execution_questions": [],
+      "execution_contract": {
+        "rule_version": "Q18-v1",
+        "automatic_scoring": true,
+        "ai_in_final_score": false,
+        "customer_population_source": "客户信息表.xlsx/客户类型II",
+        "actual_contact_source": "拜访记录录入.xlsx/拜访日期",
+        "planned_contact_source": "拜访计划（周计划快照）.xlsx/计划拜访日期"
+      }
+    },
+    "Q19": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我在客户内部会接触多个关键角色，而不是单一联系人",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["客户信息表.xlsx", "客户联系人.lsx.xlsx"],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "fields": ["客户编号", "客户类型II", "销售代表"],
+        "classification_rule": "商机、目标、潜力客户分组采用测评时客户信息表中的当前客户类型II。"
+      },
+      "contact_master_source": {
+        "source_file": "客户联系人.lsx.xlsx",
+        "sheet_name": "客户联系人",
+        "fields": ["客户编号", "联系人编号", "联系人姓名", "影响力度", "是否有效联系人"],
+        "authoritative_rule": "最终决策者、关键影响者及其他角色均从联系人主数据选择；商机或其他界面中的联系人为同步引用，两边同步更新，不设置冲突裁决。",
+        "role_mapping": "决策者=最终决策者，影响者=关键影响者，使用者=一般影响者，其他=无影响力者；兼容源系统直接提供的规范角色值并保留源值。"
+      },
+      "calculation_mapping": {
+        "customer_role_coverage": "按客户编号检查联系人主数据中是否至少存在一名对应角色的有效联系人；各客户类型覆盖比例及内部权重沿用V3。",
+        "role_category_count_per_customer": "对每个客户的有效联系人主数据，将影响力度规范化后按角色类别去重计数；同一角色多人只计一个类别。",
+        "average_role_category_count": "全部客户的每客户角色类别数算术平均值，按V3映射分值。",
+        "zero_denominator_rule": "商机、目标、潜力客户任一类型客户数为0时，对应25%客户类型子项得0分；全部客户数为0时第四项得0分。所有情况均保持原权重，不做权重重分配。",
+        "terminology_correction": "V3中‘主要接响者’为文字错误，已授权更正为‘关键影响者’，不改变对应阈值和权重。"
+      },
+      "execution_contract": {
+        "rule_version": "Q19-v1",
+        "role_mapping_version": "Q11-CONTACT-INFLUENCE-v1",
+        "automatic_scoring": true
+      }
+    },
+    "Q20": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我有计划地改善、维护与客户各类相关人员的关系水平",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["客户信息表.xlsx", "客户联系人.lsx.xlsx"],
+      "contact_relationship_source": {
+        "source_file": "客户联系人.lsx.xlsx",
+        "sheet_name": "客户联系人",
+        "fields": ["客户编号", "联系人编号", "关系水平", "影响力度", "是否有效联系人"],
+        "grain": "客户编号＋联系人编号的客户—联系人关系；同一自然人在多个客户关系中分别统计。"
+      },
+      "calculation_mapping": {
+        "no_influence_filter": "影响力度源值为‘其他’或‘无影响力’的客户—联系人关系属于无影响力者并排除；其他角色纳入。",
+        "relationship_level_mapping": "level5/level4=4，level3=3，level2=2，level1=1，level0=0；兼容零级至五级映射。",
+        "blank_relationship": "纳入统计的客户—联系人关系若关系水平为空，按level0即0分计入，不删除。",
+        "company_average": "先以客户信息表中归属被评估销售代表的客户编号限定范围，再对全部纳入的客户—联系人关系分值计算算术平均；不先按自然人去重。"
+      },
+      "execution_contract": {"rule_version": "Q20-v1", "automatic_scoring": true, "ai_final_score_forbidden": true}
+    },
+    "Q21": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我对整体客户关系的推进有明确的策略和计划",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["客户信息表.xlsx", "客户联系人.lsx.xlsx"],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "sheet_name": "客户信息表",
+        "fields": ["客户编号", "客户类型II"]
+      },
+      "contact_source": {
+        "source_file": "客户联系人.lsx.xlsx",
+        "sheet_name": "客户联系人",
+        "fields": ["客户编号", "联系人编号", "关系水平"]
+      },
+      "calculation_mapping": {
+        "population": "测评时客户信息表中客户类型II为目标客户的客户编号去重集合。",
+        "join_rule": "按客户编号关联客户联系人表的关系水平字段。",
+        "relationship_level_mapping": "零级/level0=0，一级/level1=1，二级/level2=2，三级/level3=3，四级/level4=4，五级/level5=5。",
+        "blank_relationship": "联系人关系水平为空时按0分；目标客户无联系人数据时该客户按0分，不从目标客户分母删除。",
+        "company_average_formula": "先求每个目标客户的联系人关系水平平均值，再对全部目标客户求算术平均；40题单题得分最高4分封顶。",
+        "zero_denominator": "目标客户数为0时本题直接得0分。"
+      },
+      "execution_contract": {"rule_version": "Q21-v2", "automatic_scoring": true}
+    },
+    "Q22": {
+      "mapping_status": "deterministic_rule_with_ai_facts_ready",
+      "prompt": "我持续跟进现在没有采购需求但是具有长期购买潜力的客户",
+      "confirmed_on": "2026-08-12",
+      "source_tables": ["客户信息表.xlsx", "拜访记录录入.xlsx", "客户类型II（定义及比例标准）xlsx.xlsx", "客户信息收集要求标准.xlsx中为当前企业配置的信息收集表"],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "fields": ["销售代表", "客户编号", "客户类型II"],
+        "rule": "第一、二项采用测评截止时客户信息表中的当前客户类型II及客户编号去重集合。"
+      },
+      "classification_standard_source": {
+        "source_file": "客户类型II（定义及比例标准）xlsx.xlsx",
+        "fields": ["商机客户定义标准说明", "目标客户定义标准说明", "潜力客户定义标准说明", "潜力目标商机客户定义"],
+        "role": "客户分类标准的唯一锚点"
+      },
+      "classification_fact_source": {
+        "source_file": "客户信息收集要求标准.xlsx中为当前企业配置的信息收集表",
+        "link_key": "客户编号",
+        "role": "客户分类事实依据的唯一锚点",
+        "ai_contract": "AI只判断定义标准是否清晰具体、事实是否支持客户信息表中的当前分类，并回引真实信息收集记录ID；不得直接给Q22分数。"
+      },
+      "quarter_coverage_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "fields": ["拜访记录编码", "销售代表", "拜访日期", "拜访方式", "客户编号"],
+        "qualifying_visit_methods": ["面对面拜访", "视频会议"]
+      },
+      "calculation_mapping": {
+        "quarter_window": "评价季度的自然季度起止日期。",
+        "denominator": "测评截止时目标客户和潜力客户的客户编号去重并集。",
+        "numerator": "评价季度内至少发生一次面对面拜访或视频会议的分母客户编号去重数。",
+        "quarter_coverage_rate": "分子除以分母；阈值和50%权重沿用V3。",
+        "zero_denominator": "目标客户与潜力客户并集为空时第三项判为数据不足。",
+        "classification_ratio": "客户类型II明确标识为潜力客户、目标客户或商机客户的客户编号去重数÷当前全部客户编号去重数",
+        "quarter_as_of_rule": "从测评截止日所在自然季度起始日统计至截止日，不读取截止日后记录。"
+      },
+      "execution_contract": {
+        "rule_version": "Q22-v2",
+        "automatic_scoring": true,
+        "formal_score_released": true,
+        "classification_source": "客户信息表.xlsx/客户类型II",
+        "classification_standard_anchor": "客户类型II（定义及比例标准）xlsx.xlsx",
+        "classification_fact_anchor": "当前企业配置的客户信息收集表",
+        "ai_scope": "标准清晰具体与事实支持分类两个布尔事实",
+        "deterministic_scope": "分类存在性、标准存在性、事实数据存在性、季度覆盖、四项加分、权重及最终得分"
+      }
+    },
+    "Q23": {
+      "mapping_status": "deterministic_rule_with_ai_facts_ready",
+      "prompt": "我能够按照客户的采购急迫程度去分类客户，并对不同类型的客户采取不同跟踪策略",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["客户信息表.xlsx", "客户现场信息收集表.xlsx", "客户信息收集要求标准.xlsx", "拜访记录录入.xlsx", "商机项目信息表.xlsx"],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "fields": ["客户编号", "客户类型II", "销售代表"]
+      },
+      "active_opportunity_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "fields": ["商机项目编号", "客户编号", "商机项目信息状态", "结果", "公司业绩确认"],
+        "shared_rule_reference": "shared_rules.active_opportunity_resolution"
+      },
+      "procurement_evidence_sources": [
+        {
+          "source_file": "客户现场信息收集表.xlsx",
+          "fields": ["添加日期", "客户编号", "相关文件上传"],
+          "evidence_role": "AI识别客户采购行动、采购时间及12个月内启动采购的事实"
+        },
+        {
+          "source_file": "拜访记录录入.xlsx",
+          "fields": ["拜访记录编码", "拜访日期", "客户编号", "拜访目的", "想取得的关键结果", "过程详细描述", "评价", "下一步行动目的", "下次拜访期望的关键结果", "下次联系客户时间安排", "关联商机阶段信息/商机编号"],
+          "evidence_role": "AI识别客户已采取或计划采取的采购行动"
+        },
+        {
+          "source_file": "商机项目信息表.xlsx",
+          "fields": ["商机项目编号", "客户编号", "预计成交月份", "客户需求情况描述", "客户预算（单位万元）", "客户预算说明", "项目当前阶段", "预计达到P4的时间", "预计达到P5的时间", "预测", "结果"],
+          "evidence_role": "AI识别采购行动、预算、时间和推进阶段证据"
+        }
+      ],
+      "ai_evidence_mapping": {
+        "as_of_rule": "所有客户分类、商机状态和证据只读取评估截止日可见的锁定快照。",
+        "twelve_month_window": "目标客户的采购启动时间证据必须落在评估截止日之后12个月内。",
+        "evidence_gate": "AI只能从上述表的非空字段、附件或文本中抽取候选事实，并保留客户编号、商机编号、来源记录和原文片段；无法识别时不得自动判为有证据。",
+        "active_opportunity_rule": "商机项目信息状态为开放，或结果为进行中，或结果为赢单且公司业绩确认为未确认，任一条件成立即为活跃商机。"
+      },
+      "execution_contract": {
+        "rule_version": "Q23-v1",
+        "formal_score_released": true,
+        "ai_scope": "AI只提取采购行动、明确采购日期和跟踪策略差异清晰度，不得直接给最终分",
+        "deterministic_scope": "客户类型II分组、活跃商机、12个月窗口、比例阈值、空集及最终加权",
+        "dynamic_information_forms": "按客户信息收集要求标准读取当前企业配置表单"
+      }
+    },
+    "Q24": {
+      "mapping_status": "deterministic_rule_ready",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；当前月按实际评分截止日识别为不完整月并按已发生自然天数折算。",
+      "prompt": "我会按照既定的策略完成对当前没有生意的客户的覆盖",
+      "confirmed_on": "2026-08-12",
+      "source_tables": ["客户信息表.xlsx", "拜访记录录入.xlsx"],
+      "visit_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "fields": ["拜访记录编码", "拜访日期", "拜访方式", "拜访目的", "客户编号", "联系人信息/关联数据-主键"],
+        "purpose_cardinality": "一次拜访只能选择一个拜访目的；出现多值时该记录判为无效输入，不拆分成多次拜访。",
+        "qualifying_visit_methods": ["面对面拜访", "视频会议"],
+        "date_field": "拜访日期",
+        "date_window": "拜访日期必须在测评开始日期至测评结束日期范围内，起止日均包含"
+      },
+      "frequency_proration": {
+        "over_frequency_rule": "低于或超过规定频度均算偏差，超过频度同样扣分。",
+        "complete_month": "目标客户完整自然月恰好1次为无偏差。",
+        "incomplete_month": "月度未完整时按日历天数比例线性折算：折算月次数=月内已发生拜访次数÷已发生天数×当月总天数；与1次比较，低于或高于均为偏差。",
+        "complete_quarter": "潜力客户完整自然季度恰好1次为无偏差。",
+        "incomplete_quarter": "季度未完整时按月份比例线性折算：折算季次数=当季已发生拜访次数÷当季已进入月份数×3；与1次比较，低于或高于均为偏差。",
+        "rounding_rule": "折算值保留原始小数参与比较，不先四舍五入为整数。"
+      },
+      "purpose_mapping": {
+        "收集信息": "完成客户信息收集",
+        "保持关系": "维持客户关系水平",
+        "发展关系": "客户关系提升"
+      },
+      "execution_contract": {
+        "rule_version": "Q24-v1",
+        "formal_score_released": true,
+        "ai_required": false,
+        "deterministic_scope": "客户类型II分组、拜访方式、拜访日期窗口、拜访目的映射、月/季频次折算、四项阈值及最终加权"
+      }
+    },
+    "Q25": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "即使没有明确的项目，我也知道如何提前布局未来机会并提前赢得竞争优势",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["客户信息表.xlsx"],
+      "customer_source": {
+        "source_file": "客户信息表.xlsx",
+        "fields": ["销售代表", "客户编号", "客户类型II", "客户整体关系水平评价"]
+      },
+      "calculation_mapping": {
+        "target_ratio_standard": 0.3,
+        "target_ratio_rule": "目标客户比例固定为30%，不读取企业自定义比例覆盖。实际比例=当前目标客户编号去重数÷当前全部客户编号去重数。",
+        "relationship_field": "整体关系水平直接采用系统字段客户信息表/客户整体关系水平评价。",
+        "relationship_completeness": "第二项按目标客户中客户整体关系水平评价非空的客户编号去重占比计算。",
+        "relationship_average": "第三项只对客户整体关系水平评价非空的目标客户按V3等级映射后计算平均值；空值由第二项惩罚，不在第三项重复计0。"
+      },
+      "execution_contract": {
+        "rule_version": "Q25-v1",
+        "segment_mapping_reuse": "Q22-v1",
+        "relationship_mapping_reuse": "Q21-v1",
+        "ai_required": false,
+        "formal_score_released": true
+      }
+    },
+    "Q26": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我的客户群体中有相当一部分比例是提前培育、等待转化的",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["商机项目信息表.xlsx"],
+      "opportunity_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "fields": ["商机项目编号", "入表时间", "商机项目来源", "结果", "商机项目信息状态"],
+        "source_description_values": ["潜力客户", "目标客户", "其他"]
+      },
+      "calculation_mapping": {
+        "numerator": "评估截止日前已入表且商机项目来源描述为目标客户的商机项目编号去重数。",
+        "denominator": "评估截止日前全部商机项目编号去重数；取消、输单商机仍进入总商机分母，不因结果或记录状态排除。",
+        "ratio": "来源于目标客户的商机项目数除以全部商机项目数，阈值沿用V3。",
+        "missing_source": "商机项目来源为空或为其他时不进入分子，但仍进入分母。"
+      },
+      "execution_contract": {"rule_version": "Q26-v1", "automatic_scoring": true, "ai_final_score_forbidden": true}
+    },
+    "Q27": {
+      "mapping_status": "should_have_opportunity_customer_coverage_ready",
+      "prompt": "我能够识别清楚客户是否真正启动了采购流程",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["拜访记录录入.xlsx", "商机项目信息表.xlsx"],
+      "visit_evidence_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "fields": ["拜访记录编码", "拜访日期", "客户编号", "拜访目的", "想取得的关键结果", "过程详细描述", "评价", "关联商机阶段信息/商机编号"]
+      },
+      "opportunity_registry_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "fields": ["商机项目编号", "客户编号", "商机项目名称", "入表时间", "项目当前阶段", "结果", "商机项目信息状态"]
+      },
+      "ai_candidate_resolution": {
+        "decision_order": "商机事实识别Agent先从测评周期结束前逐客户最近两次实际拜访记录识别真实商机事实，再严格按客户编号查询商机项目信息表。",
+        "system_entered": "仅应有商机客户中，客户编号在考核期商机集合存在对应商机项目时，判定为已入表真实商机，不进入人工确认。",
+      "confirmed_unentered": "应有商机客户按客户编号在考核期商机集合无对应商机时，标记为AI识别但未入表商机并自动计入未入表数；不再进入人工确认链路。",
+        "deduplication": "同一客户最近两次实际拜访证据合并为一个应有商机客户；评分分子仅统计其中已入表客户，保留全部关键拜访记录引用。",
+      "unable_to_determine": "无法形成结构化商机事实时不创造事实；模型调用失败时按采购行动、预算、时间表和负责人关键词保守识别并保留降级证据。",
+        "forbidden_fallback": "不得因缺少商机编号就自动判为未入表，不得按项目名称模糊匹配，也不得跨客户引用拜访证据。"
+      },
+      "execution_contract": {
+      "rule_version": "Q27-v4",
+        "agent_version": "DSM-Q27-OPPORTUNITY-FACT-AI-v3",
+        "registry_join_key": "客户编号",
+        "visit_window": "逐客户取测评周期结束日前最近两次有拜访日期的实际拜访记录",
+        "system_opportunity_scope": "商机入表时间在测评周期且没有结束，或在测评周期内有取消、输单、推迟、赢单明确结果；重叠按商机项目编号去重",
+      "scoring_formula": "考核期已入表商机客户数÷应有商机客户数；两端均按客户编号去重，分子只统计应有商机客户中的已入表客户。",
+      "no_actual_visit_default_zero": true,
+      "no_identified_should_have_opportunity_default_zero": true,
+      "confirmation_required_for_unentered": false,
+        "formal_score_released": true
+      }
+    },
+    "Q28": {
+      "mapping_status": "deterministic_five_dimension_completeness_ready",
+      "prompt": "我能够准确获取商机项目的相关信息，包括客户决策链相关人员的态度、具体需求以及竞争情况等",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["客户信息表.xlsx", "客户联系人.lsx.xlsx", "拜访记录录入.xlsx", "商机项目信息表.xlsx"],
+      "active_opportunity_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "fields": ["商机项目编号", "客户编号", "商机项目信息状态", "结果", "公司业绩确认"],
+        "shared_rule_reference": "shared_rules.active_opportunity_resolution"
+      },
+      "snapshot_rule": "活跃商机集合及五类信息均采用评估截止日锁定快照；截止日后补录或修改不得回写本次评分。",
+      "dimension_mapping": {
+        "budget_and_timeline": {
+          "rule": "预算和时间必须同时具备才算第一类完整；任一缺失则该类不完整。",
+          "fields": ["客户预算（单位万元）", "客户预算说明", "预计成交月份", "预计达到P4的时间", "预计达到P5的时间"]
+        },
+        "decision_chain": {
+          "rule": "需有决策链联系人及角色、关系水平、对本项目态度。",
+          "fields": ["采购决策/联系人编号", "采购决策/影响力度", "采购决策/关系水平", "采购决策/对本项目态度"]
+        },
+        "stage_and_forecast": {
+          "fields": ["项目当前阶段", "预测"]
+        },
+        "need_and_product": {
+          "fields": ["客户需求情况描述", "商机项目产品/产品分类I", "商机项目产品/产品分类II", "商机项目产品/具体产品型号"]
+        },
+        "competitor": {
+          "fields": ["友商信息/友商名称", "友商信息/友商基本情况", "友商信息/其他"]
+        }
+      },
+      "calculation_mapping": {
+        "opportunity_score": "每个活跃商机得分=4×完整信息类别数÷5。",
+        "overall_score": "全部活跃商机项目得分的算术平均值；阈值和分档沿用V3。",
+        "zero_population": "评估截止日没有活跃商机时判为数据不足。"
+      }
+    },
+    "Q29": {
+      "mapping_status": "q29_v2_released",
+      "prompt": "对于每一个正在推进的商机，我都有明确的下一步行动安排包括时间和目的等",
+      "confirmed_on": "2026-08-14",
+      "mapping_scope": "Q29测评期商机分母、面对面拜访、三项完整性、客户编号回退、项目粒度覆盖率及TAORAN四项受控AI事实已发布。",
+      "source_tables": [
+        "商机项目信息表.xlsx",
+        "拜访记录录入.xlsx"
+      ],
+      "opportunity_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "sheet_name": "商机项目信息表",
+        "fields": [
+          "商机项目编号",
+          "客户编号",
+          "入表时间",
+          "项目当前阶段",
+          "结果",
+          "推迟商机时间",
+          "商机项目信息状态",
+          "公司业绩确认"
+        ]
+      },
+      "next_action_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "拜访日期",
+          "拜访方式",
+          "客户编号",
+          "关联商机阶段信息/商机编号",
+          "关联商机阶段信息/历史商机阶段",
+          "关联商机阶段信息/最新商机阶段",
+          "下一步行动目的",
+          "下一次具体其他目的",
+          "下次拜访期望的关键结果",
+          "下次联系客户时间安排"
+        ],
+        "canonical_targets": [
+          "VisitOpportunityStageSnapshot",
+          "VisitNextAction"
+        ]
+      },
+      "denominator_rule": {
+        "grain": "测评周期内符合范围的商机项目编号",
+        "rule": "商机入表时间在测评周期且没有结束，或在测评周期内有取消、输单、推迟、赢单明确结果；两类重叠按商机项目编号去重。",
+        "period_fields": [
+          "入表时间",
+          "推迟商机时间",
+          "系统创建时间（简道云元数据）"
+        ],
+        "result_time_resolution": "推迟优先取推迟商机时间；取消、输单、赢单优先取已映射的结果时间别名，当前DSM表无通用结果时间物理字段时取简道云不可变系统创建时间，仍缺失时以入表时间作为可审计代理。"
+      },
+      "linkage_rule": {
+        "explicit": "拜访记录有关联商机阶段信息/商机编号时，按商机编号连接。",
+        "customer_fallback": "商机编号为空时按客户编号连接该客户本期全部商机；一条记录可展开到同客户多个本期商机，必须保留原拜访记录编码和展开后的商机编号来源链。",
+        "forbidden": "不得按客户名称关联。"
+      },
+      "multi_record_rule": {
+        "selection": "同一商机取测评周期内全部面对面拜访记录；电话、微信邮件QQ和视频会议不进入Q29。",
+        "coverage": "任一关联面对面拜访记录的下一步行动目的、时间、期望结果三项均非空，该商机计为有下一步行动。",
+        "quality": "AI综合同一商机的完整面对面拜访行动证据，按阶段准确、策略正确、行动具体且逻辑一致形成一个0—4分；每个商机只计一次，再按有行动商机取平均。"
+      },
+      "qualifying_visit_methods": [
+        "面对面拜访"
+      ],
+      "complete_plan_rule": "仅使用面对面拜访记录；下一步行动目的、下次联系客户时间安排、下次拜访期望的关键结果三项均非空，才视为该商机有完整下一步行动；不从拜访计划制定表补齐。",
+      "execution_rule": {
+        "rule_version": "Q29-v2",
+        "coverage_bands": "有完整下一步行动的本期商机占比按>=100%/>=90%/>=70%/>=50%/<50%得4/3/2/1/0分",
+        "taoran_fact_rule_version": "DSM-Q29-LIGHT-SEMANTIC-FACT-AI-v3",
+        "ai_payload_contract": "每个商机只发送最近三条完整面对面行动的阶段、目的、关键结果、过程、评价及下一步行动最小字段；完整行动覆盖率仍由代码基于全部记录计算。",
+        "taoran_fact_contract": "AI按商机返回阶段准确、策略正确、行动具体、逻辑一致四项布尔事实，代码求和为商机0至4分并按商机取平均。",
+        "formula": "完整行动覆盖率得分×50%+商机行动合理性平均分×50%",
+        "zero_population": "测评周期内无符合取数范围的商机按V3 E档评0分",
+        "golden_cases": "knowledge-base/scoring-engine/q29_golden_cases_v1.json"
+      }
+    },
+    "Q30": {
+      "mapping_status": "deterministic_stage_consistency_ready",
+      "prompt": "在讨论商机项目推进时，我能够说清客户采购流程正处在哪一个环节",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["商机项目信息表.xlsx", "拜访记录录入.xlsx"],
+      "denominator_rule": "所有符合shared_rules.active_opportunity_resolution的活跃商机项目编号。",
+      "stage_dictionary": {
+        "P1": "可以获得参与",
+        "P2": "获得提方案的机会",
+        "P3": "许可参与商务谈判的机会",
+        "P4": "赢得客户的订单",
+        "P5": "完成合同"
+      },
+      "opportunity_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "fields": ["商机项目编号", "客户编号", "项目当前阶段", "商机项目信息状态", "结果", "公司业绩确认", "客户需求情况描述", "采购方式", "预测"]
+      },
+      "visit_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "fields": ["拜访记录编码", "拜访日期", "客户编号", "拜访目的", "想取得的关键结果", "过程详细描述", "评价", "关联商机阶段信息/商机编号", "关联商机阶段信息/历史商机阶段", "关联商机阶段信息/最新商机阶段"]
+      },
+      "linkage_rule": {
+        "explicit": "有关联商机编号的拜访按商机编号连接。",
+        "unlinked": "活跃商机缺少直接关联拜访时，按客户编号取评估截止日前最近一次、且未绑定其他商机的拜访，由受控AI根据项目特征和拜访事实判断P1—P5阶段。",
+        "ambiguous": "同客户有多个活跃商机时，每个商机分别携带项目特征和同一最近未关联拜访进行独立阶段判断；证据不足记录数据质量问题，不使用其他商机的直接关联拜访。"
+      },
+      "stage_scoring_rule": "历史评分和阶段一致性比较均以评估截止日商机项目当前最新阶段为销售自评值；历史商机阶段只作演进证据，不覆盖当前最新阶段。AI按P1—P5字典判断当前阶段，与项目当前阶段比较一致率。",
+      "ai_payload_contract": "仅无直接关联拜访的活跃商机进入AI；每项只携带项目最小上下文和最近一次未关联拜访。",
+      "shared_rule_reference": "shared_rules.active_opportunity_resolution"
+    },
+    "Q31": {
+      "mapping_status": "q31_v2_released",
+      "prompt": "面对推进困难的项目及关键阶段，我会主动寻求上级或团队支持",
+      "confirmed_on": "2026-08-13",
+      "preservation_rule": "题干保留；判断标准按已确认的独立主观输赢判断、当前活跃商机AI比较和50%/50%权重更新。",
+      "source_tables": [
+        "商机项目信息表.xlsx",
+        "客户联系人.lsx.xlsx",
+        "拜访记录录入.xlsx"
+      ],
+      "source_mapping": {
+        "subjective_assessment": "商机项目信息表.xlsx/预测：确保、争取归为赢；机会、运气归为输/不确定赢；非空且可识别即为有主观评价。",
+        "population": "入表时间在测评期且未结束，或测评期内有取消、输单、推迟、赢单结果；按商机项目编号去重。",
+        "ai_population": "只对上述总商机中当前仍活跃的商机执行AI输赢判断。",
+        "ai_evidence": [
+          "项目当前阶段",
+          "决策链联系人对本项目态度",
+          "考核期结束前最近两次相关拜访记录"
+        ],
+        "visit_linkage": "商机编号优先；缺失时仅在该客户唯一活跃商机时按客户编号回退，同客户多商机时不猜测。",
+        "history_window": "每个当前活跃商机只读取测评截止日前最近两次相关拜访。"
+      },
+      "standard_retention": {
+        "first_item": "主观判断覆盖率按95%/90%/85%/80%分档，占50%。",
+        "second_item": "AI与销售主观判断一致率按90%/80%/70%/50%分档，占50%。"
+      },
+      "execution_rule": {
+        "rule_version": "Q31-v2",
+        "ai_fact_rule_version": "DSM-Q31-LIGHT-SEMANTIC-FACT-AI-v3",
+        "ai_payload_contract": "每个活跃商机只携带阶段、决策态度、最近两次拜访、最多六位联系人及记录ID；AI只返回独立赢率。",
+        "ai_boundary": "AI只返回当前活跃商机的独立赢率；>70%为赢，<=70%为输/不确定赢；分档、一致性、权重和总分由代码计算。",
+        "formula": "主观输赢判断覆盖得分×50%+AI与销售主观判断一致性得分×50%",
+        "zero_population": "测评期无总商机项目按V3 E档0分",
+        "golden_cases": "knowledge-base/scoring-engine/q31_golden_cases_v2.json"
+      }
+    },
+    "Q32": {
+      "mapping_status": "q32_v2_released",
+      "prompt": "我能够在竭尽全力后，坦然接受商机项目的输赢结果",
+      "confirmed_on": "2026-08-12",
+      "source_tables": ["商机项目信息表.xlsx", "拜访记录录入.xlsx", "销售代表结构.xlsx"],
+      "current_period_lost_rule": {
+        "population": "商机项目信息表中结果=输单，且该条商机数据的系统创建时间落在测评期起止日期内的商机项目编号。",
+        "canonical_source": "商机项目信息表.结果=输单；默认输单时间=该条商机数据的系统创建时间。",
+        "missing_time_rule": "缺少系统创建时间的输单记录登记数据质量问题，不使用更新时间、导出时间或接入时间替代。"
+      },
+      "loss_reason_source": {
+        "source_file": "商机项目信息表.xlsx",
+        "fields": ["商机项目编号", "客户编号", "结果", "推迟/取消/输单主要原因", "推迟/取消/输单具体表现", "推迟/取消/输单详细说明"]
+      },
+      "ai_bottleneck_rule": "受控AI按商机编号优先、客户编号回退检索默认输单时间前的全部拜访记录，结合阶段、目的、关键结果、过程描述、评价和经理点评识别输单卡点并与销售原因比较；没有销售输单原因或没有输单前事实时按不一致。AI不直接给Q32最终分。",
+      "management_intervention_rule": {
+        "visit_fields": ["参加拜访人员", "联合拜访打卡识别", "经理点评", "客户编号", "关联商机阶段信息/商机编号"],
+        "organization_fields": ["销售人员姓名", "销售经理姓名", "总经理姓名", "销售团队"],
+        "confirmed_positive_conditions": ["参加拜访人员明确为与经理联合拜访", "参加拜访人员明确为其他部门联合拜访", "参与人员可由组织目录识别为销售经理、总经理或更高层", "存在可追溯的经理或更高层行动建议/经理点评"],
+        "temporal_rule": "管理者介入证据的发生时间必须严格早于该商机默认输单时间；默认输单时间当日或之后形成的联合拜访、点评、建议或其他记录不计入第三项分子。",
+        "event_time_precedence": "联合拜访使用实际拜访时间；行动建议或经理点评使用系统不可变首次提交时间。无法确定发生时间早于默认输单时间时不得计为介入。",
+        "other_department_contract": "其他部门联合拜访的部门归属由生产系统通讯录元数据识别；当前销售代表结构表只有销售团队，无完整部门列。",
+        "customer_fallback": "没有商机编号时按客户编号检索默认输单时间前的相关拜访记录。"
+      },
+      "execution_rule": {
+        "rule_version": "Q32-v2",
+        "ai_fact_rule_version": "DSM-Q32-LIGHT-SEMANTIC-FACT-AI-v2",
+        "ai_payload_contract": "每个输单商机只携带销售输单原因、阶段和最近三条输单前拜访的最小语义字段；AI只返回卡点与一致性事实。",
+        "bands": "三项占比分别按100%、85%、70%、50%对应4、3、2、1、0分",
+        "formula": "输单原因完整得分×30%+AI卡点一致得分×40%+管理介入覆盖得分×30%",
+        "zero_population": "本期无输单商机时不调用AI，直接返回SCORED、E档0分并正常输出报告",
+        "golden_cases": "knowledge-base/scoring-engine/q32_golden_cases_v1.json"
+      }
+    },
+    "Q33": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我会按照标准记录每一次拜访活动",
+      "confirmed_on": "2026-08-14",
+      "mapping_scope": "TAORAN完整性分母、不可变首次提交时间、24小时起点回退及仅面对面拜访统计口径已确认。",
+      "source_tables": [
+        "拜访记录录入.xlsx",
+        "拜访计划制定表.xlsx"
+      ],
+      "confirmed_decisions": [
+        "下一行动目的和期望结果默认且仅从同一条拜访记录抓取。",
+        "下次联系客户时间优先读取拜访记录；为空时，按销售代表、客户编号取得当前拜访日期之后最早的计划拜访日期。",
+        "目的、期望结果和解析后的时间均非空时，视为一次完整的下次拜访计划。",
+        "完整计划自动幂等同步到拜访计划制定表；已有回退计划只关联，不重复创建。",
+        "拜访记录提交时间从业务系统记录日志或源数据自带的首次提交时间元数据取得。",
+        "24小时提交率只统计面对面拜访；其他拜访方式不进入分子、分母，也不产生结束基线缺失异常。"
+      ],
+      "visit_record_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "销售代表",
+          "拜访日期",
+          "实际拜访开始时间",
+          "实际拜访结束时间",
+          "拜访时长",
+          "客户编号",
+          "客户分类II",
+          "是否预约",
+          "拜访目的",
+          "想取得的关键结果",
+          "过程详细描述",
+          "评价",
+          "关联商机阶段信息/最新商机阶段",
+          "下一步行动目的",
+          "下一次具体其他目的",
+          "下次拜访期望的关键结果",
+          "下次联系客户时间安排"
+        ]
+      },
+      "completeness_mapping": {
+        "opportunity_customer": {
+          "denominator_per_record": 10,
+          "fields": ["客户分类II", "关联商机阶段信息/最新商机阶段", "是否预约", "拜访目的", "想取得的关键结果", "过程详细描述", "评价", "下一次行动时间", "下一次行动目的", "下一次拜访期望的关键结果"]
+        },
+        "other_customer": {
+          "denominator_per_record": 9,
+          "fields": ["客户分类II", "是否预约", "拜访目的", "想取得的关键结果", "过程详细描述", "评价", "下一次行动时间", "下一次行动目的", "下一次拜访期望的关键结果"]
+        },
+        "formula": "有具体信息的必填项总数÷逐条记录固定分母之和；商机客户固定10项，其余客户固定9项。"
+      },
+      "next_action_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "下一步行动目的",
+          "下一次具体其他目的",
+          "下次拜访期望的关键结果",
+          "下次联系客户时间安排"
+        ],
+        "field_mapping": {
+          "下一次行动的时间": "优先取下次联系客户时间安排；为空时取按销售代表＋客户编号关联、且晚于当前拜访日期的最早计划拜访日期",
+          "下一次行动的目的": "下一步行动目的；选择其他时同时读取下一次具体其他目的",
+          "下一次拜访期望的关键结果": "下次拜访期望的关键结果"
+        },
+        "canonical_target": "VisitNextAction",
+        "linkage_rule": "目的和期望结果以同一行拜访记录编码关联；仅时间为空时按销售代表、客户编号及严格晚于当前拜访日期的最早计划回退。",
+        "linkage_status": "来源优先级与时间回退规则已确认。",
+        "time_fallback_source": {
+          "source_file": "拜访计划制定表.xlsx",
+          "sheet_name": "周拜访计划制定",
+          "fields": [
+            "计划编码",
+            "销售代表",
+            "计划拜访日期",
+            "客户编号"
+          ]
+        },
+        "complete_plan_rule": "目的、期望关键结果和解析后的时间均非空时，完整计划=true。",
+        "shared_rule_reference": "shared_rules.customer_next_visit_plan_resolution"
+      },
+      "submission_time_source": {
+        "source_type": "system_record_metadata",
+        "required_semantics": "业务系统提供且后续编辑不可覆盖的首次提交时间",
+        "canonical_target": "VisitEvent.submitted_at",
+        "model_status": "VisitEvent.submitted_at已进入当前DSM行为数据模型V1.5，语义锁定为不可变首次提交时间。",
+        "timezone": "保留源时区并统一转换为租户时区后计算及时性",
+        "forbidden_fallbacks": [
+          "数据接入时间SourceRecord.ingested_at",
+          "Excel文件创建时间或修改时间",
+          "拜访日期",
+          "计划拜访日期"
+        ],
+        "current_catalog_status": "现有拜访记录录入Excel没有提交时间字段，生产连接器必须读取系统不可变首次提交元数据。"
+      },
+      "timeliness_mapping": {
+        "visit_method_scope": "仅拜访方式为面对面拜访的记录进入24小时提交率分子和分母；其他拜访方式不进入及时性统计，也不产生结束基线缺失异常。",
+        "baseline_precedence": ["实际拜访结束时间", "实际拜访开始时间＋拜访时长", "实际拜访开始时间"],
+        "rule": "仅对面对面拜访计算：不可变首次提交时间减解析后的拜访结束基准小于或等于24小时视为及时；实际结束时间缺失但有开始时间和时长时按开始时间加时长，实际结束时间和时长均缺失时按实际拜访开始时间作为起点。",
+        "score_thresholds": "沿用Q33判断标准V3：90%、80%、70%、50%对应4、3、2、1、0分",
+        "missing_baseline": "面对面拜访的实际拜访开始时间和结束时间均为空时按不及时计入分母并登记数据质量问题。",
+        "missing_submission_time": "面对面拜访无系统不可变首次提交时间时按不及时计入分母并登记数据质量问题，不允许使用最后更新时间。"
+      },
+      "execution_contract": {"rule_version": "Q33-v2", "automatic_scoring": true, "ai_final_score_forbidden": true}
+    },
+    "Q34": {
+      "mapping_status": "q34_v5_light_package_released",
+      "prompt": "我能够对自己拜访活动质量进行有效的评估",
+      "confirmed_on": "2026-08-14",
+      "mapping_scope": "测评周期内所有面对面拜访采用轻量评分包：引擎计算预约、时间具体性和分层时序；AI只输出关键结果、过程、目的达成、共识与下一行动语义事实；引擎完成比例、分档及加权。",
+      "source_tables": [
+        "拜访记录录入.xlsx"
+      ],
+      "source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "拜访日期",
+          "拜访方式",
+          "客户编号",
+          "客户分类II",
+          "拜访目的",
+          "想取得的关键结果",
+          "过程详细描述",
+          "评价",
+          "下一步行动目的",
+          "下一次具体其他目的",
+          "下次联系客户时间安排"
+        ]
+      },
+      "taoran_purpose_achievement_rule": {
+        "grain": "测评周期内面对面拜访记录编码",
+        "checks": {
+          "A_appointment": "商机客户逐条必须预约；目标客户测评周期预约率须达到50%。",
+          "O_key_result": "关键结果同时满足SMART的具体、可衡量要求，并与本次拜访目的一致。",
+          "R_fact": "过程记录为客观事实或客观事实加主观看法，纯观点或动作建议不合格。",
+          "A_evaluation": "AI完成预约、关键结果、过程三项检查后给出完全达成、部分达成或未达成的唯一结论。",
+          "N": "下一行动符合业务推进底层逻辑，目的与时间具体。"
+        },
+        "self_evaluation_source": "拜访记录录入.xlsx/评价",
+        "comparison": "AI三分类与拜访记录评价字段归一后的完全达成/部分达成/未达成逐条比较；相同即为一致记录，分母为测评周期内所有面对面拜访记录。",
+        "score_thresholds": "一致记录占比95%、85%、75%、60%对应4、3、2、1、0分；第一项权重70%。"
+      },
+      "next_action_quality_rule": {
+        "grain": "拜访记录编码",
+        "checks": [
+          "下一行动符合业务推进底层逻辑，目的及时间具体且晚于本次拜访。",
+          "商机客户须有明确客户共识和具体下一行动。",
+          "目标客户下一次拜访安排不得与本次拜访处于同一自然月。",
+          "潜力客户下一次拜访安排不得与本次拜访处于同一自然季度。"
+        ],
+        "direct_linkage": "下一行动目的、具体其他目的和下次联系时间必须全部来自同一条拜访记录；缺失或无法解析时直接按不完整处理，不得从拜访计划表回退或补齐。",
+        "score_thresholds": "沿用Q34判断标准V3：合格记录占比95%、85%、75%、60%对应4、3、2、1、0分。",
+        "shared_rule_reference": "shared_rules.customer_next_visit_plan_resolution",
+        "customer_consensus_gate": {
+          "positive_expressions": [
+            "同意",
+            "确认",
+            "认可",
+            "承诺",
+            "约定",
+            "达成一致",
+            "双方一致"
+          ],
+          "negative_expressions": [
+            "不同意",
+            "未同意",
+            "没有同意",
+            "不确认",
+            "未确认",
+            "不认可",
+            "未认可",
+            "未承诺",
+            "未约定"
+          ],
+          "required_combination": "明确肯定一致性表述＋同一拜访记录的具体下一行动，两项同时成立",
+          "applicable_population": "商机客户"
+        },
+        "segment_timing_rule": {
+          "目标客户": "不在同月",
+          "潜力客户": "不在同季",
+          "商机客户": "客户共识门槛"
+        }
+      },
+      "open_execution_questions": [],
+      "execution_contract": {
+        "rule_version": "Q34-v5",
+        "ai_fact_rule_version": "DSM-Q34-LIGHT-SEMANTIC-FACT-AI-v5",
+        "automatic_scoring": true,
+        "ai_final_score_forbidden": true,
+        "score_owner": "代码计算两项比例、固定分档及70%/30%加权"
+      }
+    },
+    "Q35": {
+      "mapping_status": "deterministic_daily_report_visit_golden_time_ready",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；日报提交和黄金时间达标工作日分母只统计至实际评分截止日。",
+      "prompt": "我每天都会反思自己的时间安排，并及时做出修正",
+      "confirmed_on": "2026-08-10",
+      "source_tables": ["销售代表工作日报.xlsx", "拜访记录录入.xlsx", "销售代表KPI评分标准.xlsx", "拜访黄金时间标准.xlsx", "系统审计日志"],
+      "daily_quantity_standard": {
+        "source_file": "销售代表KPI评分标准.xlsx",
+        "source_field": "公司标准日均拜访数量",
+        "rule": "Q35所有数量达标判断采用测评日期生效的公司标准日均拜访数量；用户输入中的“日军标准”按“日均标准”执行。"
+      },
+      "daily_report_source": {
+        "source_file": "销售代表工作日报.xlsx",
+        "fields": ["销售日报表编号", "销售代表", "日报日期", "当日综合拜访总数", "黄金时间面对面拜访数量", "当日综合拜访总数不足公司规定标准时，需上报当日具体工作安排"],
+        "submitted_at": "日报当天提交比例必须读取系统不可变首次提交时间；当前Excel无此物理列，禁止用文件时间或最后更新时间代替。"
+      },
+      "visit_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "fields": ["拜访记录编码", "销售代表", "拜访日期", "拜访方式", "实际拜访开始时间", "实际拜访结束时间", "拜访时长", "考勤时间", "时间状态", "异常原因说明"]
+      },
+      "golden_time_source": {
+        "source_file": "拜访黄金时间标准.xlsx",
+        "fields": ["公司名称", "上午开始拜访黄金时间", "上午结束拜访黄金时间", "下午开始拜访黄金时间", "下午结束拜访黄金时间"]
+      },
+      "calculation_mapping": {
+        "quantity_trigger": "当日综合拜访总数低于公司标准日均拜访数量时，日报必须填写当日具体工作安排。",
+        "check_in_normal": "仅面对面拜访；打卡时间与实际拜访时间比较，考勤时间落在实际拜访开始时间前后30分钟内为正常打卡。原标准中的‘商机拜访时间’已更正为‘实际拜访时间’。",
+        "golden_overlap": "仅面对面拜访；实际拜访时间区间与公司当日任一黄金时间段有交集即算黄金时间拜访。结束时间为空时按开始时间＋时长解析；时长也为空时只能作为时点判断。",
+        "golden_quantity_met": "工作日黄金时间面对面拜访数量达到公司标准日均拜访数量即达标。",
+        "missing_golden_time_configuration": "未匹配到适用于当前公司/团队的黄金时间配置时，第4项黄金时间面对面拜访占比、第5项黄金时间数量达标工作日占比、第6项黄金时间不足说明各直接记0分；第1—3项继续评分，Q35状态仍为SCORED。",
+        "shared_explanation_field": "日报字段‘当日综合拜访总数不足公司规定标准时，需上报当日具体工作安排’是统一说明来源；其文本既可说明当日数量不足，也可解释打卡偏差和黄金时间不足。",
+        "explanation_quality": "确定性检查说明去空白后不少于12字，且包含调整、改进、改善、安排、计划、补访、提前、跟进、联系或预约等明确行动词；同一原文可被多项引用，但每项保留独立日期和事实轨迹。"
+      },
+      "execution_contract": {
+        "rule_version": "Q35-v2",
+        "formal_score_released": true,
+        "ai_required": false
+      }
+    },
+    "Q36": {
+      "mapping_status": "deterministic_rule_with_optional_ai_fallback_ready",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；允许读取截止时已提交的未来下一工作日计划，包括跨诊断结束月的下一法定工作日。",
+      "prompt": "我次日的拜访活动安排很准确",
+      "confirmed_on": "2026-08-10",
+      "source_tables": [
+        "销售代表工作日报.xlsx",
+        "拜访计划制定表.xlsx",
+        "销售代表KPI评分标准.xlsx",
+        "拜访目的设置表.xlsx",
+        "拜访记录录入.xlsx",
+        "商机项目信息表.xlsx",
+        "国家法定工作日逐日快照"
+      ],
+      "confirmed_decisions": [
+        "日次拜访计划不从日报文本或汇总字段推断，而是从拜访计划制定表读取。",
+        "对每份纳入测评的日报，以日报日期之后的下一个国家法定工作日作为目标计划日期；不以目标日是否另有日报作为连接条件。",
+        "拜访计划制定表中的计划记录在Q36统一解释为面对面拜访计划，不再要求计划表提供拜访方式字段。",
+        "计划和日报只能使用测评截止时已存在的来源记录，截止时点后补录或修改不回写本次测评。",
+        "法定工作日无日报视为该销售代表缺勤并排除；第一项分母为能够解析出下一有效工作日的已提交日报工作日数量。"
+      ],
+      "daily_report_anchor": {
+        "source_file": "销售代表工作日报.xlsx",
+        "fields": [
+          "销售日报表编号",
+          "销售代表",
+          "日报日期",
+          "日报日期次日"
+        ],
+        "authoritative_anchor_field": "日报日期",
+        "reconciliation_only_field": "日报日期次日",
+        "rule": "日报日期次日只与逐日工作日解析结果对账；冲突时保留冲突并以锁定的国家法定工作日快照及日报日期推导结果为准。"
+      },
+      "next_workday_resolution": {
+        "shared_rule_reference": "DSM统一行为数据模型/WORKDAY-CALENDAR-RESOLUTION-V2",
+        "base_calendar": "国家法定工作日、法定节假日及调休工作日逐日快照",
+        "absence_source": "销售代表工作日报.xlsx/日报日期与国家法定工作日逐日快照的差集",
+        "target_date_formula": "min(calendar_date > 日报日期 AND is_national_workday=true)",
+        "external_calendar_adapter": "可使用经租户批准的外部日历适配器维护逐日快照，但评分时不实时调用。",
+        "absence_handling": "国家法定工作日无日报即视为该销售代表缺勤并排除，无需销售代表缺勤记录表或独立缺勤日期字段。"
+      },
+      "plan_source": {
+        "source_file": "拜访计划制定表.xlsx",
+        "sheet_name": "周拜访计划制定",
+        "fields": [
+          "计划编码",
+          "销售代表",
+          "计划拜访日期",
+          "客户类型II",
+          "拜访目的",
+          "具体其他目的",
+          "期望得到的关键结果",
+          "客户编号"
+        ],
+        "filter": "销售代表=日报销售代表 AND 计划拜访日期=目标计划日期 AND 来源记录在测评截止时已可见",
+        "visit_method_semantics": "全部记录视为面对面拜访计划",
+        "quantity_grain": "按销售代表、目标计划日期和计划编码去重计数"
+      },
+      "submetrics": [
+        {
+          "metric_code": "Q36_NEXT_WORKDAY_PLAN_QUANTITY",
+          "calculation": "按销售代表、已提交日报工作日逐日评价：其对应下一有效工作日的去重计划数量达到测评时生效的公司标准日均拜访数量，才计1个正常日报日。正常日报日数÷可解析下一有效工作日的日报工作日数，按V3阈值评分。",
+          "denominator": "考核期内能够解析出下一有效工作日的已提交日报工作日数量。非工作日及没有日报而被推导为缺勤的日期不进入分母。",
+          "deduplication": "同一销售代表同一有效工作日存在多份日报时按工作日只计一次，并使用测评截止时可见的不可变首次提交版本。",
+          "standard_source": "销售代表KPI评分标准.xlsx/公司标准日均拜访数量"
+        },
+        {
+          "metric_code": "Q36_NEXT_WORKDAY_PLAN_PURPOSE_LOGIC",
+          "calculation": "以计划编码为粒度，先确定性检查客户类型—允许目的、具体其他目的、关键结果具体性、上次拜访承接关系、商机阶段证据，以及目标客户月度和潜力客户季度覆盖频率；语义AI仅作可选增强。AI不可用或限流时使用结构化规则结果继续计算，合格计划占比按V3阈值评分。",
+          "previous_visit_source": "拜访记录录入.xlsx，按销售代表+客户编号取目标计划日期前最近一次面对面拜访",
+          "opportunity_source": "商机项目信息表.xlsx，只使用测评截止时已存在的商机和阶段证据"
+        }
+      ],
+      "overall_formula": "沿用Q36判断标准V3：数量安排得分×75%+目的逻辑得分×25%",
+      "zero_and_missing_rules": {
+        "zero_plan_rows": "目标计划日期可正常读取计划表但无任何计划记录时，是有效的0条计划事实，按V3参与评分。",
+        "missing_daily_report": "国家法定工作日没有日报时推导为该销售代表缺勤，不进入有效工作日分母。",
+        "insufficient": "国家逐日工作日快照、日报或计划数据源整体未提供，或在允许的未来计划读取窗口内仍无法解析下一国家法定工作日时，判为数据不足；AI不可用不属于数据不足。"
+      },
+      "execution_contract": {
+        "rule_version": "Q36-v2",
+        "quantity_logic": "确定性计算",
+        "target_potential_frequency": "按目标客户不同月、潜力客户不同季度确定性判断",
+        "opportunity_purpose_logic": "先执行目的配置、具体目的、关键结果、上次拜访承接和商机阶段的确定性结构化门槛；AI可输出逐计划布尔增强事实，429/超时/未配置时使用结构化兜底。最终比例、分档、权重及得分全部由确定性规则计算",
+        "ai_failure_rule": "AI未配置、超时或429限流时记录数据质量提示，但不得中断Q36评分或改为证据不足",
+        "empty_plan_result": "来源读取成功但目标日期无计划时按0条计划事实参与评分，不判数据不足"
+      }
+    },
+    "Q37": {
+      "mapping_status": "q37_v2_released",
+      "scoring_cutoff_rule": "ASSESSMENT-SCORING-CUTOFF-V1；当前未结束周按截至评分日已经发生的有效工作日评分，截止前已提交的未来计划仍保留用于计划质量判断。",
+      "prompt": "我每周都会按照原则提前做好下周的拜访活动计划",
+      "confirmed_on": "2026-08-14",
+      "source_tables": [
+        "拜访计划（周计划快照）.xlsx",
+        "销售代表KPI评分标准.xlsx",
+        "公司财年月历.xlsx",
+        "销售代表工作日报.xlsx"
+      ],
+      "confirmed_decisions": [
+        "销售代表KPI评分标准中的公司标准日均拜访数量，作为Q37每日面对面拜访数量标准。",
+        "周合格率的固定标准为公司标准日均拜访数量乘4.5，不再随当周有效工作天数变化。",
+        "第三项只检查周计划快照中每条计划是否已设定拜访目的；目的为其他时具体其他目的也必须非空。",
+        "提交计划时不允许提交计划拜访日期早于提交当天的计划数据。",
+        "周计划快照时间是本周计划数据提交的最终截止时间。",
+        "Q37逐日工作日以国家法定工作日、法定节假日和调休工作日为基线。",
+        "法定工作日未找到该销售代表提交的工作日报即视为缺勤并从个人有效工作日中排除；不再依赖销售代表缺勤记录表或缺勤日期字段。"
+      ],
+      "quantity_standard": {
+        "daily_reference": {
+          "source_file": "销售代表KPI评分标准.xlsx",
+          "sheet_name": "销售代表KPI评分标准",
+          "lookup_fields": [
+            "公司名称（通讯录）",
+            "销售团队"
+          ],
+          "value_field": "公司标准日均拜访数量",
+          "q37_semantic_alias": "每日面对面拜访数量标准"
+        },
+        "effective_workday_sources": [
+          {
+            "source_file": "国家法定工作日逐日快照",
+            "canonical_target": "WorkCalendarDay",
+            "fields": [
+              "calendar_date",
+              "is_national_workday",
+              "day_type",
+              "calendar_version",
+              "source_content_hash"
+            ],
+            "rule": "法定节假日排除，国家规定的调休工作日纳入；外部日历只用于维护并预先锁定该快照。"
+          },
+          {
+            "source_file": "销售代表工作日报.xlsx",
+            "sheet_name": "销售代表工作日报",
+            "fields": [
+              "销售代表",
+              "日报日期"
+            ],
+            "canonical_target": "DailySalesReport",
+            "rule": "国家法定工作日与该销售代表日报日期集合做差集；法定工作日无日报即视为缺勤并从个人有效工作日中排除。"
+          },
+          {
+            "source_file": "公司财年月历.xlsx",
+            "sheet_name": "公司财年月历",
+            "fields": [
+              "开始日期",
+              "结束日期",
+              "有效工作天数",
+              "实际标准工作天数"
+            ],
+            "role": "仅用于月度对账，不用于反推具体工作日期"
+          }
+        ],
+        "effective_workday_formula": "is_national_workday=true AND daily_report_submitted=true",
+        "calendar_adapter": "可选接入外部日历适配器；评分前必须物化为带版本和哈希的逐日快照，评分过程不实时访问。",
+        "absence_derivation": "复用Q36的DAILY-REPORT-ABSENCE-v1：法定工作日无日报即视为缺勤并排除；无需销售代表缺勤记录表或独立缺勤日期字段。",
+        "weekly_formula": "周面对面拜访数量标准=公司标准日均拜访数量×4.5",
+        "plan_quantity_grain": "按销售代表、计划拜访日期统计计划编码去重数量",
+        "face_to_face_handling": "依据本次确认，将周计划快照中的计划记录作为Q37面对面拜访计划统计；源表当前没有独立的计划拜访方式字段。"
+      },
+      "purpose_quality_rule": {
+        "plan_source": {
+          "source_file": "拜访计划（周计划快照）.xlsx",
+          "sheet_name": "周拜访计划制定",
+          "fields": [
+            "周计划快照时间",
+            "计划编码",
+            "销售代表",
+            "计划拜访日期",
+            "客户类型II",
+            "拜访目的",
+            "具体其他目的",
+            "期望得到的关键结果",
+            "客户编号"
+          ]
+        },
+        "historical_v1_evidence_checks": [
+          {
+            "check_code": "CUSTOMER_TYPE_ALLOWED_PURPOSE",
+            "source_file": "拜访目的设置表.xlsx",
+            "fields": [
+              "客户类型",
+              "拜访目的"
+            ],
+            "rule": "计划客户类型和拜访目的必须命中生效的允许组合"
+          },
+          {
+            "check_code": "PREVIOUS_VISIT_RESULT_ALIGNMENT",
+            "source_file": "拜访记录录入.xlsx",
+            "fields": [
+              "销售代表",
+              "拜访日期",
+              "客户编号",
+              "拜访目的",
+              "想取得的关键结果",
+              "过程详细描述",
+              "评价",
+              "关联商机阶段信息/商机项目名称",
+              "关联商机阶段信息/历史商机阶段",
+              "关联商机阶段信息/最新商机阶段",
+              "关联商机阶段信息/商机编号",
+              "下一步行动目的",
+              "下一次具体其他目的",
+              "下次拜访期望的关键结果",
+              "下次联系客户时间安排"
+            ],
+            "as_of_rule": "按销售代表和客户编号取得周计划快照时间之前最近一次拜访记录",
+            "result_precedence": "上一次拜访结果优先读取最近一次拜访的评价字段；评价为空时才以过程详细描述回退，评价非空时过程详细描述仅作补充证据，不得覆盖评价。",
+            "rule": "计划目的应对评价优先的上一次拜访结果、未完成事项及该次记录的下一行动安排形成合理承接。"
+          },
+          {
+            "check_code": "OPPORTUNITY_STAGE_ALIGNMENT",
+            "source_file": "商机项目信息表.xlsx",
+            "fields": [
+              "销售代表",
+              "客户编号",
+              "商机项目编号",
+              "项目当前阶段",
+              "结果",
+              "商机项目信息状态"
+            ],
+            "as_of_rule": "只能使用周计划快照截止时已经存在的商机阶段证据，不得使用后续更新状态",
+            "rule": "商机客户的计划目的应与相关商机所处阶段相符"
+          },
+          {
+            "check_code": "KEY_RESULT_SPECIFICITY",
+            "source_file": "拜访计划（周计划快照）.xlsx",
+            "fields": [
+              "计划编码",
+              "期望得到的关键结果"
+            ],
+            "rule": "期望得到的关键结果应具体、可验证，并与拜访目的相符；空值、纯占位内容或无法判断是否达成的泛化表述不合格"
+          }
+        ],
+        "historical_v1_evidence_status": "superseded_by_q37_v2_purpose_presence_rule",
+        "purpose_presence_check": {
+          "source_fields": ["计划编码", "拜访目的", "具体其他目的"],
+          "rule": "拜访目的非空视为已设定；拜访目的为其他时，具体其他目的也必须非空。"
+        },
+        "historical_v1_customer_opportunity_linkage": {
+          "primary": "最近一次拜访存在关联商机编号时，优先按商机编号精确关联并读取对应阶段。",
+          "fallback": "最近一次拜访没有商机编号时，按客户编号检索该客户全部活跃商机作为候选。",
+          "multiple_candidates": "同一客户存在多个活跃商机时，结合计划目的、期望关键结果、最近拜访评价和各候选商机阶段判断对应推进逻辑；不得把一个商机的阶段套到另一个商机。",
+          "trace": "保留客户编号、计划编码、最近拜访编码、候选商机编号和阶段证据链。"
+        },
+        "ratio": "已设定拜访目的的计划编码去重数量除以有效计划编码去重总数",
+        "score_thresholds": "Q37-v2：100%、90%、80%、70%对应4、3、2、1、0分"
+      },
+      "submission_control": {
+        "write_source": {
+          "source_file": "拜访计划制定表.xlsx",
+          "sheet_name": "周拜访计划制定",
+          "fields": [
+            "计划编码",
+            "销售代表",
+            "计划拜访日期",
+            "客户编号"
+          ]
+        },
+        "historical_date_guard": {
+          "rule": "计划拜访日期必须大于或等于提交动作发生时的租户本地日期；早于当天的计划数据拒绝提交",
+          "example": "若提交日期为2029-08-07，则计划拜访日期早于2029-08-07的数据不能提交，2029-08-07当天及以后日期允许继续校验"
+        },
+        "weekly_final_cutoff": {
+          "rule": "周计划快照时间是该计划周数据提交和修改的最终截止时间；截止后本周计划冻结，评分只读取该时点形成的快照",
+          "configuration_reference": "沿用Q06 snapshot_policy：按DSM系统版本和租户配置；DSM SaaS默认每周一12:00",
+          "timezone": "使用租户配置时区"
+        },
+        "validation_order": [
+          "先校验计划拜访日期不早于提交当天",
+          "再校验当前时间未超过对应计划周的快照截止时间",
+          "通过后执行其他必填项和业务质量校验"
+        ]
+      },
+      "historical_v1_next_workday_visit_analysis": {
+        "status": "superseded_by_q37_v2_not_used_for_scoring",
+        "purpose": "为Q37计划质量分析补充计划日期次一有效工作日的实际拜访和商机上下文证据",
+        "plan_reference": {
+          "source_file": "拜访计划（周计划快照）.xlsx",
+          "fields": [
+            "销售代表",
+            "计划拜访日期",
+            "客户编号"
+          ]
+        },
+        "actual_source": {
+          "source_file": "拜访记录录入.xlsx",
+          "sheet_name": "拜访记录录入",
+          "fields": [
+            "拜访记录编码",
+            "销售代表",
+            "拜访日期",
+            "客户编号",
+            "拜访方式",
+            "拜访目的",
+            "想取得的关键结果",
+            "过程详细描述",
+            "评价",
+            "关联商机阶段信息/商机项目名称",
+            "关联商机阶段信息/历史商机阶段",
+            "关联商机阶段信息/最新商机阶段",
+            "关联商机阶段信息/商机编号",
+            "下一步行动目的",
+            "下一次具体其他目的",
+            "下次拜访期望的关键结果",
+            "下次联系客户时间安排"
+          ]
+        },
+        "target_date_rule": "目标分析日期为计划拜访日期之后的下一个有效工作日，不是简单自然日加一。",
+        "matching_rule": "按销售代表、客户编号匹配目标分析日期的拜访记录，不得仅按客户名称连接；拜访显式商机编号优先，缺失时才按客户编号取得活跃商机候选。",
+        "evidence_role": "用于分析计划目的、关键结果、实际过程、下一行动安排和商机阶段上下文；本次只扩展数据证据，不改写Q37 V3的三项权重。",
+        "missing_record_handling": "目标工作日没有匹配拜访记录时保留为无记录，不自动计为零分；由正式Q37规则决定INSUFFICIENT_EVIDENCE或计划未执行。",
+        "next_action_resolution": "拜访记录中的下一行动证据按shared_rules.customer_next_visit_plan_resolution解析；目的和期望结果不回退，时间可在为空时回退。"
+      },
+      "submetrics": [
+        {
+          "metric_code": "Q37_DAILY_FACE_TO_FACE_PLAN_COMPLIANCE",
+          "calculation": "逐工作日比较计划编码去重数量与公司标准日均拜访数量；达标工作日占有效工作日比例按V3阈值评分"
+        },
+        {
+          "metric_code": "Q37_WEEKLY_FACE_TO_FACE_PLAN_COMPLIANCE",
+          "calculation": "周计划编码去重数量除以（公司标准日均拜访数量×4.5），按V3阈值评分后取审核期周平均"
+        },
+        {
+          "metric_code": "Q37_PLAN_PURPOSE_QUALITY",
+          "calculation": "已设定拜访目的的计划编码去重数量除以有效计划编码去重总数，按100%、90%、80%、70%阈值评分"
+        }
+      ],
+      "open_execution_questions": [],
+      "execution_contract": {
+        "rule_version": "Q37-v2",
+        "automatic_scoring": true,
+        "ai_final_score_forbidden": true,
+        "ai_required": false,
+        "weekly_standard_factor": 4.5,
+        "purpose_rule": "只判断是否已设定拜访目的"
+      },
+      "resolved_source_questions": [
+        "2026-08-10已确认Q37逐日工作日参照国家法定工作日和调休日历。",
+        "2026-08-12已确认Q37复用Q36缺勤口径：国家法定工作日无日报即缺勤并排除，不再依赖销售代表缺勤记录表或缺勤日期字段。",
+        "2026-08-12已确认上一次拜访结果评价字段优先、过程详细描述作补充，并发布Q37-v1。",
+        "2026-08-14已确认Q37-v2：周标准固定为日均标准×4.5，第三项只检查计划是否已设定拜访目的，不再调用AI语义判断。"
+      ]
+    },
+    "Q38": {
+      "mapping_status": "deterministic_rule_ready",
+      "prompt": "我执行周拜访计划的情况很好",
+      "confirmed_on": "2026-08-07",
+      "source_tables": [
+        "拜访计划（周计划快照）.xlsx",
+        "拜访记录录入.xlsx"
+      ],
+      "confirmed_decisions": [
+        "V3中的AI检查周报数据，直接由拜访计划周快照和拜访记录录入表统计，不引用单独周报汇总值。",
+        "周计划分母按计划次数统计，以计划编码去重，不按客户编号去重；同一客户同周计划多次计为多个计划量。",
+        "完成端按客户编号去重；同一客户同周实际拜访一次或多次均只计一个完成客户。",
+        "只统计面对面拜访和视频会议。",
+        "周计划快照中的计划均为面对面拜访或视频会议计划，因此计划分母全部属于Q38统计范围。",
+        "实际拜访调整到计划周内其他日期仍算计划完成，不要求与计划拜访日期相同。"
+      ],
+      "plan_source": {
+        "source_file": "拜访计划（周计划快照）.xlsx",
+        "sheet_name": "周拜访计划制定",
+        "fields": [
+          "周计划快照时间",
+          "计划编码",
+          "公司名称",
+          "销售代表",
+          "销售团队",
+          "计划拜访客户名称",
+          "计划拜访日期",
+          "客户编号"
+        ],
+        "snapshot_rule": "使用对应系统版本和租户在该计划周截止时间形成的生效快照；配置沿用Q06 snapshot_policy"
+      },
+      "actual_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "sheet_name": "拜访记录录入",
+        "fields": [
+          "拜访记录编码",
+          "销售代表",
+          "拜访日期",
+          "拜访方式",
+          "客户编号"
+        ],
+        "qualifying_visit_methods": [
+          "面对面拜访",
+          "视频会议"
+        ]
+      },
+      "calculation_mapping": {
+        "denominator_grain": "销售代表、计划周、计划编码",
+        "numerator_grain": "销售代表、计划周、客户编号",
+        "planned_customer_occurrences": "从该周生效快照取得客户编号非空的计划记录，按计划编码去重；同一客户的多个计划编码分别计数",
+        "visited_customer_set": "从拜访记录取得同一销售代表在计划周内、拜访方式为面对面拜访或视频会议且客户编号非空的客户集合，按客户编号去重",
+        "completed_customer_set": "计划记录涉及的客户编号集合与实际拜访客户集合取交集，完成端按客户编号去重",
+        "repeat_rule": "同一客户同周计划多次、实际拜访一次时，分母计多个计划量，分子只计一个完成客户",
+        "date_rule": "符合条件的实际拜访发生在计划周任一日期即算完成，允许从原计划日期调整到同期其他日期",
+        "weekly_ratio": "按客户编号去重的已完成客户数除以按计划编码去重的计划记录数",
+        "example": "同一客户同周有3个计划编码、实际完成1次符合条件的拜访，则计划量=3、完成客户数=1、周计划符合率=1/3",
+        "weekly_score_thresholds": "沿用Q38判断标准V3：80%、70%、60%、50%对应4、3、2、1、0分",
+        "assessment_score": "考核期内各周符合率得分的算术平均值",
+        "missing_customer_id": "客户编号为空的计划或拜访记录登记为数据质量问题，不以客户名称自动合并"
+      },
+      "plan_method_scope_confirmation": "已确认周计划快照中的计划均为面对面拜访或视频会议计划；虽然源表没有计划拜访方式字段，Q38可将全部快照计划纳入分母。",
+      "execution_contract": {"rule_version": "Q38-v1", "automatic_scoring": true, "ai_final_score_forbidden": true}
+    },
+    "Q39": {
+      "mapping_status": "q39_v1_released",
+      "prompt": "我每月都会对自己的工作进行总结，包括拜访活动和商机项目",
+      "confirmed_on": "2026-08-12",
+      "source_tables": ["销售代表活动月报表.xlsx"],
+      "source_rule": "DSM系统已生成销售代表活动月报；Q39只读取既有统计和销售代表月度总结，AI不得生成、修改、补齐或重算活动月报。",
+      "month_mapping": {"year": "月报年份", "month": "月报月份", "summary": "销售代表月度总结"},
+      "dimensions": {
+        "daily_visit_average": ["本月日均拜访量", "活动KPI_日均拜访数量考核期得分"],
+        "information_collection_progress": ["收集客户信息数"],
+        "customer_quantity": ["总客户数"],
+        "customer_type_structure": ["潜力客户数", "目标客户数", "商机客户数"],
+        "overall_customer_coverage": ["本考核期间客户覆盖率", "活动KPI_客户覆盖率考核期得分"],
+        "target_customer_coverage": ["本月目标客户覆盖率", "目标客户覆盖率得分"],
+        "potential_customer_coverage": ["本季度潜力客户覆盖率", "潜力客户覆盖率得分"],
+        "target_customer_relationship": ["目标客户整体关系水平得分（均分）"]
+      },
+      "ai_scoring_boundary": "AI逐月、逐维度比较系统事实与销售代表月度总结，只输出固定0—4档得分、事实一致性和理由；不得改变事实或输出Q39最终平均分。",
+      "fixed_rubric": {
+        "4": "事实一致、问题明确、原因有事实支撑，对策含责任动作、期限或量化目标",
+        "3": "事实一致、问题和原因较明确，有具体可执行对策",
+        "2": "涉及事实或问题，但原因或对策只有一项具体，闭环不完整",
+        "1": "仅复述结果或泛泛表态，缺少事实原因及具体对策",
+        "0": "未涉及、与系统事实矛盾或无可核验内容"
+      },
+      "execution_rule": {
+        "rule_version": "Q39-v1",
+        "ai_rule_version": "DSM-Q39-MONTHLY-REVIEW-AI-v1",
+        "formula": "测评期各月8个维度得分的算术平均值",
+        "missing_summary": "存在活动月报但未提交月度总结的月份8项均记0分",
+        "zero_population": "测评期无活动月报记0分",
+        "golden_cases": "knowledge-base/scoring-engine/q39_golden_cases_v1.json"
+      }
+    },
+    "Q40": {
+      "mapping_status": "q40_v1_released",
+      "prompt": "我每月都有改善行动计划，并按照计划完成",
+      "confirmed_on": "2026-08-10",
+      "mapping_scope": "销售人员行动计划表直接提供行动、期望结果、负责人、计划/实际完成时间和结果回顾；取负责人为被测销售人员且计划完成时间在测评周期内的全部计划，按SMART、PDCA和执行结果评分。",
+      "source_tables": [
+        "销售人员行动计划表.xlsx"
+      ],
+      "action_plan_source": {
+        "source_file": "销售人员行动计划表.xlsx",
+        "sheet_name": "销售人员行动计划表",
+        "used_range": "A1:I2",
+        "fields": [
+          "序号",
+          "行动",
+          "期望结果",
+          "负责人",
+          "计划完成时间",
+          "实际完成时间",
+          "结果回顾",
+          "销售团队",
+          "公司名称（通讯录）"
+        ],
+        "canonical_target": "SalesImprovementActionPlan",
+        "identity_mapping": {
+          "action_plan_code": "序号",
+          "owner_employee_id": "负责人",
+          "team_id": "销售团队",
+          "company_id": "公司名称（通讯录）"
+        },
+        "content_mapping": {
+          "action_description": "行动",
+          "expected_result": "期望结果",
+          "planned_completion_date": "计划完成时间",
+          "actual_completion_date": "实际完成时间",
+          "result_review": "结果回顾"
+        }
+      },
+      "period_resolution": {
+        "primary_rule": "负责人匹配被测销售人员，计划完成时间在测评开始日至结束日内。",
+        "missing_planned_date": "计划完成时间为空的记录无法判断是否属于测评周期，不进入Q40计划集合并登记数据质量问题；不得用实际完成时间替代。"
+      },
+      "submetrics": [
+        {
+          "metric_code": "Q40_PLAN_SMART_PDCA_QUALITY",
+          "weight": 0.4,
+          "grain": "测评周期内每个序号去重的行动计划",
+          "inputs": [
+            "行动",
+            "期望结果",
+            "负责人",
+            "计划完成时间",
+            "实际完成时间",
+            "结果回顾"
+          ],
+          "evaluation_rule": "AI逐计划分别按固定0—4分锚点评价SMART和PDCA；SMART检查具体、可衡量、可实现、相关、期限，PDCA检查计划、执行、检查、改进闭环。单项计划质量=(SMART分+PDCA分)÷2。",
+          "period_score": "测评周期内全部有效行动计划质量分的算术平均值"
+        },
+        {
+          "metric_code": "Q40_EXECUTION_RESULT",
+          "weight": 0.6,
+          "grain": "测评周期内每个序号去重的行动计划",
+          "inputs": [
+            "期望结果",
+            "计划完成时间",
+            "实际完成时间",
+            "结果回顾"
+          ],
+          "evaluation_rule": "AI逐计划以期望结果与结果回顾的对照为核心按固定0—4分锚点评价；实际完成时间只作为完成与时效证据，不替代结果回顾。",
+          "period_score": "测评周期内全部有效行动计划执行结果分的算术平均值"
+        }
+      ],
+      "calculation_mapping": {
+        "no_plan_rule": "测评周期内没有有效行动计划时，Q40直接得0分。",
+        "deduplication_rule": "同一租户内按序号去重；同序号多版本以评价截止时有效的最新来源版本作为当前事实，历史版本保留审计。",
+        "overall_formula": "Q40得分=测评周期全部计划质量平均分×40%+全部执行结果平均分×60%。",
+        "release_status": "Q40-v1已发布；AI只输出逐计划SMART、PDCA、执行结果分数和理由，最终平均与加权由评分引擎计算。"
+      },
+      "quality_rules": [
+        "负责人、计划完成时间为空的记录不进入测评周期分母；序号为空时以来源记录ID保留并登记数据质量问题。",
+        "行动或期望结果为空时第一项不得判为合格。",
+        "结果回顾缺失时执行结果为0分；实际完成时间不能替代结果回顾。",
+        "公司名称和销售团队用于租户及组织对账，不替代负责人关联。"
+      ],
+      "rule_contract": {"rule_version": "Q40-v1", "ai_rule_version": "DSM-Q40-ACTION-PLAN-AI-v1", "golden_cases": "knowledge-base/scoring-engine/q40_golden_cases_v1.json"}
+    }
+  },
+  "pending_question_mappings": [],
+  "shared_rules": {
+    "assessment_scoring_cutoff_resolution": {
+      "code": "ASSESSMENT-SCORING-CUTOFF-V1",
+      "confirmed_on": "2026-08-14",
+      "diagnosis_period_end": "诊断结束月份仍保存并展示为用户所选月份最后一日。",
+      "scoring_cutoff_date": "结束月份与评分系统当前月份相同时，取锁定来源快照在Asia/Shanghai时区的日期；历史结束月份仍取该月最后一日。",
+      "immutability": "首次自动评分时同时锁定source_snapshot_cutoff_at与scoring_cutoff_date；非强制重跑复用原值，避免跨日重跑改变结果。",
+      "actual_fact_scope": "实际拜访、销售代表工作日报及国家法定工作日统计只读取至scoring_cutoff_date。",
+      "planning_visibility": "Q05、Q36、Q37允许读取source_snapshot_cutoff_at之前已提交但计划拜访日期晚于scoring_cutoff_date的计划；不得按计划发生日期把未来计划直接删除。",
+      "week_boundary": "Q01、Q06只评价周日不晚于scoring_cutoff_date的完整ISO自然周；Q37允许评价当前未结束周已经发生的个人有效工作日。"
+    },
+    "customer_next_visit_plan_resolution": {
+      "code": "VISIT-NEXT-ACTION-RESOLUTION-V1",
+      "name": "客户下一步行动计划解析与同步",
+      "primary_source": {
+        "source_file": "拜访记录录入.xlsx",
+        "fields": {
+          "purpose": "下一步行动目的",
+          "other_purpose": "下一次具体其他目的",
+          "expected_key_result": "下次拜访期望的关键结果",
+          "next_contact_at": "下次联系客户时间安排"
+        }
+      },
+      "time_fallback": {
+        "trigger": "拜访记录的下次联系客户时间安排为空",
+        "source_file": "拜访计划制定表.xlsx",
+        "source_field": "计划拜访日期",
+        "match_keys": [
+          "销售代表",
+          "客户编号"
+        ],
+        "temporal_condition": "计划拜访日期严格晚于当前拜访记录的拜访日期",
+        "selection": "按计划拜访日期升序取得最早计划；同日多条时依次按计划编码、来源记录ID升序确定唯一记录",
+        "fill_scope": "只补充next_contact_at及来源引用，不使用计划表回填目的、其他目的或期望关键结果",
+        "missing_key_or_match_handling": "销售代表或客户编号为空、或没有符合时间条件的计划时，next_contact_at保持缺失并判为不完整；禁止按客户名称回退关联"
+      },
+      "completeness": {
+        "evaluation_order": "先执行时间来源优先级解析，再判断完整性",
+        "required_non_empty": [
+          "next_action_purpose_code",
+          "next_expected_key_result",
+          "next_contact_at"
+        ],
+        "complete_when": "三个必填字段均非空时，is_complete_next_visit_plan=true",
+        "other_purpose_rule": "下一步行动目的为其他时，下一次具体其他目的属于质量必填；缺失时登记质量问题，但不改写用户确认的三字段完整性定义"
+      },
+      "automatic_sync": {
+        "target_file": "拜访计划制定表.xlsx",
+        "trigger": "is_complete_next_visit_plan=true",
+        "field_mapping": {
+          "next_action_purpose_code": "拜访目的",
+          "next_action_other_purpose": "具体其他目的",
+          "next_expected_key_result": "期望得到的关键结果",
+          "next_contact_at": "计划拜访日期"
+        },
+        "identity_mapping": {
+          "owner_employee_id": "销售代表",
+          "customer_id": "客户编号"
+        },
+        "idempotency_key": "tenant_id + source_visit_record_code",
+        "behavior": "以幂等upsert同步；已有由同一拜访记录生成的计划时更新，不重复新增。若时间来自已存在的回退计划，则关联该计划并避免重复创建。",
+        "lineage_requirement": "系统元数据必须保存来源拜访记录编码；当前Excel表无该列时由连接器映射元数据承载。"
+      }
+    },
+    "active_opportunity_resolution": {
+      "code": "ACTIVE-OPPORTUNITY-RESOLUTION-V1",
+      "name": "评估截止日活跃商机识别",
+      "source_file": "商机项目信息表.xlsx",
+      "grain": "评估截止日锁定快照中的商机项目编号",
+      "fields": ["商机项目编号", "商机项目信息状态", "结果", "公司业绩确认"],
+      "active_when_any": [
+        "商机项目信息状态=开放",
+        "结果=进行中",
+        "结果=赢单 且 公司业绩确认=未确认"
+      ],
+      "boolean_expression": "record_status == '开放' OR result_status == '进行中' OR (result_status == '赢单' AND company_performance_confirmation == '未确认')",
+      "as_of_rule": "只读取评估截止日有效的不可变商机快照；截止日后状态变化不回写本次评估。",
+      "missing_field_rule": "三个判定分支均因字段缺失而无法判断时，该商机活跃状态判为数据不足；不得把缺失自动解释为非活跃。"
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "generated_at": "2026-08-18",
+  "purpose": "TAORAN智能体项目源资料清单与完整性指纹",
+  "files": [
+    {
+      "name": "DSM_AI拜访活动有效性TAORAN检查智能体_Codex设计说明_V1.docx",
+      "source": "/Users/ydzj/Downloads/DSM_AI拜访活动有效性TAORAN检查智能体_Codex设计说明_V1.docx",
+      "role": "设计参考资料",
+      "sha256": "33660dbeefcea19d2f2f0396618d71a3e298c8e51d909a8dc83361e8ab42d23a"
+    },
+    {
+      "name": "dsm_behavior_data_model_v1.md",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/core/dsm_behavior_data_model_v1.md",
+      "role": "DSM统一行为数据模型历史V1（已被V1.5替代）",
+      "sha256": "2b08246cce6e7ea50b9ac98e5d4420d0b79fe23297bde1b6d58e88455192ff6a"
+    },
+    {
+      "name": "dsm_behavior_data_model_v1.json",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/core/dsm_behavior_data_model_v1.json",
+      "role": "DSM统一行为数据模型历史V1机器版（已被V1.5替代）",
+      "sha256": "d9a86119817833b7b5ab24946a48e63d8e9cf4383540cf72855ad23727f737e2"
+    },
+    {
+      "name": "saas_source_field_catalog_v1.json",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/core/saas_source_field_catalog_v1.json",
+      "role": "SaaS来源字段历史V1（已被V1.3替代）",
+      "sha256": "7f5bc9ac88f5d8eccb58f9591f45a64bb636408cff22a966c5a7c858310d95e1"
+    },
+    {
+      "name": "dsm_behavior_data_model_v1_5.md",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/core/dsm_behavior_data_model_v1_5.md",
+      "role": "当前DSM统一行为数据模型V1.5可读版",
+      "sha256": "f6e3ac46f2724e9f71a1552547e6565ab8a3c1a219e90b61228de099c23ddf72"
+    },
+    {
+      "name": "dsm_behavior_data_model_v1_5.json",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/core/dsm_behavior_data_model_v1_5.json",
+      "role": "当前DSM统一行为数据模型V1.5机器版",
+      "sha256": "9f3190519f163c68d4224be57349b8fdeed88ee5714864c4790f86147d24cc81"
+    },
+    {
+      "name": "saas_source_field_catalog_v1_3.json",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/core/saas_source_field_catalog_v1_3.json",
+      "role": "当前SaaS来源字段目录V1.3",
+      "sha256": "e4775955f65f2d2e6194edc55e4314039d1541b658d3fa1b3a530c03af2fe0d0"
+    },
+    {
+      "name": "q40_source_mapping_v1.json",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/core/q40_source_mapping_v1.json",
+      "role": "Q33/Q34字段映射与执行契约来源",
+      "sha256": "33237a59f5e9b7a7d6d0ba330bff56076baf0c7f39475046c13519664988dcd7"
+    },
+    {
+      "name": "q40_standard_v4_20260817.json",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/apps/api/data/q40_standard_v4_20260817.json",
+      "role": "Q33/Q34 V4正式评分文字标准",
+      "sha256": "7b3fba35ffd622ebda928e33a90c0fcc9af406ec2208af6866a2767f2fdd2dff"
+    },
+    {
+      "name": "q40_parameter_catalog_v4_20260817.json",
+      "source": "/Users/ydzj/Documents/DSM智能销售管理/销售管理智能评测（40题）/knowledge-base/standards/V4-20260817/q40_parameter_catalog_v4_20260817.json",
+      "role": "Q33/Q34参数目录及冲突追溯",
+      "sha256": "4a9dbcc9d4ef15befd6143e7c07dd7d8dce4037399007dc262a704f51452a322"
+    },
+    {
+      "name": "拜访记录录入_AI测评.xlsx",
+      "source": "/Users/ydzj/Downloads/拜访记录录入_AI测评.xlsx",
+      "role": "简道云测试副本47项字段名称基线",
+      "sha256": "99e6f3f558911ae27ba92673404daf2221db759a79224e0abcc20a0e2a4c1ef9"
+    }
+  ]
+}

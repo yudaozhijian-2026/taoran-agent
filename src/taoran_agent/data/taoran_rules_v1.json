@@ -1,0 +1,89 @@
+{
+  "agent_code": "DSM-TAORAN-SCORING-AGENT",
+  "agent_version": "0.3.0",
+  "rule_code": "TAORAN-Q33-Q34-200",
+  "rule_version": "TAORAN-Q33-Q34-200-V1",
+  "rule_status": "integrated_baseline",
+  "data_model_code": "DSM-BEHAVIOR-DATA-MODEL",
+  "data_model_version": "V1.5",
+  "submission_policy": "advisory_only",
+  "total_max_score": 200,
+  "questions": {
+    "Q33": {
+      "name": "TAORAN记录完整性与及时性",
+      "max_score": 100,
+      "components": {
+        "information_completeness": {
+          "weight": 0.5,
+          "max_score": 50,
+          "thresholds": [0.9, 0.8, 0.7, 0.5],
+          "band_scores": [4, 3, 2, 1, 0]
+        },
+        "submission_timeliness": {
+          "weight": 0.5,
+          "max_score": 50,
+          "thresholds": [0.9, 0.8, 0.7, 0.5],
+          "band_scores": [4, 3, 2, 1, 0],
+          "timely_within_hours": 24
+        }
+      },
+      "required_field_count": {
+        "opportunity": 10,
+        "other": 9
+      }
+    },
+    "Q34": {
+      "name": "拜访质量自评与下一行动",
+      "max_score": 100,
+      "components": {
+        "self_evaluation_consistency": {
+          "weight": 0.7,
+          "max_score": 70,
+          "period_thresholds": [0.95, 0.85, 0.75, 0.6]
+        },
+        "next_action_quality": {
+          "weight": 0.3,
+          "max_score": 30,
+          "period_thresholds": [0.95, 0.85, 0.75, 0.6]
+        }
+      },
+      "formal_q40_scope": "face_to_face"
+    }
+  },
+  "precheck_levels": [
+    {"minimum": 90, "level": "A"},
+    {"minimum": 80, "level": "B"},
+    {"minimum": 70, "level": "C"},
+    {"minimum": 60, "level": "D"},
+    {"minimum": 0, "level": "E"}
+  ],
+  "vague_exact_phrases": [
+    "了解一下",
+    "了解需求",
+    "沟通一下",
+    "客户有兴趣",
+    "客户认可方案",
+    "继续跟进",
+    "保持联系",
+    "维护关系",
+    "推进项目",
+    "待定",
+    "不知道",
+    "无内容",
+    "test",
+    "测试",
+    "x",
+    "xx",
+    "xxx",
+    "xxxx",
+    "xxxxx"
+  ],
+  "precheck_response_budget_seconds": 12,
+  "official_status": "q33_q34_integrated_taoran_agent",
+  "q40_integration": {
+    "contract_version": "TAORAN-Q40-INTEGRATION-V1",
+    "enabled_by_default": false,
+    "activation_policy": "explicit_opt_in_and_q40_service_call_only",
+    "writes_to_q40": false
+  }
+}
