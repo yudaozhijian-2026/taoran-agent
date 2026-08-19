@@ -130,7 +130,12 @@
     }
   },
   "system_fields": {
-    "submitted_at": "_createTime",
+    "submitted_at": {
+      "field_name": "createTime",
+      "aliases": [
+        "_createTime"
+      ]
+    },
     "source_record_id": "_id"
   },
   "subforms": {

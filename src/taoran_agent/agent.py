@@ -71,6 +71,7 @@ class TaoranAgent:
             status = "needs_revision"
         else:
             status = "passed"
+        suggestions = list(dict.fromkeys(issue.suggestion for issue in issues))
         return PrecheckResponse(
             check_id=(
                 "chk_"
@@ -101,7 +102,12 @@ class TaoranAgent:
             blocking_issues=[],
             issues=issues,
             questions=self._questions(issues),
-            suggestions=list(dict.fromkeys(issue.suggestion for issue in issues)),
+            suggestions=suggestions,
+            feedback_text=self._precheck_feedback_text(
+                quality_score,
+                status,
+                suggestions,
+            ),
             semantic_review=semantic_review,
             input_snapshot_hash=snapshot_hash,
             rule_version=TOTAL_RULE_VERSION,
@@ -109,6 +115,30 @@ class TaoranAgent:
             checked_at=datetime.now(UTC),
             latency_ms=int((monotonic() - started) * 1000),
         )
+
+    @staticmethod
+    def _precheck_feedback_text(
+        quality_score: int,
+        status: str,
+        suggestions: list[str],
+    ) -> str:
+        status_text = {
+            "passed": "记录规范，可继续提交",
+            "needs_revision": "建议修改后提交",
+            "review": "需要人工复核，但不阻断提交",
+        }[status]
+        lines = [
+            "【提交前TAORAN检查】",
+            f"记录完整度：{quality_score}/100",
+            f"检查结论：{status_text}",
+        ]
+        if suggestions:
+            lines.append("修改建议：")
+            lines.extend(f"{index}. {item}" for index, item in enumerate(suggestions, 1))
+        else:
+            lines.append("修改建议：当前未发现需要补充的规范性问题。")
+        lines.append("本结果仅供填写参考，不阻断表单提交；正式评分以提交后深度评价为准。")
+        return "\n".join(lines)
 
     def evaluate(self, request: PostEvaluationRequest, job_id: str) -> EvaluationResponse:
         """提交后深度评价：Q33与Q34各100分，总分200分。"""

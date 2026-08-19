@@ -29,6 +29,28 @@ def test_health() -> None:
     assert response.json()["status"] == "ok"
 
 
+def test_jiandaoyun_mapping_requires_tenant_auth(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "DSM_TAORAN_TENANT_KEYS_JSON", '{"tenant_demo":"tenant-secret"}'
+    )
+    get_settings.cache_clear()
+    client = TestClient(api.app)
+
+    unauthenticated = client.get(
+        "/api/v1/connectors/jiandaoyun/mapping",
+        params={"tenant_id": "tenant_demo"},
+    )
+    authenticated = client.get(
+        "/api/v1/connectors/jiandaoyun/mapping",
+        params={"tenant_id": "tenant_demo"},
+        headers={"X-Tenant-Id": "tenant_demo", "X-API-Key": "tenant-secret"},
+    )
+
+    assert unauthenticated.status_code == 401
+    assert authenticated.status_code == 200
+    assert authenticated.json()["status"] == "copy_widget_ids_synced"
+
+
 def test_precheck_is_persisted_and_idempotent() -> None:
     client = TestClient(api.app)
     payload = complete_precheck_payload("idem-001")
@@ -39,6 +61,56 @@ def test_precheck_is_persisted_and_idempotent() -> None:
     assert first.status_code == 200
     assert second.status_code == 200
     assert first.json()["check_id"] == second.json()["check_id"]
+
+
+def test_jiandaoyun_button_accepts_flat_front_event_payload() -> None:
+    response = TestClient(api.app).post(
+        "/api/v1/connectors/jiandaoyun/visit/button-check",
+        json={
+            "tenant_id": "tenant_demo",
+            "user_id": "EMP001",
+            "visit_date": "2026-08-19",
+            "employee_id": "EMP001",
+            "customer_id": "KH001",
+            "customer_type_ii": "商机客户",
+            "visit_method": "面对面拜访",
+            "is_appointment": "是",
+            "purpose_code": "推进商机",
+            "expected_key_result": "客户确认验证日期和参会角色",
+            "process_description": "客户确认验证日期，并提出明确补充要求。",
+            "self_assessment": "达到目的",
+            "next_action_purpose": "发送清单并确认参会人员",
+            "next_action_expected_result": "客户书面确认验证范围",
+            "next_contact_at": "2026-08-20T10:00:00+08:00",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["can_submit"] is True
+    assert body["request_id"].startswith("jdy_button_")
+    assert "提交前TAORAN检查" in body["feedback_text"]
+    assert "不阻断表单提交" in body["feedback_text"]
+
+
+def test_jiandaoyun_button_normalizes_front_event_null_strings() -> None:
+    response = TestClient(api.app).post(
+        "/api/v1/connectors/jiandaoyun/visit/button-check",
+        json={
+            "tenant_id": "tenant_demo",
+            "visit_date": "2026-08-19",
+            "employee_id": "EMP001",
+            "next_contact_at": "null",
+            "actual_start_at": "undefined",
+            "actual_end_at": "",
+            "evidence_ids": "null",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["can_submit"] is True
+    assert "不阻断表单提交" in body["feedback_text"]
 
 
 def test_idempotency_key_rejects_changed_input() -> None:

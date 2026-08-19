@@ -62,3 +62,30 @@ def test_new_copy_field_names_and_subforms_are_adapted() -> None:
     assert result.visit.participants[0].contact_id == "CONTACT001"
     assert result.visit.opportunities[0].opportunity_id == "OPP001"
     assert result.visit.opportunities[0].current_stage == "P3"
+
+
+def test_actual_jiandaoyun_date_and_user_shapes_are_adapted() -> None:
+    mapping = load_jiandaoyun_mapping()
+    request = JiandaoyunCheckRequest.model_validate(
+        {
+            "context": {
+                "tenant_id": "tenant_demo",
+                "request_id": "jdy-actual-shape-001",
+                "user_id": "POC_OPERATOR",
+                "source": "jiandaoyun",
+            },
+            "form_data": {
+                "_widget_1574480762008": "2026-08-18T16:00:00.000Z",
+                "_widget_1574314917310": {
+                    "name": "测试销售",
+                    "username": "EMP001",
+                    "departments": [1],
+                },
+            },
+        }
+    )
+
+    result = adapt_jiandaoyun_request(request, mapping)
+
+    assert result.visit.visit_date.isoformat() == "2026-08-19"
+    assert result.visit.employee_id == "EMP001"

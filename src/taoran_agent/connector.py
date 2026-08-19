@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .models import (
     JiandaoyunCheckRequest,
@@ -44,6 +46,10 @@ def adapt_jiandaoyun_request(
             value = _duration_minutes(value)
         if canonical_field == "evidence_ids":
             value = _evidence_ids(value)
+        if canonical_field == "visit_date":
+            value = _visit_date(value)
+        if canonical_field == "employee_id":
+            value = _user_identifier(value)
         values[canonical_field] = value
     for canonical_field, source_spec in mapping.get("system_fields", {}).items():
         found, raw_value = _mapped_value(request.form_data, source_spec, canonical_field)
@@ -107,6 +113,8 @@ def adapt_jiandaoyun_evaluation_request(
 def _unwrap(value: Any) -> Any:
     if isinstance(value, dict) and "value" in value:
         return _unwrap(value["value"])
+    if isinstance(value, str) and value.strip().lower() in {"", "null", "undefined"}:
+        return None
     return value
 
 
@@ -167,3 +175,30 @@ def _evidence_ids(value: Any) -> list[str]:
         if candidate:
             result.append(str(candidate))
     return list(dict.fromkeys(result))
+
+
+def _visit_date(value: Any) -> Any:
+    if isinstance(value, datetime):
+        parsed = value
+    elif isinstance(value, str) and "T" in value:
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return value
+    else:
+        return value
+    if parsed.tzinfo is not None:
+        parsed = parsed.astimezone(ZoneInfo("Asia/Shanghai"))
+    return parsed.date()
+
+
+def _user_identifier(value: Any) -> Any:
+    if isinstance(value, list):
+        value = value[0] if value else None
+    if not isinstance(value, dict):
+        return value
+    for key in ("username", "user_id", "id", "_id", "name"):
+        candidate = value.get(key)
+        if candidate not in (None, ""):
+            return str(candidate)
+    return None

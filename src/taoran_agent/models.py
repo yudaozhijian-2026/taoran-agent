@@ -172,6 +172,7 @@ class PrecheckResponse(BaseModel):
     issues: list[Issue]
     questions: list[str]
     suggestions: list[str]
+    feedback_text: str
     semantic_review: SemanticReview
     input_snapshot_hash: str
     rule_version: str

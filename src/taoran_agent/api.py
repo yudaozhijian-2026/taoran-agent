@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, date, datetime
 from threading import Lock
+from typing import Any
+from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, status
 
@@ -166,7 +168,12 @@ def metadata() -> dict:
 
 
 @app.get("/api/v1/connectors/jiandaoyun/mapping")
-def jiandaoyun_mapping() -> dict:
+def jiandaoyun_mapping(
+    tenant_id: str = Query(min_length=1),
+    x_tenant_id: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+) -> dict:
+    authorize(tenant_id, x_tenant_id, x_api_key)
     return load_jiandaoyun_mapping(get_settings().jiandaoyun_mapping_path)
 
 
@@ -228,12 +235,36 @@ def jiandaoyun_precheck(
 
 @app.post("/api/v1/connectors/jiandaoyun/visit/button-check", response_model=PrecheckResponse)
 def jiandaoyun_button_precheck(
-    request: JiandaoyunCheckRequest,
+    request: dict[str, Any],
     x_tenant_id: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
 ) -> PrecheckResponse:
     """简道云“AI检测”按钮专用别名；结果永不阻断提交。"""
-    return jiandaoyun_precheck(request, x_tenant_id, x_api_key)
+    if "context" in request and "form_data" in request:
+        structured_request = JiandaoyunCheckRequest.model_validate(request)
+    else:
+        flat_request = dict(request)
+        tenant_id = str(flat_request.pop("tenant_id", "")).strip()
+        if not tenant_id:
+            raise HTTPException(status_code=422, detail="tenant_id is required")
+        user_id = str(flat_request.pop("user_id", "jiandaoyun-user")).strip()
+        request_id = str(flat_request.pop("request_id", "")).strip()
+        form_revision = flat_request.pop("form_revision", None)
+        source_record_id = flat_request.pop("source_record_id", None)
+        structured_request = JiandaoyunCheckRequest.model_validate(
+            {
+                "context": {
+                    "tenant_id": tenant_id,
+                    "request_id": request_id or f"jdy_button_{uuid4().hex}",
+                    "user_id": user_id or "jiandaoyun-user",
+                    "source": "jiandaoyun",
+                    "form_revision": form_revision,
+                    "source_record_id": source_record_id,
+                },
+                "form_data": flat_request,
+            }
+        )
+    return jiandaoyun_precheck(structured_request, x_tenant_id, x_api_key)
 
 
 @app.get("/api/v1/visit/checks/{check_id}")
