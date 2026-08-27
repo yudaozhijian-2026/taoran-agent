@@ -19,6 +19,7 @@ data/*
 !data/.gitkeep
 outputs/
 runtime/
+tenant-config/
 *.db
 *.sqlite
 *.sqlite3

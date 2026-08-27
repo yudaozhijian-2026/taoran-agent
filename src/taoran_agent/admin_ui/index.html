@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TAORAN 客户接入管理</title>
+  <link rel="stylesheet" href="/admin/assets/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <span class="brand-mark">T</span>
+      <span class="brand">TAORAN 客户接入管理</span>
+    </div>
+    <span id="serverStatus" class="status muted">未连接</span>
+  </header>
+
+  <main class="layout">
+    <section id="loginPanel" class="card login-card">
+      <p class="eyebrow">管理员验证</p>
+      <h1>先连接 TAORAN 服务</h1>
+      <p class="hint">管理员 Key 仅保留在当前页面内存中，不会存入浏览器。</p>
+      <form id="loginForm" class="stack">
+        <label>
+          <span>管理员 Key</span>
+          <input id="adminKey" type="password" autocomplete="off" required placeholder="请输入独立管理员 Key">
+        </label>
+        <button type="submit" class="primary">验证并进入</button>
+      </form>
+      <div id="loginMessage" class="message hidden" role="alert"></div>
+    </section>
+
+    <section id="workspace" class="workspace hidden">
+      <div class="page-heading">
+        <div>
+          <p class="eyebrow">多客户配置</p>
+          <h1>新客户一键接入</h1>
+          <p class="hint">填写简道云信息后，系统会自动测试连接、匹配字段并更新注册表。</p>
+        </div>
+        <button id="logoutButton" type="button" class="ghost">退出</button>
+      </div>
+
+      <div class="grid">
+        <section class="card form-card">
+          <div class="section-title">
+            <h2>接入信息</h2>
+            <span class="step">1</span>
+          </div>
+          <form id="tenantForm" class="form-grid">
+            <label>
+              <span>客户编号 <b>*</b></span>
+              <input name="tenant_id" required pattern="[a-z][a-z0-9_-]{2,63}" placeholder="例：chengdu_medical">
+              <small>小写字母开头，可使用数字、_ 和 -</small>
+            </label>
+            <label>
+              <span>客户名称 <b>*</b></span>
+              <input name="display_name" required placeholder="例：成都某医疗公司">
+            </label>
+            <label>
+              <span>简道云应用 ID <b>*</b></span>
+              <input name="application_id" required placeholder="从简道云应用地址中获取">
+            </label>
+            <label>
+              <span>表单 ID <b>*</b></span>
+              <input name="entry_id" required placeholder="从简道云表单地址中获取">
+            </label>
+            <label>
+              <span>表单名称 <b>*</b></span>
+              <input name="entry_name" required placeholder="例：拜访记录录入">
+            </label>
+            <label>
+              <span>简道云 API Key <b>*</b></span>
+              <input name="jiandaoyun_api_key" type="password" autocomplete="new-password" placeholder="首次必填，更新时可留空">
+              <small>只会加密传输到 TAORAN 服务，页面不保存</small>
+            </label>
+
+            <div class="options full">
+              <label class="check"><input name="test_connection" type="checkbox" checked> 立即测试简道云连接并自动匹配字段</label>
+              <label class="check"><input name="enabled" type="checkbox" checked> 字段全部匹配后立即启用该客户</label>
+              <details>
+                <summary>更新已有客户时的高级选项</summary>
+                <label class="check"><input name="rotate_access_key" type="checkbox"> 换发 TAORAN 访问 Key</label>
+                <label class="check"><input name="rotate_webhook_secret" type="checkbox"> 换发提交后推送签名密钥</label>
+              </details>
+            </div>
+            <button id="saveButton" type="submit" class="primary full">测试连接并完成配置</button>
+          </form>
+          <div id="saveMessage" class="message hidden" role="alert"></div>
+        </section>
+
+        <aside class="card result-card">
+          <div class="section-title">
+            <h2>配置结果</h2>
+            <span class="step">2</span>
+          </div>
+          <div id="emptyResult" class="empty">提交后，这里会显示连接、字段匹配和启用结果。</div>
+          <div id="resultContent" class="hidden"></div>
+        </aside>
+      </div>
+
+      <section class="card tenant-list-card">
+        <div class="section-title list-heading">
+          <div>
+            <h2>已接入客户</h2>
+            <p class="hint">已隐藏 API Key 和签名密钥。</p>
+          </div>
+          <button id="refreshButton" type="button" class="ghost">刷新</button>
+        </div>
+        <div id="tenantList" class="tenant-list"></div>
+      </section>
+    </section>
+  </main>
+  <script src="/admin/assets/admin.js" defer></script>
+</body>
+</html>

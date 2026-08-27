@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -35,6 +36,9 @@ class TenantConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     enabled: bool = True
+    display_name: str | None = Field(default=None, max_length=100)
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
     access_keys: list[SecretStr] = Field(default_factory=list, max_length=2)
     jiandaoyun: JiandaoyunTenantConfig = Field(default_factory=JiandaoyunTenantConfig)
 
@@ -73,6 +77,9 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     database_path: str = str(Path("data") / "taoran_agent.db")
+    admin_enabled: bool = False
+    admin_api_key: SecretStr | None = None
+    admin_audit_path: str = str(Path("data") / "tenant_admin_audit.jsonl")
     tenant_registry_path: str | None = None
     tenant_registry_json: str = '{"version":1,"tenants":{}}'
     tenant_keys_json: str = "{}"
@@ -126,6 +133,11 @@ class Settings(BaseSettings):
                 raise ValueError("启用大模型前必须配置TAORAN专用接口、模型名称和API Key")
             if self.semantic_endpoint:
                 raise ValueError("直接大模型与旧版语义服务不能同时启用，请只配置一种")
+        if self.admin_enabled:
+            if not self.admin_api_key:
+                raise ValueError("启用客户接入管理页前必须配置独立管理员Key")
+            if not self.tenant_registry_path:
+                raise ValueError("启用客户接入管理页前必须配置可写租户注册表路径")
         self._tenant_registry_cache = self._read_tenant_registry()
         return self
 
@@ -196,10 +208,17 @@ class Settings(BaseSettings):
     def tenant_configuration_source(self, tenant_id: str) -> str:
         return "registry" if self.tenant_config(tenant_id) else "legacy"
 
+    def reload_tenant_registry(self) -> TenantConfigRegistry:
+        self._tenant_registry_cache = self._read_tenant_registry()
+        return self._tenant_registry_cache
+
     def _read_tenant_registry(self) -> TenantConfigRegistry:
         try:
             if self.tenant_registry_path:
-                raw = Path(self.tenant_registry_path).read_text(encoding="utf-8")
+                registry_path = Path(self.tenant_registry_path)
+                if self.admin_enabled and not registry_path.exists():
+                    return TenantConfigRegistry()
+                raw = registry_path.read_text(encoding="utf-8")
             else:
                 raw = self.tenant_registry_json
             return TenantConfigRegistry.model_validate_json(raw)

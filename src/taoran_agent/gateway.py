@@ -7,6 +7,18 @@ from fastapi import HTTPException
 from .config import Settings
 
 
+def verify_admin_access(settings: Settings, admin_key: str | None) -> None:
+    if not settings.admin_enabled:
+        raise HTTPException(status_code=404, detail="admin portal is disabled")
+    expected = settings.admin_api_key
+    if (
+        expected is None
+        or admin_key is None
+        or not secrets.compare_digest(expected.get_secret_value(), admin_key)
+    ):
+        raise HTTPException(status_code=401, detail="invalid administrator credentials")
+
+
 def verify_tenant_access(
     settings: Settings,
     tenant_id: str,

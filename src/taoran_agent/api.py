@@ -4,11 +4,13 @@ import hashlib
 import hmac
 import json
 from datetime import UTC, date, datetime
+from importlib.resources import files
 from threading import Lock
 from typing import Any
 from uuid import uuid4
 
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, status
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import ValidationError
 
 from .agent import TaoranAgent
@@ -21,7 +23,7 @@ from .connector import (
     mapped_jiandaoyun_value,
 )
 from .field_labels import use_field_mapping
-from .gateway import verify_q40_service_access, verify_tenant_access
+from .gateway import verify_admin_access, verify_q40_service_access, verify_tenant_access
 from .jiandaoyun_api import JiandaoyunReadError, get_jiandaoyun_record
 from .knowledge import load_taoran_knowledge_snapshot
 from .llm import PROMPT_VERSION
@@ -47,16 +49,34 @@ from .rules import canonical_hash
 from .runtime import build_agent
 from .scoring_contract import TOTAL_RULE_VERSION
 from .storage import AgentStore, IdempotencyConflictError
+from .tenant_admin import (
+    JiandaoyunSchemaSyncError,
+    TenantOnboardingRequest,
+    TenantOnboardingResult,
+    list_tenants,
+    onboard_tenant,
+)
 from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.8.0",
+    version="0.9.0",
     description="提交前非阻断TAORAN检查、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
 _agents: dict[str, TaoranAgent] = {}
 _precheck_locks = [Lock() for _ in range(64)]
+_ADMIN_SECURITY_HEADERS = {
+    "Cache-Control": "no-store",
+    "Content-Security-Policy": (
+        "default-src 'none'; script-src 'self'; style-src 'self'; "
+        "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
+        "form-action 'self'; frame-ancestors 'none'"
+    ),
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+}
 
 
 def get_store(settings: Settings | None = None) -> AgentStore:
@@ -189,6 +209,64 @@ def health() -> dict[str, str]:
 @app.get("/api/v1/agent")
 def metadata() -> dict:
     return get_agent().catalog
+
+
+@app.get("/admin/tenants", response_class=HTMLResponse, include_in_schema=False)
+def tenant_admin_page() -> HTMLResponse:
+    settings = get_settings()
+    if not settings.admin_enabled:
+        raise HTTPException(status_code=404, detail="Not Found")
+    resource = files("taoran_agent.admin_ui").joinpath("index.html")
+    return HTMLResponse(resource.read_text(encoding="utf-8"), headers=_ADMIN_SECURITY_HEADERS)
+
+
+@app.get("/admin/assets/{asset_name}", include_in_schema=False)
+def tenant_admin_asset(asset_name: str) -> FileResponse:
+    settings = get_settings()
+    if not settings.admin_enabled or asset_name not in {"admin.css", "admin.js"}:
+        raise HTTPException(status_code=404, detail="Not Found")
+    resource = files("taoran_agent.admin_ui").joinpath(asset_name)
+    return FileResponse(str(resource), headers=_ADMIN_SECURITY_HEADERS)
+
+
+@app.get("/api/v1/admin/status")
+def tenant_admin_status(
+    x_admin_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    settings = get_settings()
+    verify_admin_access(settings, x_admin_key)
+    return {
+        "status": "ok",
+        "version": app.version,
+        "tenant_count": len(settings.tenant_registry.tenants),
+    }
+
+
+@app.get("/api/v1/admin/tenants")
+def tenant_admin_list(
+    x_admin_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    settings = get_settings()
+    verify_admin_access(settings, x_admin_key)
+    return {"tenants": list_tenants(settings)}
+
+
+@app.post("/api/v1/admin/tenants", response_model=TenantOnboardingResult)
+def tenant_admin_save(
+    request: TenantOnboardingRequest,
+    x_admin_key: str | None = Header(default=None),
+) -> TenantOnboardingResult:
+    settings = get_settings()
+    verify_admin_access(settings, x_admin_key)
+    try:
+        return onboard_tenant(settings, request)
+    except JiandaoyunSchemaSyncError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"简道云连接或字段读取失败：{exc}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.get("/api/v1/connectors/jiandaoyun/mapping")

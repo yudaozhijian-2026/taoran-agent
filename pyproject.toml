@@ -1,6 +1,6 @@
 [project]
 name = "dsm-taoran-agent"
-version = "0.8.0"
+version = "0.9.0"
 description = "DSM Q33/Q34各50分、总分100的独立TAORAN拜访评分Agent"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
@@ -31,6 +31,9 @@ packages = ["src/taoran_agent"]
 "src/taoran_agent/data/taoran_rules_v1.json" = "taoran_agent/data/taoran_rules_v1.json"
 "src/taoran_agent/data/jiandaoyun_mapping_example.json" = "taoran_agent/data/jiandaoyun_mapping_example.json"
 "src/taoran_agent/data/taoran_knowledge_snapshot_v1.json" = "taoran_agent/data/taoran_knowledge_snapshot_v1.json"
+"src/taoran_agent/admin_ui/index.html" = "taoran_agent/admin_ui/index.html"
+"src/taoran_agent/admin_ui/admin.css" = "taoran_agent/admin_ui/admin.css"
+"src/taoran_agent/admin_ui/admin.js" = "taoran_agent/admin_ui/admin.js"
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

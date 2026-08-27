@@ -22,15 +22,31 @@ def fetch_jiandaoyun_form_schema(
     api_key = settings.jiandaoyun_api_key_for(tenant_id)
     if not api_key:
         raise JiandaoyunSchemaSyncError("未配置当前租户的简道云API密钥")
+    return fetch_jiandaoyun_form_schema_with_key(
+        settings.jiandaoyun_base_url,
+        settings.jiandaoyun_timeout_seconds,
+        api_key,
+        app_id,
+        entry_id,
+    )
+
+
+def fetch_jiandaoyun_form_schema_with_key(
+    base_url: str,
+    timeout_seconds: float,
+    api_key: str,
+    app_id: str,
+    entry_id: str,
+) -> dict[str, Any]:
     try:
         response = httpx.post(
-            f"{settings.jiandaoyun_base_url.rstrip('/')}/v5/app/entry/widget/list",
+            f"{base_url.rstrip('/')}/v5/app/entry/widget/list",
             headers={
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
             json={"app_id": app_id, "entry_id": entry_id},
-            timeout=settings.jiandaoyun_timeout_seconds,
+            timeout=timeout_seconds,
         )
         response.raise_for_status()
         payload = response.json()

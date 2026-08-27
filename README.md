@@ -1,6 +1,6 @@
 # DSM TAORAN原则评分智能体
 
-独立运行的TAORAN拜访评分Agent，版本`0.8.0`。已整合DSM知识库TAORAN标准，以及销售管理智能评测40题的Q33和Q34：
+独立运行的TAORAN拜访评分Agent，版本`0.9.0`。已整合DSM知识库TAORAN标准，以及销售管理智能评测40题的Q33和Q34：
 
 - Q33记录完整性与及时性：50分；
 - Q34自评一致性与下一行动：50分；
@@ -104,3 +104,6 @@ docker run --rm -p 127.0.0.1:8030:8030 -v dsm-taoran-data:/data dsm-taoran-agent
 新客户使用`config/tenant_registry.example.json`建立服务器受控租户注册表。注册表支持租户停用、最多两个访问Key的
 无停机轮换，以及每租户独立的简道云API Key、Webhook Secret和字段映射。详细目录、迁移和验收步骤见
 [多租户配置与客户接入.md](多租户配置与客户接入.md)。现有`tenant_demo`在未启用注册表时继续使用旧环境变量，不改变当前流程。
+
+商业化接入可启用中文管理页`/admin/tenants`：网页可自动测试简道云连接、匹配字段、
+原子更新注册表并立即重载。该功能默认关闭，详见[客户接入管理页.md](客户接入管理页.md)。

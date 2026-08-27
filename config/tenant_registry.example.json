@@ -3,6 +3,7 @@
   "tenants": {
     "tenant_demo": {
       "enabled": true,
+      "display_name": "TAORAN测试客户",
       "access_keys": [
         "replace-with-current-tenant-key"
       ],
@@ -14,13 +15,14 @@
     },
     "tenant_customer_b": {
       "enabled": false,
+      "display_name": "客户B",
       "access_keys": [
         "replace-with-customer-b-key"
       ],
       "jiandaoyun": {
         "api_key": "replace-with-customer-b-jiandaoyun-api-key",
         "webhook_secret": "replace-with-customer-b-webhook-secret",
-        "mapping_path": "runtime/tenants/tenant_customer_b/field_mapping.json"
+        "mapping_path": "/tenant-config/tenants/tenant_customer_b/field_mapping.json"
       }
     }
   }
