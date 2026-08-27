@@ -1,27 +1,29 @@
 {
   "agent_code": "DSM-TAORAN-SCORING-AGENT",
-  "agent_version": "0.3.0",
-  "rule_code": "TAORAN-Q33-Q34-200",
-  "rule_version": "TAORAN-Q33-Q34-200-V1",
-  "rule_status": "integrated_baseline",
+  "agent_version": "0.7.0",
+  "rule_code": "TAORAN-Q33-Q34-100",
+  "rule_version": "TAORAN-Q33-Q34-100-V2",
+  "rule_status": "knowledge_aligned_baseline",
+  "precheck_engine_version": "TAORAN-PRECHECK-KB-V1",
+  "knowledge_basis": ["DSM-BS-000", "DSM-BS-01-07"],
   "data_model_code": "DSM-BEHAVIOR-DATA-MODEL",
   "data_model_version": "V1.5",
   "submission_policy": "advisory_only",
-  "total_max_score": 200,
+  "total_max_score": 100,
   "questions": {
     "Q33": {
       "name": "TAORAN记录完整性与及时性",
-      "max_score": 100,
+      "max_score": 50,
       "components": {
         "information_completeness": {
           "weight": 0.5,
-          "max_score": 50,
+          "max_score": 25,
           "thresholds": [0.9, 0.8, 0.7, 0.5],
           "band_scores": [4, 3, 2, 1, 0]
         },
         "submission_timeliness": {
           "weight": 0.5,
-          "max_score": 50,
+          "max_score": 25,
           "thresholds": [0.9, 0.8, 0.7, 0.5],
           "band_scores": [4, 3, 2, 1, 0],
           "timely_within_hours": 24
@@ -34,16 +36,16 @@
     },
     "Q34": {
       "name": "拜访质量自评与下一行动",
-      "max_score": 100,
+      "max_score": 50,
       "components": {
         "self_evaluation_consistency": {
           "weight": 0.7,
-          "max_score": 70,
+          "max_score": 35,
           "period_thresholds": [0.95, 0.85, 0.75, 0.6]
         },
         "next_action_quality": {
           "weight": 0.3,
-          "max_score": 30,
+          "max_score": 15,
           "period_thresholds": [0.95, 0.85, 0.75, 0.6]
         }
       },
@@ -81,7 +83,7 @@
   "precheck_response_budget_seconds": 12,
   "official_status": "q33_q34_integrated_taoran_agent",
   "q40_integration": {
-    "contract_version": "TAORAN-Q40-INTEGRATION-V1",
+    "contract_version": "TAORAN-Q40-INTEGRATION-V2",
     "enabled_by_default": false,
     "activation_policy": "explicit_opt_in_and_q40_service_call_only",
     "writes_to_q40": false

@@ -1,0 +1,49 @@
+name: dsm-taoran-v2
+services:
+  agent:
+    image: dsm-taoran-v2:0.7.0-20260826
+    pull_policy: never
+    container_name: dsm-taoran-v2-agent
+    restart: unless-stopped
+    init: true
+    user: "10001:10001"
+    read_only: true
+    cpus: 0.5
+    mem_limit: 768m
+    memswap_limit: 768m
+    pids_limit: 128
+    stop_grace_period: 90s
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    ports: ["127.0.0.1:8030:8030"]
+    environment:
+      DSM_TAORAN_ENVIRONMENT: production
+      DSM_TAORAN_DATABASE_PATH: /data/taoran_agent.db
+      DSM_TAORAN_JIANDAOYUN_MAPPING_PATH: /app/field_mapping.json
+      DSM_TAORAN_ENABLE_Q40_INTEGRATION: "false"
+      DSM_TAORAN_SHARED_STORE_URL: ""
+    volumes:
+      - type: bind
+        source: /TAORAN agent/runtime/agent.env
+        target: /app/.env
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /TAORAN agent/runtime/field_mapping.json
+        target: /app/field_mapping.json
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: /TAORAN agent/data
+        target: /data
+        bind: {create_host_path: false}
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m,uid=10001,gid=10001,mode=1770"]
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8030/health', timeout=3).close()"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

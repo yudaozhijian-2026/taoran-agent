@@ -1,5 +1,7 @@
 .venv/
 .env
+.env.*
+!.env.example
 .env.local
 .env.*.local
 .pytest_cache/
@@ -7,4 +9,26 @@
 __pycache__/
 *.pyc
 dist/
-data/*.db
+build/
+*.egg-info/
+.coverage
+htmlcov/
+
+# Local runtime data and generated output
+data/*
+!data/.gitkeep
+outputs/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# Local certificates and editor/OS files
+*.pem
+*.key
+*.p12
+*.pfx
+.DS_Store
+._*
+.idea/
+.vscode/

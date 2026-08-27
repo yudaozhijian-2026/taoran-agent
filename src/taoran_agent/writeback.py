@@ -9,6 +9,7 @@ import httpx
 from .config import Settings
 from .connector import load_jiandaoyun_mapping
 from .models import EvaluationResponse, PostEvaluationRequest, WritebackResult
+from .scoring_contract import TOTAL_RULE_VERSION
 
 
 class JiandaoyunWritebackError(RuntimeError):
@@ -21,6 +22,7 @@ def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
         "q33_score": response.q33_score,
         "q34_score": response.q34_score,
         "total_score": response.total_score,
+        "total_max_score": response.total_max_score,
         "overall_percentage": response.overall_percentage,
         "effectiveness_level": response.effectiveness_level,
         "effective_visit_recommendation": response.count_as_effective_visit_recommendation,
@@ -47,6 +49,19 @@ def writeback_evaluation(
     if target is None:
         return WritebackResult(status="skipped")
     attempted_at = datetime.now(UTC)
+    if response.rule_version != TOTAL_RULE_VERSION or response.total_max_score != 100:
+        return WritebackResult(
+            status="failed", target_data_id=target.data_id, attempted_at=attempted_at,
+            error_message="历史评分采用旧量纲，禁止直接回写；请使用新请求ID按100分制重新评价。",
+        )
+    if (
+        response.semantic_facts.provider.startswith("llm-")
+        and response.semantic_facts.status != "completed"
+    ):
+        return WritebackResult(
+            status="failed", target_data_id=target.data_id, attempted_at=attempted_at,
+            error_message="大模型复核未完成，未覆盖原AI评分和AI反馈意见；重试时先重新分析。",
+        )
     api_key = settings.jiandaoyun_api_keys.get(request.context.tenant_id)
     if not api_key:
         return WritebackResult(

@@ -10,11 +10,11 @@ from .models import (
     Q40RecordFacts,
     RuleCompatibilityResponse,
 )
-from .scoring import TOTAL_RULE_VERSION
+from .scoring_contract import TOTAL_RULE_VERSION
 
-Q40_INTEGRATION_CONTRACT_VERSION = "TAORAN-Q40-INTEGRATION-V1"
+Q40_INTEGRATION_CONTRACT_VERSION = "TAORAN-Q40-INTEGRATION-V2"
 SUPPORTED_RULE_VERSIONS = [TOTAL_RULE_VERSION]
-MINIMUM_AGENT_VERSION = "0.3.0"
+MINIMUM_AGENT_VERSION = "0.7.0"
 
 
 def rule_compatibility(required_rule_version: str) -> RuleCompatibilityResponse:
@@ -100,6 +100,9 @@ def _record_facts(record: dict[str, Any]) -> Q40RecordFacts:
         q33_score_projection=response.q33_score,
         q34_score_projection=response.q34_score,
         total_score_projection=response.total_score,
+        q33_max_score=q33.max_score,
+        q34_max_score=q34.max_score,
+        total_max_score=response.total_max_score,
         semantic_status=response.semantic_facts.status,
         rule_version=response.rule_version,
         agent_version=response.agent_version,

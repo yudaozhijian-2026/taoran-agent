@@ -1,5 +1,7 @@
 from copy import deepcopy
 
+import pytest
+
 from taoran_agent import TaoranAgent
 from taoran_agent.models import (
     Issue,
@@ -79,6 +81,22 @@ def test_complete_precheck_passes_with_100() -> None:
     assert result.record_quality_score == 100
     assert result.level == "A"
     assert result.blocking_issues == []
+    assert "TAORAN六项检查：" in result.feedback_text
+    assert result.feedback_text.count("：达标。\n检查标准：") == 6
+    assert "T｜客户类型：达标。" in result.feedback_text
+    assert "A｜预约与拜访方式：达标。" in result.feedback_text
+    assert "O/KR｜拜访目的与关键结果：达标。" in result.feedback_text
+    assert "R｜过程事实与结果：达标。" in result.feedback_text
+    assert "A｜达成评价：达标。" in result.feedback_text
+    assert "N｜下一步客户行动：达标。" in result.feedback_text
+    assert "记录完整度" not in result.feedback_text
+    assert "/100" not in result.feedback_text
+    assert "提交成功后，系统将自动进行深度评价并回写正式评分与反馈意见" in result.feedback_text
+    assert result.engine_version == "TAORAN-PRECHECK-KB-V1"
+    assert {item.id for item in result.knowledge_references} == {
+        "DSM-BS-000",
+        "DSM-BS-01-07",
+    }
 
 
 def test_missing_core_fields_returns_advice_without_blocking() -> None:
@@ -99,7 +117,12 @@ def test_missing_core_fields_returns_advice_without_blocking() -> None:
     assert result.status == "needs_revision"
     assert result.blocking_issues == []
     assert "CUSTOMER_ID_MISSING" in codes
-    assert "TAORAN_FIELD_MISSING" in codes
+    assert "TAORAN_KR_MISSING" in codes
+    assert "O/KR｜拜访目的与关键结果：未达标。\n检查标准：" in result.feedback_text
+    assert "N｜下一步客户行动：未达标。\n检查标准：" in result.feedback_text
+    assert "A｜预约与拜访方式：达标。\n检查标准：" in result.feedback_text
+    assert "R｜过程事实与结果：未达标。\n检查标准：" in result.feedback_text
+    assert result.feedback_text.count("达成评价缺少关键结果和过程事实支持") == 1
 
 
 def test_purpose_policy_mismatch_is_explainable() -> None:
@@ -125,6 +148,18 @@ def test_same_input_produces_same_check_id_and_hash() -> None:
     assert first.input_snapshot_hash == second.input_snapshot_hash
 
 
+def test_same_snapshot_with_new_click_request_gets_new_check_id() -> None:
+    first_payload = complete_precheck_payload("click-001")
+    second_payload = deepcopy(first_payload)
+    second_payload["context"]["request_id"] = "click-002"
+
+    first = TaoranAgent().precheck(PrecheckRequest.model_validate(first_payload))
+    second = TaoranAgent().precheck(PrecheckRequest.model_validate(second_payload))
+
+    assert first.input_snapshot_hash == second.input_snapshot_hash
+    assert first.check_id != second.check_id
+
+
 def test_same_input_is_namespaced_by_tenant() -> None:
     first_payload = complete_precheck_payload("req-tenant-a")
     second_payload = deepcopy(first_payload)
@@ -137,13 +172,13 @@ def test_same_input_is_namespaced_by_tenant() -> None:
     assert first.check_id != second.check_id
 
 
-def test_semantic_reviewer_cannot_create_blocking_issue() -> None:
+def test_precheck_never_uses_remote_reviewer_or_its_blocking_issue() -> None:
     request = PrecheckRequest.model_validate(complete_precheck_payload())
 
     result = TaoranAgent(BlockingSemanticReviewer()).precheck(request)
 
-    issue = next(item for item in result.issues if item.code == "MODEL_WANTS_TO_BLOCK")
-    assert issue.severity == Severity.WARNING
+    assert "MODEL_WANTS_TO_BLOCK" not in {item.code for item in result.issues}
+    assert result.semantic_review.provider == "heuristic-v1"
     assert result.status == "passed"
     assert result.can_submit is True
     assert result.blocking_issues == []
@@ -169,12 +204,16 @@ def test_post_evaluation_uses_evidence_and_context() -> None:
     result = TaoranAgent().evaluate(PostEvaluationRequest.model_validate(request_payload), "job1")
 
     assert result.status == "completed"
-    assert result.q33_score == 100
-    assert result.q34_score == 100
-    assert result.total_score == 200
+    assert result.q33_score == 50
+    assert result.q34_score == 50
+    assert result.total_score == 100
     assert result.effectiveness_score == 100
     assert result.effectiveness_level == "high_quality"
     assert result.count_as_effective_visit_recommendation == "yes"
+    assert "【提交后TAORAN深度评价｜AI反馈意见】" in result.ai_opinion
+    assert "TAORAN六项判断" in result.ai_opinion
+    assert "T｜客户类型" in result.ai_opinion
+    assert "N｜下一步客户行动" in result.ai_opinion
 
 
 def test_post_evaluation_flags_missing_opportunity_update() -> None:
@@ -221,7 +260,7 @@ def test_target_customer_single_record_requires_appointment_proxy() -> None:
 
     result = TaoranAgent().evaluate(request, "job-target")
 
-    assert result.q34_score == 30
+    assert result.q34_score == 15
     assert "Q34_APPOINTMENT_STANDARD_NOT_MET" in {issue.code for issue in result.issues}
 
 
@@ -239,5 +278,48 @@ def test_q34_ai_cannot_bypass_key_result_quality_gate() -> None:
 
     score, _ = score_q34(visit, facts)
 
-    assert score.score == 30
+    assert score.score == 15
     assert score.components[0].passed is False
+
+
+@pytest.mark.parametrize("contact_at", [
+    "2026-08-17T10:00:00+08:00", "2026-08-18T20:00:00+08:00",
+])
+def test_advisory_date_validation_does_not_relax_post_scoring(contact_at):
+    payload = complete_precheck_payload()["visit"]
+    payload["next_contact_at"] = contact_at
+    visit = VisitDraftInput.model_validate(payload)
+    facts = Q34SemanticFacts(
+        provider="test", key_result_quality_ok=True, process_fact_based=True,
+        purpose_achievement="achieved", next_action_logic_ok=True,
+        customer_consensus_met=True, reason="模拟模型将下一行动判为合格，日期规则仍须生效。",
+    )
+    score, issues = score_q34(visit, facts)
+    action = next(c for c in score.components if c.code == "next_action_quality")
+
+    assert action.score == 0
+    assert action.passed is False
+    assert score.score == 35
+    assert "Q34_NEXT_ACTION_NOT_QUALIFIED" in {i.code for i in issues}
+
+
+@pytest.mark.parametrize(("customer_type", "visit_date", "contact_at"), [
+    ("opportunity", "2026-08-18", "2026-08-18T16:00:00Z"),
+    ("target", "2026-08-31", "2026-08-31T16:00:00Z"),
+    ("potential", "2026-09-30", "2026-09-30T16:00:00Z"),
+])
+def test_next_contact_business_timezone_is_shared_by_precheck_and_post_scoring(
+    customer_type, visit_date, contact_at,
+):
+    from taoran_agent.semantic import HeuristicSemanticReviewer
+
+    payload = complete_precheck_payload()["visit"]
+    payload.update(customer_type_ii=customer_type, visit_date=visit_date, next_contact_at=contact_at)
+    visit = VisitDraftInput.model_validate(payload)
+    facts = HeuristicSemanticReviewer().review_q34(visit)
+    score, _ = score_q34(visit, facts)
+    action = next(c for c in score.components if c.code == "next_action_quality")
+
+    assert facts.next_action_logic_ok is True
+    assert action.score == 15
+    assert action.passed is True

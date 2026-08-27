@@ -4,6 +4,9 @@ from datetime import UTC, datetime
 from time import monotonic
 from uuid import uuid4
 
+from .feedback import build_evaluation_feedback, build_precheck_feedback
+from .field_labels import display_field_name
+from .llm import section_issues
 from .models import (
     DimensionScore,
     EvaluationResponse,
@@ -14,22 +17,27 @@ from .models import (
     Severity,
     WritebackResult,
 )
+from .precheck_engine import TaoranPrecheckEngine
 from .rules import canonical_hash, load_rule_catalog, normalized_text
 from .scoring import (
-    TOTAL_RULE_VERSION,
-    precheck_advice_issues,
-    q33_completeness,
+    precheck_context_issues,
     score_level,
     score_q33,
     score_q34,
 )
+from .scoring_contract import QUESTION_MAX_SCORE, TOTAL_MAX_SCORE, TOTAL_RULE_VERSION
 from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 
 
 class TaoranAgent:
-    def __init__(self, semantic_reviewer: SemanticReviewer | None = None) -> None:
+    def __init__(
+        self,
+        semantic_reviewer: SemanticReviewer | None = None,
+        precheck_engine: TaoranPrecheckEngine | None = None,
+    ) -> None:
         self.catalog = load_rule_catalog()
         self.semantic_reviewer = semantic_reviewer or HeuristicSemanticReviewer()
+        self.precheck_engine = precheck_engine or TaoranPrecheckEngine()
         self.vague_phrases = {
             normalized_text(value) for value in self.catalog["vague_exact_phrases"]
         }
@@ -45,13 +53,41 @@ class TaoranAgent:
                 "visit": request.visit.model_dump(mode="json"),
             }
         )
-        completeness = q33_completeness(request.visit)
-        issues = precheck_advice_issues(request.visit, self.vague_phrases)
-        semantic_review = self.semantic_reviewer.review(request.visit)
+        supplied_field_values = request.visit.metadata.get("source_supplied_fields")
+        supplied_fields = (
+            {str(field) for field in supplied_field_values}
+            if isinstance(supplied_field_values, list)
+            else None
+        )
+        engine_result = self.precheck_engine.check(
+            request.visit,
+            supplied_fields,
+            self.vague_phrases,
+        )
+        issues = [
+            *precheck_context_issues(request.visit, supplied_fields),
+            *self._precheck_default_issues(request),
+            *engine_result.issues,
+        ]
+        if supplied_fields == set():
+            issues.append(
+                Issue(
+                    code="PRECHECK_FIELDS_NOT_RECEIVED",
+                    dimension="SYSTEM",
+                    severity=Severity.ERROR,
+                    field_paths=[],
+                    message="本次AI检查未收到可检查的拜访字段。",
+                    suggestion="请检查AI检测按钮的字段传递配置。",
+                    source="system",
+                )
+            )
+        # The pre-submit path is always local, even with a remote reviewer configured.
+        # Only evaluate() may call the model; a model outage cannot delay this button.
+        semantic_review = HeuristicSemanticReviewer().review(request.visit)
         semantic_issues = self._normalize_semantic_issues(semantic_review.issues)
         semantic_review.issues = semantic_issues
         issues.extend(semantic_issues)
-        quality_score = round(completeness["rate"] * 100)
+        quality_score = engine_result.score
         elapsed = monotonic() - started
         if elapsed > self.catalog["precheck_response_budget_seconds"]:
             issues.append(
@@ -61,14 +97,21 @@ class TaoranAgent:
                     severity=Severity.WARNING,
                     field_paths=[],
                     message="AI检查超过前端响应预算。",
-                    suggestion="保留当前记录并稍后重试AI检查；该问题不会阻断提交。",
+                    suggestion="保留当前记录并稍后重试AI检查。",
                     source="system",
                 )
             )
         if semantic_review.status in {"unavailable", "timeout"} or elapsed > 12:
             status = "review"
-        elif any(issue.severity == Severity.ERROR for issue in issues):
+        elif any(
+            issue.severity in {Severity.ERROR, Severity.WARNING, Severity.BLOCKING}
+            and issue.source != "system" for issue in issues
+        ) or any(section.status == "needs_revision" for section in engine_result.sections):
             status = "needs_revision"
+        elif any(section.status != "met" for section in engine_result.sections) or any(
+            issue.source == "system" and issue.severity != Severity.INFO for issue in issues
+        ):
+            status = "review"
         else:
             status = "passed"
         suggestions = list(dict.fromkeys(issue.suggestion for issue in issues))
@@ -78,6 +121,7 @@ class TaoranAgent:
                 + canonical_hash(
                     {
                         "tenant_id": request.context.tenant_id,
+                        "request_id": request.context.request_id,
                         "snapshot_hash": snapshot_hash,
                     }
                 )[:20]
@@ -93,55 +137,64 @@ class TaoranAgent:
             level=self._precheck_level(quality_score),
             dimensions=[
                 DimensionScore(
-                    code="Q33-COMPLETENESS",
-                    name="Q33 TAORAN字段完整率预检",
-                    score=quality_score,
-                    max_score=100,
+                    code=section.code,
+                    name=f"{section.display_code} {section.name}",
+                    score=section.score,
+                    max_score=section.max_score,
                 )
+                for section in engine_result.sections
             ],
+            taoran_sections=engine_result.sections,
             blocking_issues=[],
             issues=issues,
             questions=self._questions(issues),
             suggestions=suggestions,
-            feedback_text=self._precheck_feedback_text(
+            feedback_text=build_precheck_feedback(
+                request.visit,
                 quality_score,
                 status,
-                suggestions,
+                issues,
+                supplied_fields,
+                engine_result.knowledge_references,
+                semantic_review,
+                taoran_sections=engine_result.sections,
             ),
             semantic_review=semantic_review,
             input_snapshot_hash=snapshot_hash,
             rule_version=TOTAL_RULE_VERSION,
+            engine_version=engine_result.engine_version,
+            knowledge_snapshot_hash=engine_result.knowledge_snapshot_hash,
+            knowledge_references=engine_result.knowledge_references,
             agent_version=self.catalog["agent_version"],
             checked_at=datetime.now(UTC),
             latency_ms=int((monotonic() - started) * 1000),
         )
 
     @staticmethod
-    def _precheck_feedback_text(
-        quality_score: int,
-        status: str,
-        suggestions: list[str],
-    ) -> str:
-        status_text = {
-            "passed": "记录规范，可继续提交",
-            "needs_revision": "建议修改后提交",
-            "review": "需要人工复核，但不阻断提交",
-        }[status]
-        lines = [
-            "【提交前TAORAN检查】",
-            f"记录完整度：{quality_score}/100",
-            f"检查结论：{status_text}",
+    def _precheck_default_issues(request: PrecheckRequest) -> list[Issue]:
+        defaulted = request.visit.metadata.get("precheck_defaulted_fields")
+        if not isinstance(defaulted, list):
+            return []
+        messages = {
+            "visit_date": "本次AI检测未获取拜访日期。",
+            "employee_id": "本次AI检测未获取销售代表。",
+        }
+        return [
+            Issue(
+                code=f"PRECHECK_{field.upper()}_MISSING",
+                dimension="SYSTEM",
+                severity=Severity.ERROR,
+                field_paths=[field],
+                message=messages[field],
+                suggestion=f"请补充“{display_field_name(field)}”后重新检测。",
+                source="system",
+            )
+            for field in defaulted
+            if field in messages
         ]
-        if suggestions:
-            lines.append("修改建议：")
-            lines.extend(f"{index}. {item}" for index, item in enumerate(suggestions, 1))
-        else:
-            lines.append("修改建议：当前未发现需要补充的规范性问题。")
-        lines.append("本结果仅供填写参考，不阻断表单提交；正式评分以提交后深度评价为准。")
-        return "\n".join(lines)
 
     def evaluate(self, request: PostEvaluationRequest, job_id: str) -> EvaluationResponse:
-        """提交后深度评价：Q33与Q34各100分，总分200分。"""
+        """提交后深度评价：Q33与Q34各50分，总分100分。"""
         trace_id = f"tr_{uuid4().hex}"
         snapshot_hash = canonical_hash(request)
         visit = request.visit.model_copy(
@@ -150,11 +203,11 @@ class TaoranAgent:
         q33, q33_issues = score_q33(visit)
         semantic_facts = self.semantic_reviewer.review_q34(visit)
         q34, q34_issues = score_q34(visit, semantic_facts)
-        issues = [*q33_issues, *q34_issues]
+        issues = [*q33_issues, *q34_issues, *section_issues(semantic_facts.sections)]
         self._append_business_closure_advice(request, issues)
 
         total_score = round(q33.score + q34.score, 2)
-        overall_percentage = round(total_score / 2, 2)
+        overall_percentage = round(total_score / TOTAL_MAX_SCORE * 100, 2)
         level, recommendation = score_level(overall_percentage)
         if (
             semantic_facts.status in {"fallback", "unavailable", "timeout"}
@@ -166,7 +219,14 @@ class TaoranAgent:
             for issue in issues
         ):
             recommendation = "manager_review"
-        ai_opinion = self._ai_opinion(q33.score, q34.score, total_score, issues)
+        ai_opinion = build_evaluation_feedback(
+            visit,
+            q33.score,
+            q34.score,
+            total_score,
+            issues,
+            semantic_facts,
+        )
         return EvaluationResponse(
             evaluation_id=f"eval_{snapshot_hash[:20]}",
             job_id=job_id,
@@ -177,15 +237,19 @@ class TaoranAgent:
             q33_score=q33.score,
             q34_score=q34.score,
             total_score=total_score,
-            total_max_score=200,
+            total_max_score=TOTAL_MAX_SCORE,
             overall_percentage=overall_percentage,
             question_scores=[q33, q34],
             effectiveness_score=round(overall_percentage),
             effectiveness_level=level,
             count_as_effective_visit_recommendation=recommendation,
             dimensions=[
-                DimensionScore(code="Q33", name=q33.name, score=q33.score, max_score=100),
-                DimensionScore(code="Q34", name=q34.name, score=q34.score, max_score=100),
+                DimensionScore(
+                    code="Q33", name=q33.name, score=q33.score, max_score=QUESTION_MAX_SCORE,
+                ),
+                DimensionScore(
+                    code="Q34", name=q34.name, score=q34.score, max_score=QUESTION_MAX_SCORE,
+                ),
             ],
             issues=issues,
             manager_coaching_suggestions=self._manager_suggestions(issues),
@@ -239,7 +303,7 @@ class TaoranAgent:
                     "severity": (
                         Severity.WARNING if issue.severity == Severity.BLOCKING else issue.severity
                     ),
-                    "source": "semantic",
+                    "source": issue.source if issue.source == "system" else "semantic",
                 }
             )
             for issue in issues
@@ -283,15 +347,4 @@ class TaoranAgent:
                 for issue in issues
                 if issue.severity in {Severity.ERROR, Severity.WARNING}
             )
-        )
-
-    @staticmethod
-    def _ai_opinion(q33_score: float, q34_score: float, total: float, issues: list[Issue]) -> str:
-        if issues:
-            priorities = "；".join(dict.fromkeys(issue.suggestion for issue in issues[:4]))
-        else:
-            priorities = "记录完整、提交及时，自评与下一行动均与现有事实一致。"
-        return (
-            f"TAORAN综合得分{total:.1f}/200：Q33 {q33_score:.1f}/100，"
-            f"Q34 {q34_score:.1f}/100。建议优先处理：{priorities}"
         )

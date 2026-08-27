@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from enum import Enum
+from math import isclose
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from .scoring_contract import LEGACY_TOTAL_RULE_VERSION, TOTAL_RULE_VERSION
 
 
 class VisitMethod(str, Enum):
@@ -112,10 +116,20 @@ class VisitDraftInput(BaseModel):
     purpose_policy: PurposePolicyInput | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
+    @property
+    def next_contact_date(self) -> date | None:
+        """按简道云业务时区判断日期，不改写输入时间或审计证据。"""
+        if self.next_contact_at is None:
+            return None
+        value = self.next_contact_at
+        if value.tzinfo is not None:
+            value = value.astimezone(ZoneInfo("Asia/Shanghai"))
+        return value.date()
+
     @model_validator(mode="after")
     def validate_dates(self) -> VisitDraftInput:
-        if self.next_contact_at and self.next_contact_at.date() < self.visit_date:
-            raise ValueError("next_contact_at 不得早于 visit_date")
+        # 下一次联系日期先保留为原始事实，由前检返回建议、后评执行日期门槛。
+        # 业务日期不合规不应让 AI 检测按钮在输入解析阶段报 500。
         if (
             self.actual_start_at
             and self.actual_end_at
@@ -149,11 +163,53 @@ class DimensionScore(BaseModel):
     max_score: float
 
 
+class KnowledgeReference(BaseModel):
+    id: str
+    title: str
+    status: Literal["已批准", "已确认"]
+    version: str
+    content_hash: str
+
+
+class TaoranSectionCheck(BaseModel):
+    code: Literal["T", "A1", "O_KR", "R", "A2", "N"]
+    display_code: str
+    name: str
+    status: Literal["met", "needs_revision", "partial_input", "not_received"]
+    score: float
+    max_score: float
+    evaluated_fields: list[str] = Field(default_factory=list)
+    unreceived_fields: list[str] = Field(default_factory=list)
+    knowledge_ids: list[str] = Field(default_factory=list)
+
+
+class ModelEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    field: str = Field(min_length=1, max_length=100)
+    quote: str = Field(min_length=1, max_length=300)
+
+
+class ModelSectionAnalysis(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    code: Literal["T", "A1", "O_KR", "R", "A2", "N"]
+    verdict: Literal["met", "needs_revision", "not_evaluated"]
+    field_paths: list[str] = Field(max_length=12)
+    reason: str = Field(min_length=1, max_length=500)
+    suggestion: str = Field(max_length=400)
+    evidence: list[ModelEvidence] = Field(max_length=8)
+
+
 class SemanticReview(BaseModel):
     status: Literal["completed", "not_configured", "unavailable", "timeout"]
     issues: list[Issue] = Field(default_factory=list)
     provider: str
     latency_ms: int = 0
+    model: str | None = None
+    prompt_version: str | None = None
+    sections: list[ModelSectionAnalysis] = Field(default_factory=list)
+    failure_reason: str | None = None
 
 
 class PrecheckResponse(BaseModel):
@@ -168,6 +224,7 @@ class PrecheckResponse(BaseModel):
     record_quality_score: int
     level: Literal["A", "B", "C", "D", "E"]
     dimensions: list[DimensionScore]
+    taoran_sections: list[TaoranSectionCheck]
     blocking_issues: list[Issue]
     issues: list[Issue]
     questions: list[str]
@@ -176,9 +233,43 @@ class PrecheckResponse(BaseModel):
     semantic_review: SemanticReview
     input_snapshot_hash: str
     rule_version: str
+    engine_version: str
+    knowledge_snapshot_hash: str
+    knowledge_references: list[KnowledgeReference]
     agent_version: str
     checked_at: datetime
     latency_ms: int
+
+
+class ButtonPrecheckResponse(BaseModel):
+    """提交前按钮的精简响应，不向前端提供任何正式评分字段。"""
+
+    check_id: str
+    trace_id: str
+    request_id: str
+    tenant_id: str
+    stage: Literal["pre_submit_advice"] = "pre_submit_advice"
+    official_score_generated: Literal[False] = False
+    status: Literal["passed", "needs_revision", "review"]
+    can_submit: bool
+    submission_policy: Literal["advisory_only"] = "advisory_only"
+    submission_blocked: Literal[False] = False
+    issues: list[Issue]
+    questions: list[str]
+    suggestions: list[str]
+    feedback_text: str
+    input_snapshot_hash: str
+    rule_version: str
+    engine_version: str
+    knowledge_snapshot_hash: str
+    knowledge_references: list[KnowledgeReference]
+    agent_version: str
+    checked_at: datetime
+    latency_ms: int
+
+    @classmethod
+    def from_precheck(cls, response: PrecheckResponse) -> ButtonPrecheckResponse:
+        return cls.model_validate(response.model_dump(mode="python"))
 
 
 class ScoreComponent(BaseModel):
@@ -196,10 +287,22 @@ class QuestionScore(BaseModel):
     question_code: Literal["Q33", "Q34"]
     name: str
     score: float
-    max_score: Literal[100] = 100
+    max_score: Literal[50, 100] = 50
     rule_version: str
     components: list[ScoreComponent]
     calculation_trace: dict[str, Any] = Field(default_factory=dict)
+
+
+class ModelValidationIssue(BaseModel):
+    location: str
+    code: str
+
+
+class ModelAttemptAudit(BaseModel):
+    attempt: int
+    latency_ms: int
+    failure_reason: str | None = None
+    validation_errors: list[ModelValidationIssue] = Field(default_factory=list)
 
 
 class Q34SemanticFacts(BaseModel):
@@ -213,6 +316,11 @@ class Q34SemanticFacts(BaseModel):
     evidence_fields: list[str] = Field(default_factory=list)
     reason: str
     latency_ms: int = 0
+    model: str | None = None
+    prompt_version: str | None = None
+    sections: list[ModelSectionAnalysis] = Field(default_factory=list)
+    failure_reason: str | None = None
+    model_attempts: list[ModelAttemptAudit] = Field(default_factory=list)
 
 
 class EvidenceInput(BaseModel):
@@ -272,7 +380,7 @@ class EvaluationResponse(BaseModel):
     q33_score: float
     q34_score: float
     total_score: float
-    total_max_score: Literal[200] = 200
+    total_max_score: Literal[100, 200] = 100
     overall_percentage: float
     question_scores: list[QuestionScore]
     effectiveness_score: int
@@ -289,6 +397,42 @@ class EvaluationResponse(BaseModel):
     rule_version: str
     agent_version: str
     completed_at: datetime
+
+    @model_validator(mode="after")
+    def validate_score_contract(self) -> EvaluationResponse:
+        expected_max = {
+            TOTAL_RULE_VERSION: 100,
+            LEGACY_TOTAL_RULE_VERSION: 200,
+        }.get(self.rule_version)
+        if expected_max is None or self.total_max_score != expected_max:
+            raise ValueError("评分规则版本与满分量纲不一致")
+        if sorted(item.question_code for item in self.question_scores) != ["Q33", "Q34"]:
+            raise ValueError("评分必须包含且仅包含Q33和Q34")
+        for item in self.question_scores:
+            expected_version = (
+                f"TAORAN-{item.question_code}-50-V2" if expected_max == 100
+                else f"TAORAN-{item.question_code}-100-V1"
+            )
+            actual_score = self.q33_score if item.question_code == "Q33" else self.q34_score
+            if (
+                item.max_score != expected_max / 2
+                or item.rule_version != expected_version
+                or not 0 <= item.score <= item.max_score
+                or not isclose(item.score, actual_score, abs_tol=0.00001)
+                or not isclose(sum(c.max_score for c in item.components), item.max_score)
+                or not isclose(sum(c.score for c in item.components), item.score, abs_tol=0.00001)
+                or any(not 0 <= c.score <= c.max_score for c in item.components)
+            ):
+                raise ValueError("题目得分、子项或满分不符合评分量纲")
+        if (
+            not isclose(self.total_score, round(self.q33_score + self.q34_score, 2))
+            or not 0 <= self.total_score <= expected_max
+            or not isclose(
+                self.overall_percentage, round(self.total_score / expected_max * 100, 2),
+            )
+        ):
+            raise ValueError("总分或综合百分比与分项不一致")
+        return self
 
 
 class JiandaoyunCheckRequest(BaseModel):
@@ -312,6 +456,19 @@ class JiandaoyunEvaluationRequest(BaseModel):
     writeback_target: JiandaoyunWritebackTarget
 
 
+class JiandaoyunSubmittedEvent(BaseModel):
+    """Minimal post-submit event; the Agent reads the authoritative record via V5 API."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    tenant_id: str = Field(min_length=1)
+    data_id: str = Field(min_length=1)
+    app_id: str | None = None
+    entry_id: str | None = None
+    user_id: str = "jiandaoyun-submit-event"
+    request_id: str | None = None
+
+
 class Q40RecordFacts(BaseModel):
     evaluation_id: str
     visit_record_code: str
@@ -333,6 +490,9 @@ class Q40RecordFacts(BaseModel):
     q33_score_projection: float
     q34_score_projection: float
     total_score_projection: float
+    q33_max_score: float = 50
+    q34_max_score: float = 50
+    total_max_score: float = 100
     semantic_status: str
     rule_version: str
     agent_version: str

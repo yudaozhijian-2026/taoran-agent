@@ -80,7 +80,9 @@ def test_evaluation_is_written_to_configured_jiandaoyun_fields(tmp_path, monkeyp
     assert captured["url"].endswith("/v5/app/entry/data/update")
     body = captured["kwargs"]["json"]
     assert body["data_id"] == "data-1"
-    assert body["data"]["_widget_total"]["value"] == 200
+    assert body["data"]["_widget_total"]["value"] == 100
+    assert body["data"]["_widget_q33"]["value"] == 50
+    assert body["data"]["_widget_q34"]["value"] == 50
     assert body["is_start_trigger"] is False
 
 
@@ -192,7 +194,7 @@ def test_active_copy_mapping_writes_only_confirmed_ai_fields(monkeypatch) -> Non
         "_widget_1787037882560",
         "_widget_1787037882562",
     }
-    assert captured["body"]["data"]["_widget_1787037882562"]["value"] == "200"
+    assert captured["body"]["data"]["_widget_1787037882562"]["value"] == "100"
     assert isinstance(
         captured["body"]["data"]["_widget_1787037882560"]["value"], str
     )

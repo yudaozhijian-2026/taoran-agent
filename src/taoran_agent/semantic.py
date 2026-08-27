@@ -57,7 +57,12 @@ class HeuristicSemanticReviewer(SemanticReviewer):
                 "写明具体行动、对象、时间和期望结果。",
             ),
         )
+        supplied = visit.metadata.get("source_supplied_fields")
+        defaulted = visit.metadata.get("precheck_defaulted_fields", [])
+        defaulted = defaulted if isinstance(defaulted, list) else []
         for field, value, dimension, code, vague_tokens, suggestion in checks:
+            if (isinstance(supplied, list) and field not in supplied) or field in defaulted:
+                continue
             text = normalized_text(value)
             if text and any(token in text for token in vague_tokens) and len(text) < 18:
                 issues.append(
@@ -136,8 +141,8 @@ class HeuristicSemanticReviewer(SemanticReviewer):
         next_action_logic_ok = bool(
             next_action
             and len(next_action) >= 6
-            and visit.next_contact_at
-            and visit.next_contact_at.date() > visit.visit_date
+            and visit.next_contact_date
+            and visit.next_contact_date > visit.visit_date
         )
         evidence_fields = [
             field

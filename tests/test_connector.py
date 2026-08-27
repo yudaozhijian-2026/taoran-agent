@@ -2,6 +2,18 @@ from taoran_agent.connector import adapt_jiandaoyun_request, load_jiandaoyun_map
 from taoran_agent.models import JiandaoyunCheckRequest
 
 
+def test_json_subform_arrays_preserve_ids_stage_and_received_empty():
+    request = JiandaoyunCheckRequest.model_validate({
+        'context': {'tenant_id': 'tenant_demo', 'request_id': 'subform-json', 'user_id': 'TEST'},
+        'form_data': {'participants': '[{"contact_id":"SYNTHETIC-C1"}]',
+                      'opportunities': '[]'},
+    })
+    result = adapt_jiandaoyun_request(request, load_jiandaoyun_mapping())
+    assert result.visit.participants[0].contact_id == 'SYNTHETIC-C1'
+    assert result.visit.opportunities == []
+    assert {'participants', 'opportunities'} <= set(result.visit.metadata['source_supplied_fields'])
+
+
 def test_source_values_are_normalized() -> None:
     request = JiandaoyunCheckRequest.model_validate(
         {

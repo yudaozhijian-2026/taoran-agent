@@ -1,13 +1,22 @@
 agent_code: DSM-TAORAN-SCORING-AGENT
-version: 0.3.0
+version: 0.7.0
 capabilities:
   - code: precheck_visit_record
     mode: synchronous
     target_latency_seconds: 12
     side_effect: advisory_only
+    rule_engine: TAORAN-PRECHECK-KB-V1
+    knowledge_runtime: reviewed_local_snapshot
+    model_calls: false
+  - code: sync_taoran_knowledge
+    mode: administrative
+    side_effect: reviewed_snapshot_only
   - code: evaluate_visit_effectiveness
     mode: asynchronous
     side_effect: audit_only
+    configured_model: glm-5.2
+    model_total_budget_seconds: 45
+    max_format_retries: 1
   - code: adapt_jiandaoyun_visit
     mode: synchronous
     side_effect: none

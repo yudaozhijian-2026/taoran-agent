@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
+from .field_labels import display_field_name
 from .models import (
     CustomerTypeII,
     Issue,
@@ -14,10 +15,14 @@ from .models import (
     VisitDraftInput,
 )
 from .rules import is_meaningful, normalized_text
-
-Q33_RULE_VERSION = "TAORAN-Q33-100-V1"
-Q34_RULE_VERSION = "TAORAN-Q34-100-V1"
-TOTAL_RULE_VERSION = "TAORAN-Q33-Q34-200-V1"
+from .scoring_contract import (
+    COMPLETENESS_MAX_SCORE,
+    CONSISTENCY_MAX_SCORE,
+    NEXT_ACTION_MAX_SCORE,
+    Q33_RULE_VERSION,
+    Q34_RULE_VERSION,
+    TIMELINESS_MAX_SCORE,
+)
 
 
 def band_score(rate: float, thresholds: tuple[float, float, float, float]) -> int:
@@ -45,7 +50,10 @@ def _opportunity_stage_present(visit: VisitDraftInput) -> bool:
     return bool(visit.opportunity_stage)
 
 
-def q33_required_fields(visit: VisitDraftInput) -> list[tuple[str, bool]]:
+def q33_required_fields(
+    visit: VisitDraftInput,
+    available_fields: set[str] | None = None,
+) -> list[tuple[str, bool]]:
     fields: list[tuple[str, bool]] = [
         ("customer_type_ii", visit.customer_type_ii is not None),
     ]
@@ -66,14 +74,23 @@ def q33_required_fields(visit: VisitDraftInput) -> list[tuple[str, bool]]:
             ("next_action_expected_result", _has_text(visit.next_action_expected_result)),
         ]
     )
-    return fields
+    if available_fields is None:
+        return fields
+    return [
+        (field, present)
+        for field, present in fields
+        if field in available_fields or field.split("[].", 1)[0] in available_fields
+    ]
 
 
-def q33_completeness(visit: VisitDraftInput) -> dict[str, Any]:
-    fields = q33_required_fields(visit)
+def q33_completeness(
+    visit: VisitDraftInput,
+    available_fields: set[str] | None = None,
+) -> dict[str, Any]:
+    fields = q33_required_fields(visit, available_fields)
     present = [name for name, is_present in fields if is_present]
     missing = [name for name, is_present in fields if not is_present]
-    rate = len(present) / len(fields)
+    rate = len(present) / len(fields) if fields else 0.0
     band = band_score(rate, (0.90, 0.80, 0.70, 0.50))
     return {
         "present_field_count": len(present),
@@ -87,7 +104,7 @@ def q33_completeness(visit: VisitDraftInput) -> dict[str, Any]:
 
 def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
     completeness = q33_completeness(visit)
-    completeness_points = completeness["band_score"] / 4 * 50
+    completeness_points = completeness["band_score"] / 4 * COMPLETENESS_MAX_SCORE
     issues: list[Issue] = []
     for field in completeness["missing_fields"]:
         issues.append(
@@ -97,7 +114,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                 severity=Severity.ERROR,
                 field_paths=[field],
                 message="Q33 TAORAN必填信息缺失。",
-                suggestion=f"补充 {field} 后再进行深度评价。",
+                suggestion=f"补充“{display_field_name(field)}”后再进行深度评价。",
             )
         )
 
@@ -137,7 +154,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
         )
     timeliness_rate = 1.0 if timely else 0.0
     timeliness_band = band_score(timeliness_rate, (0.90, 0.80, 0.70, 0.50))
-    timeliness_points = timeliness_band / 4 * 50
+    timeliness_points = timeliness_band / 4 * TIMELINESS_MAX_SCORE
     score = completeness_points + timeliness_points
     return (
         QuestionScore(
@@ -150,7 +167,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                     code="information_completeness",
                     name="信息完整性",
                     score=completeness_points,
-                    max_score=50,
+                    max_score=COMPLETENESS_MAX_SCORE,
                     rate=completeness["rate"],
                     band_score=completeness["band_score"],
                     details={
@@ -163,7 +180,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                     code="submission_timeliness",
                     name="24小时提交及时性",
                     score=timeliness_points,
-                    max_score=50,
+                    max_score=TIMELINESS_MAX_SCORE,
                     rate=timeliness_rate,
                     band_score=timeliness_band,
                     passed=timely,
@@ -175,7 +192,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                 ),
             ],
             calculation_trace={
-                "formula": "完整性档位分÷4×50 + 及时性档位分÷4×50",
+                "formula": "完整性档位分÷4×25 + 及时性档位分÷4×25",
                 "thresholds": [0.90, 0.80, 0.70, 0.50],
                 "single_record_projection": True,
                 "q40_period_rule_note": "周期评价先汇总记录比例，再按档位计算。",
@@ -203,26 +220,27 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
         achievement = SelfAssessment.PARTIALLY_ACHIEVED
     self_consistent = visit.self_assessment is not None and visit.self_assessment == achievement
 
+    next_contact_date = visit.next_contact_date
     concrete_next_action = bool(
         _purpose_present(visit.next_action_purpose, visit.next_action_other_purpose)
-        and visit.next_contact_at
-        and visit.next_contact_at.date() > visit.visit_date
+        and next_contact_date
+        and next_contact_date > visit.visit_date
     )
     segment_gate = True
     segment_gate_name = "none"
     if visit.customer_type_ii == CustomerTypeII.OPPORTUNITY:
         segment_gate = facts.customer_consensus_met
         segment_gate_name = "customer_consensus"
-    elif visit.customer_type_ii == CustomerTypeII.TARGET and visit.next_contact_at:
+    elif visit.customer_type_ii == CustomerTypeII.TARGET and next_contact_date:
         segment_gate = (
-            visit.next_contact_at.year,
-            visit.next_contact_at.month,
+            next_contact_date.year,
+            next_contact_date.month,
         ) != (visit.visit_date.year, visit.visit_date.month)
         segment_gate_name = "different_month"
-    elif visit.customer_type_ii == CustomerTypeII.POTENTIAL and visit.next_contact_at:
+    elif visit.customer_type_ii == CustomerTypeII.POTENTIAL and next_contact_date:
         current_quarter = (visit.visit_date.month - 1) // 3
-        next_quarter = (visit.next_contact_at.month - 1) // 3
-        segment_gate = (visit.next_contact_at.year, next_quarter) != (
+        next_quarter = (next_contact_date.month - 1) // 3
+        segment_gate = (next_contact_date.year, next_quarter) != (
             visit.visit_date.year,
             current_quarter,
         )
@@ -254,8 +272,8 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                 )
             )
 
-    self_points = 70.0 if self_consistent else 0.0
-    action_points = 30.0 if next_action_qualified else 0.0
+    self_points = float(CONSISTENCY_MAX_SCORE) if self_consistent else 0.0
+    action_points = float(NEXT_ACTION_MAX_SCORE) if next_action_qualified else 0.0
     return (
         QuestionScore(
             question_code="Q34",
@@ -267,7 +285,7 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                     code="self_evaluation_consistency",
                     name="系统事实判断与自评一致",
                     score=self_points,
-                    max_score=70,
+                    max_score=CONSISTENCY_MAX_SCORE,
                     rate=1.0 if self_consistent else 0.0,
                     band_score=4 if self_consistent else 0,
                     passed=self_consistent,
@@ -291,7 +309,7 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                     code="next_action_quality",
                     name="下一行动合理性",
                     score=action_points,
-                    max_score=30,
+                    max_score=NEXT_ACTION_MAX_SCORE,
                     rate=1.0 if next_action_qualified else 0.0,
                     band_score=4 if next_action_qualified else 0,
                     passed=next_action_qualified,
@@ -305,7 +323,7 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                 ),
             ],
             calculation_trace={
-                "formula": "自评一致性70分 + 下一行动30分",
+                "formula": "自评一致性35分 + 下一行动15分",
                 "single_record_projection": True,
                 "included_in_q40_formal_aggregate": (
                     visit.visit_method is not None and visit.visit_method.value == "face_to_face"
@@ -327,9 +345,14 @@ def score_level(percentage: float) -> tuple[str, str]:
     return "invalid_or_unclear", "no"
 
 
-def precheck_advice_issues(visit: VisitDraftInput, vague_phrases: set[str]) -> list[Issue]:
+def precheck_context_issues(
+    visit: VisitDraftInput,
+    available_fields: set[str] | None = None,
+) -> list[Issue]:
     issues: list[Issue] = []
-    if not visit.customer_id:
+    if not visit.customer_id and (
+        available_fields is None or "customer_id" in available_fields
+    ):
         issues.append(
             Issue(
                 code="CUSTOMER_ID_MISSING",
@@ -337,7 +360,7 @@ def precheck_advice_issues(visit: VisitDraftInput, vague_phrases: set[str]) -> l
                 severity=Severity.ERROR,
                 field_paths=["customer_id"],
                 message="缺少客户稳定ID，跨表事实无法可靠关联。",
-                suggestion="关联客户编号；本检查不会阻断表单提交。",
+                suggestion="请关联“客户编号”。",
             )
         )
     purpose = visit.purpose_code or visit.other_purpose
@@ -358,7 +381,17 @@ def precheck_advice_issues(visit: VisitDraftInput, vague_phrases: set[str]) -> l
                 suggestion="核对客户类型和拜访目的，不要由AI改写业务事实。",
             )
         )
-    completeness = q33_completeness(visit)
+    return issues
+
+
+def precheck_advice_issues(
+    visit: VisitDraftInput,
+    vague_phrases: set[str],
+    available_fields: set[str] | None = None,
+) -> list[Issue]:
+    """旧版兼容入口；新提交前流程由知识库驱动引擎执行。"""
+    issues = precheck_context_issues(visit, available_fields)
+    completeness = q33_completeness(visit, available_fields)
     for field in completeness["missing_fields"]:
         issues.append(
             Issue(
@@ -367,7 +400,7 @@ def precheck_advice_issues(visit: VisitDraftInput, vague_phrases: set[str]) -> l
                 severity=Severity.ERROR,
                 field_paths=[field],
                 message="TAORAN规范字段尚未填写完整。",
-                suggestion=f"建议补充 {field}；本检查不会阻断表单提交。",
+                suggestion=f"建议补充“{display_field_name(field)}”。",
             )
         )
     semantic_fields = (

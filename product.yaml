@@ -1,7 +1,7 @@
 product_code: dsm-taoran-visit-agent
 product_name: DSM TAORAN 拜访智能体
-version: 0.3.0
-status: q33_q34_integrated_baseline
+version: 0.7.0
+status: knowledge_driven_precheck_q33_q34_integrated
 deployment_modes:
   - standalone
   - dsm_module
@@ -17,11 +17,22 @@ data_model:
   code: DSM-BEHAVIOR-DATA-MODEL
   version: V1.5
 rule_status: integrated_baseline
+knowledge:
+  runtime_mode: reviewed_local_snapshot
+  precheck_engine: TAORAN-PRECHECK-KB-V1
+  sources:
+    - DSM-BS-000
+    - DSM-BS-01-07
 scoring:
-  q33_max_score: 100
-  q34_max_score: 100
-  total_max_score: 200
+  rule_version: TAORAN-Q33-Q34-100-V2
+  q33_max_score: 50
+  q34_max_score: 50
+  total_max_score: 100
 submission_policy: advisory_only
+analysis:
+  pre_submit: local_rules_only
+  post_submit: rules_and_glm_5_2
+  prompt_version: TAORAN-LLM-FACTS-V2.2
 q40_integration:
   enabled_by_default: false
   activation: explicit_opt_in

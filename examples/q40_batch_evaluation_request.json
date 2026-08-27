@@ -2,7 +2,7 @@
   "tenant_id": "tenant_demo",
   "request_id": "q40-backfill-202608-001",
   "requested_by": "DSM-Q40-AGENT",
-  "required_rule_version": "TAORAN-Q33-Q34-200-V1",
+  "required_rule_version": "TAORAN-Q33-Q34-100-V2",
   "evaluations": [
     {
       "context": {

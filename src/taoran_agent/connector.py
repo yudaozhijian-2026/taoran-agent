@@ -9,12 +9,17 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .models import (
+    EvidenceInput,
     JiandaoyunCheckRequest,
     JiandaoyunEvaluationRequest,
     PostEvaluationRequest,
     PrecheckRequest,
     VisitDraftInput,
 )
+
+
+class FieldTransferError(ValueError):
+    """Safe configuration error, containing no input values or credentials."""
 
 
 def load_jiandaoyun_mapping(path: str | None = None) -> dict[str, Any]:
@@ -25,15 +30,20 @@ def load_jiandaoyun_mapping(path: str | None = None) -> dict[str, Any]:
 
 
 def adapt_jiandaoyun_request(
-    request: JiandaoyunCheckRequest, mapping: dict[str, Any]
+    request: JiandaoyunCheckRequest,
+    mapping: dict[str, Any],
+    *,
+    allow_precheck_defaults: bool = True,
 ) -> PrecheckRequest:
     values: dict[str, Any] = {}
+    supplied_fields: set[str] = set()
     fields = mapping["fields"]
     value_maps = mapping.get("value_maps", {})
     for canonical_field, source_spec in fields.items():
         found, raw_value = _mapped_value(request.form_data, source_spec, canonical_field)
         if not found:
             continue
+        supplied_fields.add(canonical_field)
         value = _unwrap(raw_value)
         field_value_map = value_maps.get(canonical_field)
         if (
@@ -55,6 +65,7 @@ def adapt_jiandaoyun_request(
         found, raw_value = _mapped_value(request.form_data, source_spec, canonical_field)
         if canonical_field not in VisitDraftInput.model_fields or not found:
             continue
+        supplied_fields.add(canonical_field)
         values[canonical_field] = _unwrap(raw_value)
     for canonical_field, subform in mapping.get("subforms", {}).items():
         found, raw_rows = _mapped_value(
@@ -62,23 +73,50 @@ def adapt_jiandaoyun_request(
             subform.get("field"),
             canonical_field,
         )
-        rows = _unwrap(raw_rows) if found else None
-        if not isinstance(rows, list):
+        if not found:
             continue
+        rows = _unwrap(raw_rows)
+        if isinstance(rows, str):
+            try:
+                rows = json.loads(rows)
+            except json.JSONDecodeError:
+                raise FieldTransferError("子表字段传递格式异常，请核对字段绑定。") from None
+        if rows is None:
+            rows = []
+        if not isinstance(rows, list):
+            raise FieldTransferError("子表字段应传递完整行数组，请核对字段绑定。")
+        supplied_fields.add(canonical_field)
         children = subform.get("children", {})
         normalized_rows = []
         for row in rows:
             if not isinstance(row, dict):
-                continue
+                raise FieldTransferError("子表行传递格式异常，请核对字段绑定。")
             item = {}
+            recognized = False
             for canonical, child_spec in children.items():
                 child_found, raw_child = _mapped_value(row, child_spec, canonical)
+                recognized = recognized or child_found
                 child_value = _unwrap(raw_child) if child_found else None
                 if child_value not in (None, "", []):
                     item[canonical] = child_value
+            if row and not recognized:
+                raise FieldTransferError("子表行未包含已配置的子字段，请核对字段绑定。")
             if item:
                 normalized_rows.append(item)
         values[canonical_field] = normalized_rows
+    defaulted_fields: list[str] = []
+    if allow_precheck_defaults:
+        if values.get("visit_date") is None:
+            values["visit_date"] = datetime.now(ZoneInfo("Asia/Shanghai")).date()
+            defaulted_fields.append("visit_date")
+        if not values.get("employee_id"):
+            values["employee_id"] = request.context.user_id or "jiandaoyun-user"
+            defaulted_fields.append("employee_id")
+    values["metadata"] = {
+        "connector_source": "jiandaoyun",
+        "source_supplied_fields": sorted(supplied_fields),
+        "precheck_defaulted_fields": defaulted_fields,
+    }
     return PrecheckRequest(
         context=request.context,
         visit=VisitDraftInput.model_validate(values),
@@ -91,23 +129,43 @@ def adapt_jiandaoyun_evaluation_request(
     precheck = adapt_jiandaoyun_request(
         JiandaoyunCheckRequest(context=request.context, form_data=request.form_data),
         mapping,
+        allow_precheck_defaults=False,
     )
     _, mapped_manager_comment = _mapped_value(
         request.form_data,
         mapping.get("record_fields", {}).get("manager_comment"),
         "manager_comment",
     )
+    evidence = request.evidence or [
+        EvidenceInput(
+            evidence_id=evidence_id,
+            source_object="VisitRecord",
+            source_record_id=request.context.source_record_id,
+            field_path="evidence_ids",
+        )
+        for evidence_id in precheck.visit.evidence_ids
+    ]
     return PostEvaluationRequest(
         context=request.context,
         visit_record_code=request.visit_record_code,
         visit=precheck.visit,
         previous_visit_summary=request.previous_visit_summary,
-        evidence=request.evidence,
+        evidence=evidence,
         information_collection_updated=request.information_collection_updated,
         opportunity_updated=request.opportunity_updated,
         manager_comment=request.manager_comment or _unwrap(mapped_manager_comment),
         writeback_target=request.writeback_target,
     )
+
+
+def mapped_jiandaoyun_value(
+    data: dict[str, Any],
+    source_spec: str | dict[str, Any] | None,
+    canonical_field: str,
+) -> Any:
+    """Resolve a configured Jiandaoyun widget/field/alias and unwrap its value."""
+    found, raw_value = _mapped_value(data, source_spec, canonical_field)
+    return _unwrap(raw_value) if found else None
 
 
 def _unwrap(value: Any) -> Any:

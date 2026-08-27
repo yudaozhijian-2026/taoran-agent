@@ -1,0 +1,73 @@
+{
+  "dataset_id": "taoran-calibration-example-v2",
+  "rule_version": "TAORAN-Q33-Q34-100-V2",
+  "samples": [
+    {
+      "sample_id": "example-high-001",
+      "quality_band": "high",
+      "evaluation_request": {
+        "context": {
+          "tenant_id": "tenant_demo",
+          "request_id": "calibration-example-high-001",
+          "user_id": "EMP001",
+          "source": "test",
+          "source_record_id": "ANON-VISIT-001"
+        },
+        "visit_record_code": "ANON-VISIT-001",
+        "visit": {
+          "visit_date": "2026-08-18",
+          "employee_id": "EMP001",
+          "customer_id": "ANON-CUSTOMER-001",
+          "customer_type_ii": "opportunity",
+          "opportunity_id": "ANON-OPP-001",
+          "opportunity_stage": "P3",
+          "visit_method": "face_to_face",
+          "is_appointment": true,
+          "participants": [
+            {
+              "contact_id": "ANON-CONTACT-001",
+              "role": "final_decision_maker"
+            }
+          ],
+          "purpose_code": "advance_opportunity",
+          "expected_key_result": "客户确认预算审批责任人并确定技术验证日期",
+          "process_description": "客户代表确认财务负责人负责预算审批，并同意8月25日进行技术验证。",
+          "self_assessment": "achieved",
+          "next_action_target_id": "ANON-CONTACT-001",
+          "next_action_purpose": "确认技术验证范围和参会人员",
+          "next_action_expected_result": "客户书面确认验证清单与8月25日验证安排",
+          "next_contact_at": "2026-08-20T10:00:00+08:00",
+          "actual_start_at": "2026-08-18T09:00:00+08:00",
+          "actual_end_at": "2026-08-18T10:00:00+08:00",
+          "submitted_at": "2026-08-18T11:00:00+08:00",
+          "purpose_policy": {
+            "policy_version": "demo-2026-01",
+            "status": "published",
+            "allowed_purposes": [
+              "advance_opportunity"
+            ],
+            "effective_from": "2026-01-01"
+          }
+        },
+        "previous_visit_summary": "上次确认需要先澄清历史数据同步范围。",
+        "evidence": [
+          {
+            "evidence_id": "ANON-EVIDENCE-001",
+            "source_object": "VisitEvent",
+            "source_record_id": "ANON-VISIT-001",
+            "field_path": "process_description",
+            "content_hash": "sha256:example"
+          }
+        ],
+        "opportunity_updated": true
+      },
+      "expert": {
+        "q33_score": 50,
+        "q34_score": 50,
+        "recommendation": "yes",
+        "critical_issue_codes": [],
+        "notes": "仅用于演示数据结构，不计入正式30条业务黄金样例。"
+      }
+    }
+  ]
+}
