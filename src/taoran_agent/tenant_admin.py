@@ -17,6 +17,7 @@ from .config import Settings, TenantConfigRegistry
 from .connector import load_jiandaoyun_mapping
 from .mapping_sync import (
     JiandaoyunSchemaSyncError,
+    discover_jiandaoyun_authorization,
     fetch_jiandaoyun_form_schema_with_key,
     synchronize_mapping,
 )
@@ -26,9 +27,9 @@ _ADMIN_WRITE_LOCK = Lock()
 
 
 class TenantOnboardingRequest(BaseModel):
-    tenant_id: str = Field(min_length=3, max_length=64)
+    tenant_id: str | None = Field(default=None, min_length=3, max_length=64)
     display_name: str = Field(min_length=1, max_length=100)
-    enabled: bool = False
+    enabled: bool = True
     application_id: str = Field(min_length=1, max_length=100)
     entry_id: str = Field(min_length=1, max_length=100)
     entry_name: str = Field(min_length=1, max_length=100)
@@ -51,10 +52,20 @@ class TenantOnboardingRequest(BaseModel):
 
     @field_validator("tenant_id")
     @classmethod
-    def validate_tenant_id(cls, value: str) -> str:
+    def validate_tenant_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if not _TENANT_ID_PATTERN.fullmatch(value):
             raise ValueError("租户ID只能使用小写字母、数字、下划线和短横线，且以字母开头")
         return value
+
+
+class JiandaoyunAuthorizationRequest(BaseModel):
+    jiandaoyun_api_key: SecretStr
+
+
+class JiandaoyunAuthorizationResponse(BaseModel):
+    applications: list[dict[str, Any]]
 
 
 class OneTimeCredentials(BaseModel):
@@ -78,6 +89,23 @@ def list_tenants(settings: Settings) -> list[dict[str, Any]]:
     ]
 
 
+def discover_authorized_forms(
+    settings: Settings,
+    request: JiandaoyunAuthorizationRequest,
+) -> JiandaoyunAuthorizationResponse:
+    api_key = request.jiandaoyun_api_key.get_secret_value().strip()
+    if not api_key:
+        raise ValueError("请填写简道云API Key")
+    applications = discover_jiandaoyun_authorization(
+        settings.jiandaoyun_base_url,
+        settings.jiandaoyun_timeout_seconds,
+        api_key,
+    )
+    if not any(application["forms"] for application in applications):
+        raise JiandaoyunSchemaSyncError("该API Key的授权应用中没有可访问表单")
+    return JiandaoyunAuthorizationResponse(applications=applications)
+
+
 def onboard_tenant(
     settings: Settings,
     request: TenantOnboardingRequest,
@@ -86,7 +114,8 @@ def onboard_tenant(
         raise ValueError("未配置可写租户注册表路径")
     with _ADMIN_WRITE_LOCK:
         registry = settings.reload_tenant_registry()
-        existing = registry.tenants.get(request.tenant_id)
+        tenant_id = request.tenant_id or _generate_tenant_id(registry)
+        existing = registry.tenants.get(tenant_id)
         existing_api_key = (
             existing.jiandaoyun.api_key.get_secret_value()
             if existing and existing.jiandaoyun.api_key
@@ -163,12 +192,12 @@ def onboard_tenant(
             and request.test_connection
             and mapping_report["unresolved_count"] == 0
         )
-        mapping_path = _versioned_mapping_path(settings, request.tenant_id, mapping)
+        mapping_path = _versioned_mapping_path(settings, tenant_id, mapping)
         _atomic_write_json(mapping_path, mapping)
 
         now = datetime.now(UTC)
         registry_document = _registry_document(registry)
-        registry_document["tenants"][request.tenant_id] = {
+        registry_document["tenants"][tenant_id] = {
             "enabled": activated,
             "display_name": request.display_name,
             "created_at": (
@@ -190,7 +219,7 @@ def onboard_tenant(
             {
                 "timestamp": now.isoformat(),
                 "action": "create" if existing is None else "update",
-                "tenant_id": request.tenant_id,
+                "tenant_id": tenant_id,
                 "enabled": activated,
                 "connection_tested": request.test_connection,
                 "matched_count": mapping_report["matched_count"],
@@ -200,7 +229,7 @@ def onboard_tenant(
             },
         )
         return TenantOnboardingResult(
-            tenant=_tenant_summary(settings, request.tenant_id),
+            tenant=_tenant_summary(settings, tenant_id),
             connection_tested=request.test_connection,
             mapping_report=mapping_report,
             activated=activated,
@@ -210,6 +239,14 @@ def onboard_tenant(
                 webhook_secret=generated_webhook_secret,
             ),
         )
+
+
+def _generate_tenant_id(registry: TenantConfigRegistry) -> str:
+    for _ in range(20):
+        tenant_id = f"tenant_{secrets.token_hex(6)}"
+        if tenant_id not in registry.tenants:
+            return tenant_id
+    raise RuntimeError("无法生成唯一客户编号")
 
 
 def _base_mapping(settings: Settings, existing) -> dict[str, Any]:
@@ -317,9 +354,12 @@ def _append_audit(path: Path, event: dict[str, Any]) -> None:
 
 
 __all__ = [
+    "JiandaoyunAuthorizationRequest",
+    "JiandaoyunAuthorizationResponse",
     "JiandaoyunSchemaSyncError",
     "TenantOnboardingRequest",
     "TenantOnboardingResult",
+    "discover_authorized_forms",
     "list_tenants",
     "onboard_tenant",
 ]

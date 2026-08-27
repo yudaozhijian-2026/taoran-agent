@@ -35,7 +35,7 @@
         <div>
           <p class="eyebrow">多客户配置</p>
           <h1>新客户一键接入</h1>
-          <p class="hint">填写简道云信息后，系统会自动测试连接、匹配字段并更新注册表。</p>
+          <p class="hint">先连接简道云，再从已授权的应用和表单中选择，其他配置由系统完成。</p>
         </div>
         <button id="logoutButton" type="button" class="ghost">退出</button>
       </div>
@@ -43,47 +43,40 @@
       <div class="grid">
         <section class="card form-card">
           <div class="section-title">
-            <h2>接入信息</h2>
+            <h2>连接简道云</h2>
             <span class="step">1</span>
           </div>
-          <form id="tenantForm" class="form-grid">
-            <label>
-              <span>客户编号 <b>*</b></span>
-              <input name="tenant_id" required pattern="[a-z][a-z0-9_-]{2,63}" placeholder="例：chengdu_medical">
-              <small>小写字母开头，可使用数字、_ 和 -</small>
-            </label>
-            <label>
-              <span>客户名称 <b>*</b></span>
-              <input name="display_name" required placeholder="例：成都某医疗公司">
-            </label>
-            <label>
-              <span>简道云应用 ID <b>*</b></span>
-              <input name="application_id" required placeholder="从简道云应用地址中获取">
-            </label>
-            <label>
-              <span>表单 ID <b>*</b></span>
-              <input name="entry_id" required placeholder="从简道云表单地址中获取">
-            </label>
-            <label>
-              <span>表单名称 <b>*</b></span>
-              <input name="entry_name" required placeholder="例：拜访记录录入">
-            </label>
-            <label>
+          <form id="tenantForm" class="stack onboarding-form">
+            <label class="full">
               <span>简道云 API Key <b>*</b></span>
-              <input name="jiandaoyun_api_key" type="password" autocomplete="new-password" placeholder="首次必填，更新时可留空">
-              <small>只会加密传输到 TAORAN 服务，页面不保存</small>
+              <input name="jiandaoyun_api_key" type="password" autocomplete="new-password" required placeholder="粘贴该客户的独立 API Key">
+              <small>系统只读取该Key已授权的应用和表单，不会在浏览器保存</small>
             </label>
+            <button id="connectButton" type="button" class="primary full">连接简道云</button>
+            <div id="connectionMessage" class="message hidden full" role="alert"></div>
 
-            <div class="options full">
-              <label class="check"><input name="test_connection" type="checkbox" checked> 立即测试简道云连接并自动匹配字段</label>
-              <label class="check"><input name="enabled" type="checkbox" checked> 字段全部匹配后立即启用该客户</label>
-              <details>
-                <summary>更新已有客户时的高级选项</summary>
-                <label class="check"><input name="rotate_access_key" type="checkbox"> 换发 TAORAN 访问 Key</label>
-                <label class="check"><input name="rotate_webhook_secret" type="checkbox"> 换发提交后推送签名密钥</label>
-              </details>
+            <div id="formConfiguration" class="configuration-panel hidden full">
+              <div class="section-title compact-title">
+                <h2>选择授权表单</h2>
+                <span class="step">2</span>
+              </div>
+              <div class="form-grid configuration-fields">
+                <label class="full">
+                  <span>客户名称 <b>*</b></span>
+                  <input name="display_name" required placeholder="例：成都某医疗公司">
+                </label>
+                <label>
+                  <span>已授权应用 <b>*</b></span>
+                  <select id="applicationSelect" name="application_id" required></select>
+                </label>
+                <label>
+                  <span>拜访记录表单 <b>*</b></span>
+                  <select id="formSelect" name="entry_id" required></select>
+                </label>
+              </div>
+              <p class="automation-note">客户编号、应用ID、表单ID、表单名称、字段映射和接入密钥将自动生成。</p>
+              <button id="saveButton" type="submit" class="primary full">完成配置</button>
             </div>
-            <button id="saveButton" type="submit" class="primary full">测试连接并完成配置</button>
           </form>
           <div id="saveMessage" class="message hidden" role="alert"></div>
         </section>
@@ -91,7 +84,7 @@
         <aside class="card result-card">
           <div class="section-title">
             <h2>配置结果</h2>
-            <span class="step">2</span>
+            <span class="step">3</span>
           </div>
           <div id="emptyResult" class="empty">提交后，这里会显示连接、字段匹配和启用结果。</div>
           <div id="resultContent" class="hidden"></div>

@@ -65,6 +65,10 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
 
     assert page.status_code == 200
     assert "TAORAN 客户接入管理" in page.text
+    assert "连接简道云" in page.text
+    assert 'name="tenant_id"' not in page.text
+    assert 'id="applicationSelect"' in page.text
+    assert 'id="formSelect"' in page.text
     assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
     assert unauthenticated.status_code == 401
     assert authenticated.status_code == 200
@@ -76,6 +80,56 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
     monkeypatch.setenv("DSM_TAORAN_TENANT_REGISTRY_PATH", "")
     get_settings.cache_clear()
     assert client.get("/admin/tenants").status_code == 404
+
+
+def test_authorized_applications_and_forms_are_discovered(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "taoran_agent.tenant_admin.discover_jiandaoyun_authorization",
+        lambda *args: [
+            {
+                "app_id": "app-authorized",
+                "name": "销售管理",
+                "forms": [
+                    {
+                        "app_id": "app-authorized",
+                        "entry_id": "form-authorized",
+                        "name": "拜访记录",
+                    }
+                ],
+            }
+        ],
+    )
+    client = TestClient(api.app)
+
+    response = client.post(
+        "/api/v1/admin/jiandaoyun/authorization",
+        headers={"X-Admin-Key": "admin-test-key"},
+        json={"jiandaoyun_api_key": "jdy-key"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["applications"][0]["forms"][0]["entry_id"] == "form-authorized"
+
+
+def test_customer_id_is_generated_when_not_supplied(isolated_admin) -> None:
+    client = TestClient(api.app)
+    payload = onboarding_payload()
+    payload.pop("tenant_id")
+
+    response = client.post(
+        "/api/v1/admin/tenants",
+        headers={"X-Admin-Key": "admin-test-key"},
+        json=payload,
+    )
+
+    assert response.status_code == 200
+    tenant_id = response.json()["tenant"]["tenant_id"]
+    assert tenant_id.startswith("tenant_")
+    assert len(tenant_id) == 19
+    registry = json.loads(
+        (isolated_admin / "tenant_registry.json").read_text(encoding="utf-8")
+    )
+    assert tenant_id in registry["tenants"]
 
 
 def test_page_submission_creates_registry_and_returns_secrets_once(isolated_admin) -> None:

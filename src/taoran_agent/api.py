@@ -50,9 +50,12 @@ from .runtime import build_agent
 from .scoring_contract import TOTAL_RULE_VERSION
 from .storage import AgentStore, IdempotencyConflictError
 from .tenant_admin import (
+    JiandaoyunAuthorizationRequest,
+    JiandaoyunAuthorizationResponse,
     JiandaoyunSchemaSyncError,
     TenantOnboardingRequest,
     TenantOnboardingResult,
+    discover_authorized_forms,
     list_tenants,
     onboard_tenant,
 )
@@ -60,7 +63,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.9.0",
+    version="0.9.1",
     description="提交前非阻断TAORAN检查、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
@@ -249,6 +252,27 @@ def tenant_admin_list(
     settings = get_settings()
     verify_admin_access(settings, x_admin_key)
     return {"tenants": list_tenants(settings)}
+
+
+@app.post(
+    "/api/v1/admin/jiandaoyun/authorization",
+    response_model=JiandaoyunAuthorizationResponse,
+)
+def tenant_admin_discover_jiandaoyun(
+    request: JiandaoyunAuthorizationRequest,
+    x_admin_key: str | None = Header(default=None),
+) -> JiandaoyunAuthorizationResponse:
+    settings = get_settings()
+    verify_admin_access(settings, x_admin_key)
+    try:
+        return discover_authorized_forms(settings, request)
+    except JiandaoyunSchemaSyncError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"简道云连接或授权信息读取失败：{exc}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @app.post("/api/v1/admin/tenants", response_model=TenantOnboardingResult)

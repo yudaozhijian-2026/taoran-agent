@@ -2,7 +2,11 @@ import json
 from pathlib import Path
 
 from taoran_agent.config import Settings
-from taoran_agent.mapping_sync import fetch_jiandaoyun_form_schema, synchronize_mapping
+from taoran_agent.mapping_sync import (
+    discover_jiandaoyun_authorization,
+    fetch_jiandaoyun_form_schema,
+    synchronize_mapping,
+)
 
 
 def test_mapping_is_synchronized_by_labels_and_subform_children() -> None:
@@ -90,3 +94,47 @@ def test_form_schema_is_fetched_from_v5_endpoint(monkeypatch) -> None:
     assert captured["url"].endswith("/v5/app/entry/widget/list")
     assert captured["kwargs"]["json"]["entry_id"] == "6a8408b7c5a0d9454090a5bc"
     assert captured["kwargs"]["headers"]["Authorization"] == "Bearer secret"
+
+
+def test_authorization_discovery_uses_visible_apps_and_forms(monkeypatch) -> None:
+    captured = []
+
+    class Response:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> dict:
+            return self.payload
+
+    def fake_post(url, **kwargs):
+        captured.append((url, kwargs))
+        if url.endswith("/v5/app/list"):
+            return Response({"apps": [{"app_id": "app-a", "name": "销售管理"}]})
+        return Response(
+            {
+                "forms": [
+                    {
+                        "app_id": "app-a",
+                        "entry_id": "entry-a",
+                        "name": "拜访记录",
+                    }
+                ]
+            }
+        )
+
+    monkeypatch.setattr("taoran_agent.mapping_sync.httpx.post", fake_post)
+
+    result = discover_jiandaoyun_authorization(
+        "https://api.jiandaoyun.com/api",
+        10,
+        "secret",
+    )
+
+    assert result[0]["app_id"] == "app-a"
+    assert result[0]["forms"][0]["entry_id"] == "entry-a"
+    assert captured[0][1]["headers"]["Authorization"] == "Bearer secret"
+    assert captured[0][1]["json"] == {"limit": 100, "skip": 0}
+    assert captured[1][1]["json"] == {"app_id": "app-a", "limit": 100, "skip": 0}

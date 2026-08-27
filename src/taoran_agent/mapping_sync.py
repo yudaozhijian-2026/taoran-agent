@@ -13,6 +13,92 @@ class JiandaoyunSchemaSyncError(RuntimeError):
     pass
 
 
+def discover_jiandaoyun_authorization(
+    base_url: str,
+    timeout_seconds: float,
+    api_key: str,
+) -> list[dict[str, Any]]:
+    """Return the applications and forms visible to one Jiandaoyun API key."""
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    applications = _fetch_paginated_items(
+        f"{base_url.rstrip('/')}/v5/app/list",
+        headers,
+        timeout_seconds,
+        "apps",
+        {},
+    )
+    result: list[dict[str, Any]] = []
+    for application in applications:
+        app_id = application.get("app_id")
+        app_name = application.get("name")
+        if not isinstance(app_id, str) or not app_id:
+            continue
+        forms = _fetch_paginated_items(
+            f"{base_url.rstrip('/')}/v5/app/entry/list",
+            headers,
+            timeout_seconds,
+            "forms",
+            {"app_id": app_id},
+        )
+        normalized_forms = [
+            {
+                "app_id": app_id,
+                "entry_id": form["entry_id"],
+                "name": form.get("name") or form["entry_id"],
+            }
+            for form in forms
+            if isinstance(form.get("entry_id"), str) and form["entry_id"]
+        ]
+        result.append(
+            {
+                "app_id": app_id,
+                "name": app_name if isinstance(app_name, str) and app_name else app_id,
+                "forms": normalized_forms,
+            }
+        )
+    if not result:
+        raise JiandaoyunSchemaSyncError("该API Key没有授权任何可访问应用")
+    return result
+
+
+def _fetch_paginated_items(
+    url: str,
+    headers: dict[str, str],
+    timeout_seconds: float,
+    collection_name: str,
+    fixed_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    items: list[dict[str, Any]] = []
+    for skip in range(0, 1000, 100):
+        payload = {**fixed_payload, "limit": 100, "skip": skip}
+        try:
+            response = httpx.post(
+                url,
+                headers=headers,
+                json=payload,
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            body = response.json()
+        except (httpx.HTTPError, ValueError) as exc:
+            raise JiandaoyunSchemaSyncError(
+                "简道云API Key无效、已过期或授权信息读取失败"
+            ) from exc
+        if isinstance(body, dict) and isinstance(body.get("data"), dict):
+            body = body["data"]
+        page = body.get(collection_name) if isinstance(body, dict) else None
+        if not isinstance(page, list):
+            raise JiandaoyunSchemaSyncError("简道云授权信息响应格式无效")
+        normalized = [item for item in page if isinstance(item, dict)]
+        items.extend(normalized)
+        if len(page) < 100:
+            return items
+    raise JiandaoyunSchemaSyncError("授权应用或表单数量超过1000个，请缩小API Key授权范围")
+
+
 def fetch_jiandaoyun_form_schema(
     settings: Settings,
     tenant_id: str,
