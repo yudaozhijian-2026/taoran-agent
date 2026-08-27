@@ -61,8 +61,10 @@ from .tenant_admin import (
     JiandaoyunAuthorizationRequest,
     JiandaoyunAuthorizationResponse,
     JiandaoyunSchemaSyncError,
+    TenantFieldConfirmationRequest,
     TenantOnboardingRequest,
     TenantOnboardingResult,
+    confirm_tenant_fields,
     discover_authorized_forms,
     list_tenants,
     onboard_tenant,
@@ -71,7 +73,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.11.5",
+    version="0.11.6",
     description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
@@ -313,6 +315,28 @@ def tenant_admin_save(
     verify_admin_access(settings, x_admin_key)
     try:
         return onboard_tenant(settings, request)
+    except JiandaoyunSchemaSyncError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"简道云连接或字段读取失败：{exc}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/v1/admin/tenants/{tenant_id}/field-confirmation",
+    response_model=TenantOnboardingResult,
+)
+def tenant_admin_confirm_fields(
+    tenant_id: str,
+    request: TenantFieldConfirmationRequest,
+    x_admin_key: str | None = Header(default=None),
+) -> TenantOnboardingResult:
+    settings = get_settings()
+    verify_admin_access(settings, x_admin_key)
+    try:
+        return confirm_tenant_fields(settings, tenant_id, request)
     except JiandaoyunSchemaSyncError as exc:
         raise HTTPException(
             status_code=502,

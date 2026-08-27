@@ -17,6 +17,7 @@ from .config import Settings, TenantConfigRegistry
 from .connector import load_jiandaoyun_mapping
 from .mapping_sync import (
     JiandaoyunSchemaSyncError,
+    apply_manual_widget_assignments,
     discover_jiandaoyun_authorization,
     fetch_jiandaoyun_form_schema_with_key,
     synchronize_mapping,
@@ -66,6 +67,22 @@ class JiandaoyunAuthorizationRequest(BaseModel):
 
 class JiandaoyunAuthorizationResponse(BaseModel):
     applications: list[dict[str, Any]]
+
+
+class TenantFieldConfirmationRequest(BaseModel):
+    assignments: dict[str, str] = Field(default_factory=dict, max_length=100)
+
+    @field_validator("assignments")
+    @classmethod
+    def validate_assignments(cls, value: dict[str, str]) -> dict[str, str]:
+        normalized: dict[str, str] = {}
+        for path, widget_id in value.items():
+            clean_path = path.strip()
+            clean_widget_id = widget_id.strip()
+            if not clean_path or not clean_widget_id.startswith("_widget_"):
+                raise ValueError("手动映射必须包含有效字段路径和简道云字段ID")
+            normalized[clean_path] = clean_widget_id
+        return normalized
 
 
 class OneTimeCredentials(BaseModel):
@@ -241,6 +258,92 @@ def onboard_tenant(
         )
 
 
+def confirm_tenant_fields(
+    settings: Settings,
+    tenant_id: str,
+    request: TenantFieldConfirmationRequest,
+) -> TenantOnboardingResult:
+    if not settings.tenant_registry_path:
+        raise ValueError("未配置可写租户注册表路径")
+    if not _TENANT_ID_PATTERN.fullmatch(tenant_id):
+        raise ValueError("客户编号格式无效")
+    with _ADMIN_WRITE_LOCK:
+        registry = settings.reload_tenant_registry()
+        existing = registry.tenants.get(tenant_id)
+        if existing is None:
+            raise ValueError("客户不存在或尚未完成首次接入")
+        api_key = (
+            existing.jiandaoyun.api_key.get_secret_value()
+            if existing.jiandaoyun.api_key
+            else None
+        )
+        mapping_path = existing.jiandaoyun.mapping_path
+        if not api_key or not mapping_path or not Path(mapping_path).is_file():
+            raise ValueError("客户的简道云连接或字段映射配置不完整")
+        mapping = load_jiandaoyun_mapping(mapping_path)
+        application_id = mapping.get("source_application_id")
+        entry_id = mapping.get("source_entry_id")
+        if not application_id or not entry_id:
+            raise ValueError("客户映射中缺少应用ID或表单ID")
+        schema = fetch_jiandaoyun_form_schema_with_key(
+            settings.jiandaoyun_base_url,
+            settings.jiandaoyun_timeout_seconds,
+            api_key,
+            application_id,
+            entry_id,
+        )
+        if request.assignments:
+            updated, mapping_report = apply_manual_widget_assignments(
+                mapping,
+                schema,
+                request.assignments,
+            )
+        else:
+            updated, mapping_report = synchronize_mapping(mapping, schema)
+        updated.update(
+            {
+                "source_application_id": application_id,
+                "source_entry_id": entry_id,
+                "source_entry_name": mapping.get("source_entry_name"),
+            }
+        )
+        activated = mapping_report["unresolved_count"] == 0
+        new_mapping_path = _versioned_mapping_path(settings, tenant_id, updated)
+        _atomic_write_json(new_mapping_path, updated)
+        now = datetime.now(UTC)
+        registry_document = _registry_document(registry)
+        tenant_document = registry_document["tenants"][tenant_id]
+        tenant_document["enabled"] = activated
+        tenant_document["updated_at"] = now.isoformat()
+        tenant_document["jiandaoyun"]["mapping_path"] = str(new_mapping_path)
+        validated = TenantConfigRegistry.model_validate(registry_document)
+        _atomic_write_json(Path(settings.tenant_registry_path), _registry_document(validated))
+        settings.reload_tenant_registry()
+        _append_audit(
+            Path(settings.admin_audit_path),
+            {
+                "timestamp": now.isoformat(),
+                "action": "confirm_field_mappings" if request.assignments else "recheck_fields",
+                "tenant_id": tenant_id,
+                "enabled": activated,
+                "assignment_count": len(request.assignments),
+                "matched_count": mapping_report["matched_count"],
+                "unresolved_count": mapping_report["unresolved_count"],
+            },
+        )
+        warnings = []
+        if not activated:
+            warnings.append("仍有待确认字段，客户保持停用；请继续映射或在简道云修改字段后重新检查。")
+        return TenantOnboardingResult(
+            tenant=_tenant_summary(settings, tenant_id),
+            connection_tested=True,
+            mapping_report=mapping_report,
+            activated=activated,
+            warnings=warnings,
+            one_time_credentials=OneTimeCredentials(),
+        )
+
+
 def _generate_tenant_id(registry: TenantConfigRegistry) -> str:
     for _ in range(20):
         tenant_id = f"tenant_{secrets.token_hex(6)}"
@@ -357,8 +460,10 @@ __all__ = [
     "JiandaoyunAuthorizationRequest",
     "JiandaoyunAuthorizationResponse",
     "JiandaoyunSchemaSyncError",
+    "TenantFieldConfirmationRequest",
     "TenantOnboardingRequest",
     "TenantOnboardingResult",
+    "confirm_tenant_fields",
     "discover_authorized_forms",
     "list_tenants",
     "onboard_tenant",

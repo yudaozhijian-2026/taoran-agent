@@ -4,6 +4,7 @@
   let adminKey = "";
   let authorizedApplications = [];
   let connectedApiKey = "";
+  let oneTimeCredentials = null;
   const $ = (selector) => document.querySelector(selector);
   const loginPanel = $("#loginPanel");
   const workspace = $("#workspace");
@@ -77,6 +78,17 @@
       state.className = `pill ${tenant.enabled ? "on" : "off"}`;
       state.textContent = tenant.enabled ? "已启用" : "未启用";
       row.append(name, id, form, state);
+      if (!tenant.enabled && tenant.jiandaoyun.mapping_configured) {
+        const manage = document.createElement("button");
+        manage.type = "button";
+        manage.className = "ghost compact-button";
+        manage.textContent = "查看并确认字段";
+        manage.addEventListener("click", async () => {
+          oneTimeCredentials = null;
+          await confirmFields(tenant.tenant_id, {}, manage, saveMessage);
+        });
+        row.append(manage);
+      }
       return row;
     }));
   }
@@ -126,6 +138,7 @@
 
   $("#logoutButton").addEventListener("click", () => {
     adminKey = "";
+    oneTimeCredentials = null;
     resetAuthorization();
     apiKeyInput.value = "";
     workspace.classList.add("hidden");
@@ -217,6 +230,9 @@
         method: "POST",
         body: JSON.stringify(payload),
       });
+      if (result.one_time_credentials.access_key || result.one_time_credentials.webhook_secret) {
+        oneTimeCredentials = result.one_time_credentials;
+      }
       renderResult(result);
       const stateText = result.activated ? "配置已写入并立即生效" : "配置已保存，请根据提示确认未匹配字段";
       showMessage(saveMessage, `${stateText}，系统客户编号：${result.tenant.tenant_id}`, true);
@@ -262,6 +278,22 @@
     });
     target.append(metrics);
 
+    const credentials = oneTimeCredentials || result.one_time_credentials;
+    if (credentials.access_key || credentials.webhook_secret) {
+      const box = document.createElement("div");
+      box.className = "credential";
+      const title = document.createElement("strong");
+      title.textContent = "请立即复制，以下密钥只显示这一次";
+      box.append(title);
+      addCredential(box, "TAORAN 访问 Key", credentials.access_key);
+      addCredential(box, "推送签名密钥", credentials.webhook_secret);
+      target.append(box);
+    }
+
+    if (result.mapping_report.unresolved?.length) {
+      renderUnresolvedFields(target, result);
+    }
+
     if (result.warnings.length) {
       const warnings = document.createElement("ul");
       warnings.className = "warning-list";
@@ -272,17 +304,116 @@
       });
       target.append(warnings);
     }
+  }
 
-    const credentials = result.one_time_credentials;
-    if (credentials.access_key || credentials.webhook_secret) {
-      const box = document.createElement("div");
-      box.className = "credential";
-      const title = document.createElement("strong");
-      title.textContent = "请立即复制，以下密钥只显示这一次";
-      box.append(title);
-      addCredential(box, "TAORAN 访问 Key", credentials.access_key);
-      addCredential(box, "推送签名密钥", credentials.webhook_secret);
-      target.append(box);
+  function renderUnresolvedFields(target, result) {
+    const panel = document.createElement("section");
+    panel.className = "unresolved-panel";
+    const title = document.createElement("h3");
+    title.textContent = "待确认字段明细";
+    const guidance = document.createElement("p");
+    guidance.className = "hint";
+    guidance.textContent = "可为待确认项选择同一表单范围内的实际字段；也可先在简道云新增或改名，再重新检查。";
+    panel.append(title, guidance);
+
+    const matchedIds = new Set(
+      (result.mapping_report.matched || []).map((item) => item.widget_id).filter(Boolean),
+    );
+    const availableFields = result.mapping_report.available_fields || [];
+    result.mapping_report.unresolved.forEach((item) => {
+      const row = document.createElement("div");
+      row.className = "unresolved-row";
+      const summary = document.createElement("div");
+      const name = document.createElement("strong");
+      name.textContent = item.field_name;
+      const location = document.createElement("span");
+      location.className = "field-location";
+      location.textContent = `${item.location || "表单"} · ${item.path}`;
+      summary.append(name, location);
+
+      const select = document.createElement("select");
+      select.dataset.mappingPath = item.path;
+      select.setAttribute("aria-label", `${item.field_name}对应的简道云字段`);
+      const placeholder = document.createElement("option");
+      placeholder.value = "";
+      placeholder.textContent = "请选择对应的简道云实际字段";
+      select.append(placeholder);
+      const candidates = availableFields.filter(
+        (field) => field.scope === item.candidate_scope
+          && !matchedIds.has(field.widget_id)
+          && compatibleFieldType(item.expected_widget_type, field.widget_type),
+      );
+      candidates.forEach((field) => {
+        const option = document.createElement("option");
+        option.value = field.widget_id;
+        const parent = field.parent_name ? `${field.parent_name} / ` : "";
+        option.textContent = `${parent}${field.field_name}${field.widget_type ? `（${field.widget_type}）` : ""}`;
+        select.append(option);
+      });
+      if (!candidates.length) {
+        placeholder.textContent = "同一范围内没有可选字段，请先修改简道云表单";
+      }
+      row.append(summary, select);
+      panel.append(row);
+    });
+
+    const message = document.createElement("div");
+    message.className = "message hidden";
+    message.setAttribute("role", "alert");
+    const actions = document.createElement("div");
+    actions.className = "confirmation-actions";
+    const save = document.createElement("button");
+    save.type = "button";
+    save.className = "primary";
+    save.textContent = "保存手动映射并重新检查";
+    save.addEventListener("click", async () => {
+      const assignments = {};
+      panel.querySelectorAll("select[data-mapping-path]").forEach((select) => {
+        if (select.value) assignments[select.dataset.mappingPath] = select.value;
+      });
+      if (!Object.keys(assignments).length) {
+        showMessage(message, "请至少选择一个待确认字段；如果已在简道云修改字段，请使用“重新读取表单字段”。");
+        return;
+      }
+      await confirmFields(result.tenant.tenant_id, assignments, save, message);
+    });
+    const recheck = document.createElement("button");
+    recheck.type = "button";
+    recheck.className = "ghost";
+    recheck.textContent = "重新读取表单字段";
+    recheck.addEventListener("click", async () => {
+      await confirmFields(result.tenant.tenant_id, {}, recheck, message);
+    });
+    actions.append(save, recheck);
+    panel.append(actions, message);
+    target.append(panel);
+  }
+
+  function compatibleFieldType(expected, actual) {
+    if (!expected || !actual || expected === actual) return true;
+    return [expected, actual].every((type) => ["text", "textarea", "number"].includes(type));
+  }
+
+  async function confirmFields(tenantId, assignments, button, message) {
+    clearMessage(message);
+    button.disabled = true;
+    const originalText = button.textContent;
+    button.textContent = "正在重新检查字段…";
+    try {
+      const result = await request(
+        `/api/v1/admin/tenants/${encodeURIComponent(tenantId)}/field-confirmation`,
+        { method: "POST", body: JSON.stringify({ assignments }) },
+      );
+      renderResult(result);
+      const text = result.activated
+        ? "全部必需字段已确认，客户已自动启用。"
+        : `已重新检查，仍有 ${result.mapping_report.unresolved_count} 个字段待确认。`;
+      showMessage(saveMessage, text, true);
+      await loadTenants();
+    } catch (error) {
+      showMessage(message, error.message);
+      button.disabled = false;
+      button.textContent = originalText;
     }
   }
 

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from taoran_agent.config import Settings
 from taoran_agent.mapping_sync import (
+    apply_manual_widget_assignments,
     discover_jiandaoyun_authorization,
     fetch_jiandaoyun_form_schema,
     synchronize_mapping,
@@ -152,3 +153,42 @@ def test_authorization_discovery_uses_visible_apps_and_forms(monkeypatch) -> Non
     assert captured[0][1]["headers"]["Authorization"] == "Bearer secret"
     assert captured[0][1]["json"] == {"limit": 100, "skip": 0}
     assert captured[1][1]["json"] == {"app_id": "app-a", "limit": 100, "skip": 0}
+
+
+def test_unresolved_report_exposes_candidates_and_accepts_manual_mapping() -> None:
+    mapping = {
+        "fields": {
+            "process_description": {
+                "field_name": "过程详细描述",
+                "aliases": [],
+            }
+        }
+    }
+    schema = {
+        "widgets": [
+            {
+                "label": "拜访过程纪要",
+                "name": "_widget_actual_process",
+                "widgetName": "_widget_actual_process",
+                "type": "textarea",
+            }
+        ]
+    }
+
+    _, initial_report = synchronize_mapping(mapping, schema)
+    updated, confirmed_report = apply_manual_widget_assignments(
+        mapping,
+        schema,
+        {"fields.process_description": "_widget_actual_process"},
+    )
+
+    assert initial_report["unresolved"][0] == {
+        "path": "fields.process_description",
+        "field_name": "过程详细描述",
+        "location": "拜访记录",
+        "candidate_scope": "top_level",
+        "expected_widget_type": "",
+    }
+    assert initial_report["available_fields"][0]["field_name"] == "拜访过程纪要"
+    assert updated["fields"]["process_description"]["widget_id"] == "_widget_actual_process"
+    assert confirmed_report["unresolved_count"] == 0

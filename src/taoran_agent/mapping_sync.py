@@ -167,6 +167,9 @@ def synchronize_mapping(
                     {
                         "path": f"{section_name}.{canonical_name}",
                         "field_name": _primary_label(spec) or canonical_name,
+                        "location": _field_location(section_name),
+                        "candidate_scope": "top_level",
+                        "expected_widget_type": _expected_widget_type(spec),
                     }
                 )
                 continue
@@ -184,6 +187,9 @@ def synchronize_mapping(
                     {
                         "path": f"subforms.{canonical_name}",
                         "field_name": _primary_label(subform.get("field")) or canonical_name,
+                        "location": "子表单",
+                        "candidate_scope": "top_level",
+                        "expected_widget_type": _expected_widget_type(subform.get("field")),
                     }
                 )
                 continue
@@ -199,6 +205,9 @@ def synchronize_mapping(
                         {
                             "path": f"subforms.{canonical_name}.children.{child_name}",
                             "field_name": _primary_label(child_spec) or child_name,
+                            "location": f"{parent.get('label') or canonical_name}子表",
+                            "candidate_scope": f"subforms.{canonical_name}.children",
+                            "expected_widget_type": _expected_widget_type(child_spec),
                         }
                     )
                     continue
@@ -219,7 +228,144 @@ def synchronize_mapping(
         "unresolved_count": len(unresolved),
         "matched": matched,
         "unresolved": unresolved,
+        "available_fields": _available_field_records(widgets, updated),
     }
+
+
+def apply_manual_widget_assignments(
+    mapping: dict[str, Any],
+    schema: dict[str, Any],
+    assignments: dict[str, str],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Apply administrator-confirmed widget IDs, then run the normal sync again."""
+    updated = deepcopy(mapping)
+    widgets = [item for item in schema.get("widgets", []) if isinstance(item, dict)]
+    _, current_report = synchronize_mapping(updated, schema)
+    unresolved_paths = {item["path"] for item in current_report["unresolved"]}
+    used_widget_ids = {
+        item["widget_id"]: item["path"]
+        for item in current_report["matched"]
+        if item.get("widget_id")
+    }
+    selected_widget_ids: dict[str, str] = {}
+    for path, widget_id in assignments.items():
+        if path not in unresolved_paths:
+            raise ValueError(f"字段“{path}”不属于当前待确认项")
+        if widget_id in used_widget_ids:
+            raise ValueError(
+                f"简道云字段已映射到“{used_widget_ids[widget_id]}”，不能重复使用"
+            )
+        if widget_id in selected_widget_ids:
+            raise ValueError(
+                f"同一简道云字段不能同时映射到“{selected_widget_ids[widget_id]}”和“{path}”"
+            )
+        spec, candidates = _manual_mapping_target(updated, widgets, path)
+        widget = next((item for item in candidates if _widget_id(item) == widget_id), None)
+        if widget is None:
+            raise ValueError(f"字段“{path}”选择的简道云字段不存在或不在同一子表范围")
+        expected_type = _expected_widget_type(spec)
+        actual_type = str(widget.get("type") or "")
+        if not _compatible_widget_type(expected_type, actual_type):
+            raise ValueError(
+                f"字段“{path}”需要{expected_type}类型，不能映射到{actual_type or '未知'}类型"
+            )
+        spec.clear()
+        spec.update(_with_widget_metadata(_mapping_spec(mapping, path), widget))
+        selected_widget_ids[widget_id] = path
+    return synchronize_mapping(updated, schema)
+
+
+def _manual_mapping_target(
+    mapping: dict[str, Any],
+    widgets: list[dict[str, Any]],
+    path: str,
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    parts = path.split(".")
+    if len(parts) == 2 and parts[0] in {"fields", "record_fields", "output_fields"}:
+        spec = mapping.get(parts[0], {}).get(parts[1])
+        if isinstance(spec, dict):
+            return spec, widgets
+    if len(parts) == 2 and parts[0] == "subforms":
+        spec = mapping.get("subforms", {}).get(parts[1], {}).get("field")
+        if isinstance(spec, dict):
+            return spec, widgets
+    if len(parts) == 4 and parts[0] == "subforms" and parts[2] == "children":
+        subform = mapping.get("subforms", {}).get(parts[1], {})
+        spec = subform.get("children", {}).get(parts[3]) if isinstance(subform, dict) else None
+        parent = _find_widget(widgets, subform.get("field")) if isinstance(subform, dict) else None
+        if isinstance(spec, dict) and parent is not None:
+            children = [item for item in parent.get("items", []) if isinstance(item, dict)]
+            return spec, children
+    raise ValueError(f"字段路径“{path}”无法进行手动映射")
+
+
+def _mapping_spec(mapping: dict[str, Any], path: str) -> dict[str, Any]:
+    parts = path.split(".")
+    if len(parts) == 2 and parts[0] in {"fields", "record_fields", "output_fields"}:
+        spec = mapping.get(parts[0], {}).get(parts[1])
+    elif len(parts) == 2 and parts[0] == "subforms":
+        spec = mapping.get("subforms", {}).get(parts[1], {}).get("field")
+    elif len(parts) == 4 and parts[0] == "subforms" and parts[2] == "children":
+        spec = mapping.get("subforms", {}).get(parts[1], {}).get("children", {}).get(parts[3])
+    else:
+        spec = None
+    return deepcopy(spec) if isinstance(spec, dict) else {}
+
+
+def _available_field_records(
+    widgets: list[dict[str, Any]],
+    mapping: dict[str, Any],
+) -> list[dict[str, str]]:
+    records = [_available_field_record(widget, "top_level") for widget in widgets]
+    subforms = mapping.get("subforms", {})
+    if isinstance(subforms, dict):
+        for canonical_name, subform in subforms.items():
+            if not isinstance(subform, dict):
+                continue
+            parent = _find_widget(widgets, subform.get("field"))
+            if parent is None:
+                continue
+            scope = f"subforms.{canonical_name}.children"
+            records.extend(
+                _available_field_record(child, scope, str(parent.get("label") or "子表"))
+                for child in parent.get("items", [])
+                if isinstance(child, dict)
+            )
+    return [record for record in records if record["widget_id"]]
+
+
+def _available_field_record(
+    widget: dict[str, Any],
+    scope: str,
+    parent_name: str = "",
+) -> dict[str, str]:
+    return {
+        "widget_id": _widget_id(widget) or "",
+        "field_name": str(widget.get("label") or _widget_id(widget) or "未命名字段"),
+        "widget_type": str(widget.get("type") or ""),
+        "scope": scope,
+        "parent_name": parent_name,
+    }
+
+
+def _field_location(section_name: str) -> str:
+    return {
+        "fields": "拜访记录",
+        "record_fields": "记录信息",
+        "output_fields": "AI分析输出",
+    }.get(section_name, "表单")
+
+
+def _expected_widget_type(spec: Any) -> str:
+    if isinstance(spec, dict) and isinstance(spec.get("widget_type"), str):
+        return spec["widget_type"]
+    return ""
+
+
+def _compatible_widget_type(expected: str, actual: str) -> bool:
+    if not expected or not actual or expected == actual:
+        return True
+    return {expected, actual} <= {"text", "textarea", "number"}
 
 
 def _find_widget(widgets: list[dict[str, Any]], spec: Any) -> dict[str, Any] | None:

@@ -6,7 +6,12 @@ from fastapi.testclient import TestClient
 from taoran_agent import api
 from taoran_agent.config import Settings, get_settings
 from taoran_agent.mapping_sync import JiandaoyunSchemaSyncError
-from taoran_agent.tenant_admin import TenantOnboardingRequest, onboard_tenant
+from taoran_agent.tenant_admin import (
+    TenantFieldConfirmationRequest,
+    TenantOnboardingRequest,
+    confirm_tenant_fields,
+    onboard_tenant,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -130,6 +135,96 @@ def test_customer_id_is_generated_when_not_supplied(isolated_admin) -> None:
         (isolated_admin / "tenant_registry.json").read_text(encoding="utf-8")
     )
     assert tenant_id in registry["tenants"]
+
+
+def test_recheck_existing_tenant_activates_after_fields_are_complete(
+    isolated_admin,
+    monkeypatch,
+) -> None:
+    settings = get_settings()
+    created = onboard_tenant(
+        settings,
+        TenantOnboardingRequest.model_validate(onboarding_payload()),
+    )
+    tenant_id = created.tenant["tenant_id"]
+    monkeypatch.setattr(
+        "taoran_agent.tenant_admin.fetch_jiandaoyun_form_schema_with_key",
+        lambda *args: {"widgets": []},
+    )
+
+    def complete_mapping(mapping, schema):
+        mapping["status"] = "copy_widget_ids_synced"
+        return mapping, {
+            "matched_count": 25,
+            "unresolved_count": 0,
+            "matched": [],
+            "unresolved": [],
+            "available_fields": [],
+        }
+
+    monkeypatch.setattr("taoran_agent.tenant_admin.synchronize_mapping", complete_mapping)
+
+    result = confirm_tenant_fields(
+        settings,
+        tenant_id,
+        TenantFieldConfirmationRequest(assignments={}),
+    )
+
+    assert result.activated is True
+    assert result.tenant["enabled"] is True
+    registry = json.loads(
+        (isolated_admin / "tenant_registry.json").read_text(encoding="utf-8")
+    )
+    assert registry["tenants"][tenant_id]["enabled"] is True
+
+
+def test_manual_confirmation_endpoint_saves_selected_mapping(
+    monkeypatch,
+) -> None:
+    client = TestClient(api.app)
+    client.post(
+        "/api/v1/admin/tenants",
+        headers={"X-Admin-Key": "admin-test-key"},
+        json=onboarding_payload(),
+    )
+    monkeypatch.setattr(
+        "taoran_agent.tenant_admin.fetch_jiandaoyun_form_schema_with_key",
+        lambda *args: {"widgets": []},
+    )
+    captured = {}
+
+    def manual_mapping(mapping, schema, assignments):
+        captured.update(assignments)
+        mapping["status"] = "copy_widget_ids_partially_synced"
+        return mapping, {
+            "matched_count": 24,
+            "unresolved_count": 1,
+            "matched": [],
+            "unresolved": [
+                {
+                    "path": "fields.visit_purpose",
+                    "field_name": "拜访目的",
+                    "location": "拜访记录",
+                    "candidate_scope": "top_level",
+                }
+            ],
+            "available_fields": [],
+        }
+
+    monkeypatch.setattr(
+        "taoran_agent.tenant_admin.apply_manual_widget_assignments",
+        manual_mapping,
+    )
+
+    response = client.post(
+        "/api/v1/admin/tenants/customer_a/field-confirmation",
+        headers={"X-Admin-Key": "admin-test-key"},
+        json={"assignments": {"fields.visit_purpose": "_widget_visit_purpose"}},
+    )
+
+    assert response.status_code == 200
+    assert captured == {"fields.visit_purpose": "_widget_visit_purpose"}
+    assert response.json()["mapping_report"]["unresolved"][0]["field_name"] == "拜访目的"
 
 
 def test_page_submission_creates_registry_and_returns_secrets_once(isolated_admin) -> None:
