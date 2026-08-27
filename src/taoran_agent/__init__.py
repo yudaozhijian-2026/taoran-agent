@@ -4,4 +4,4 @@ from .agent import TaoranAgent
 from .models import PrecheckRequest, PrecheckResponse
 
 __all__ = ["PrecheckRequest", "PrecheckResponse", "TaoranAgent"]
-__version__ = "0.9.1"
+__version__ = "0.11.5"

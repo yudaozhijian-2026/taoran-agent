@@ -1,6 +1,6 @@
 {
   "agent_code": "DSM-TAORAN-SCORING-AGENT",
-  "agent_version": "0.9.1",
+  "agent_version": "0.11.5",
   "rule_code": "TAORAN-Q33-Q34-100",
   "rule_version": "TAORAN-Q33-Q34-100-V2",
   "rule_status": "knowledge_aligned_baseline",

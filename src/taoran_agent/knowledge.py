@@ -87,7 +87,9 @@ class KnowledgeApiClient:
         self.timeout_seconds = timeout_seconds
         self.transport = transport
 
-    def fetch_taoran_snapshot(self, limit: int = 100) -> TaoranKnowledgeSnapshot:
+    def fetch_taoran_snapshot(self, limit: int = 50) -> TaoranKnowledgeSnapshot:
+        # 知识服务OpenAPI约束单次查询最多50条，调用方传入更大值时安全收敛。
+        limit = min(limit, 50)
         with httpx.Client(
             base_url=self.base_url,
             timeout=self.timeout_seconds,

@@ -234,9 +234,22 @@
       "widget_type": "text"
     },
     "ai_opinion": {
-      "field_name": "AI反馈意见",
+      "field_name": "AI反馈意见（规则反馈）",
+      "aliases": ["AI反馈意见"],
       "widget_id": "_widget_1787037882560",
       "api_name": "_widget_1787037882560",
+      "widget_type": "textarea"
+    },
+    "knowledge_feedback": {
+      "field_name": "AI反馈意见（知识库反馈）",
+      "widget_id": "_widget_1787803259012",
+      "api_name": "_widget_1787803259012",
+      "widget_type": "textarea"
+    },
+    "model_feedback": {
+      "field_name": "AI反馈意见（大模型反馈）",
+      "widget_id": "_widget_1787803259013",
+      "api_name": "_widget_1787803259013",
       "widget_type": "textarea"
     }
   },
@@ -287,7 +300,9 @@
     "销售团队",
     "客户编号",
     "AI评分",
-    "AI反馈意见"
+    "AI反馈意见（规则反馈）",
+    "AI反馈意见（知识库反馈）",
+    "AI反馈意见（大模型反馈）"
   ],
   "last_schema_sync_at": "2026-08-18T08:38:30.501177+00:00",
   "source_data_modify_time": "2026-08-18T07:04:20.711Z"

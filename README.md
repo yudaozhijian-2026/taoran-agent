@@ -1,12 +1,16 @@
 # DSM TAORAN原则评分智能体
 
-独立运行的TAORAN拜访评分Agent，版本`0.9.1`。已整合DSM知识库TAORAN标准，以及销售管理智能评测40题的Q33和Q34：
+独立运行的TAORAN拜访评分Agent，版本`0.11.5`。已整合DSM知识库TAORAN标准，以及销售管理智能评测40题的Q33和Q34：
 
 - Q33记录完整性与及时性：50分；
 - Q34自评一致性与下一行动：50分；
 - 综合满分：100分；
 - 提交前AI检测只给修改建议，永不阻断提交；
-- 提交前按`T—A—O/KR—R—A—N`六项本地知识规则快速检查，固定不调用大模型；
+- 保留一个“AI检测”按钮，每次点击同时返回规则、实时知识库、纯大模型三份反馈；
+- 规则反馈保持原`T—A—O/KR—R—A—N`六项本地检查逻辑不变；
+- 知识库反馈每次实时调用DSM知识库API，只有成功取得内容后才交给智谱模型，不回退到打包快照；
+- 大模型反馈只向智谱模型提供当前拜访内容和六项分析任务，不注入知识库内容；
+- 提交后重新生成知识库反馈和纯大模型反馈并回写各自字段；深度评分证据校验失败时，这两个非评分反馈仍独立保留；
 - 提交后由独立配置的智谱`glm-5.2`异步深度分析，规则计分后可通过API回写简道云。
 - “AI检测”按钮只返回填写规范和修改建议，不生成、不展示、不回写正式评分。
 - 正式评分仅在记录提交成功后触发，并回写“AI评分”和“AI反馈意见”。
@@ -37,6 +41,16 @@ uv run taoran-agent serve --host 127.0.0.1 --port 8030
 
 启动后访问`http://127.0.0.1:8030/docs`。
 
+## 提交前三份反馈
+
+`POST /api/v1/connectors/jiandaoyun/visit/button-check`在一次请求中返回：
+
+- `rule_feedback_text` → AI反馈意见（规则反馈）；
+- `knowledge_feedback_text` → AI反馈意见（知识库反馈）；
+- `model_feedback_text` → AI反馈意见（大模型反馈）。
+
+`feedback_text`继续等于`rule_feedback_text`，用于兼容旧简道云输出映射。三份反馈都不阻断提交、不生成提交前正式分数。知识库或模型分支失败时，只在对应字段返回“未完成”，不会用规则或本地快照冒充结论。
+
 ## 主要接口
 
 - `POST /api/v1/connectors/jiandaoyun/visit/button-check`
@@ -52,7 +66,7 @@ uv run taoran-agent serve --host 127.0.0.1 --port 8030
 DSM_TAORAN_JIANDAOYUN_API_KEYS_JSON={"tenant_demo":"replace-with-api-key"}
 ```
 
-当前测试对象是简道云副本`拜访记录录入_AI测评`。应用ID、表单ID和29个输入/关联/输出映射项已通过
+当前测试对象是简道云副本`拜访记录录入_AI测评`。应用ID、表单ID和31个输入/关联/输出映射项已通过
 简道云V5接口核验并写入配置，未解析项为0；旧正式表字段ID不再作为活动配置。副本字段发生变化时可重新同步：
 
 ```bash
@@ -64,7 +78,7 @@ uv run taoran-agent sync-jiandaoyun-fields --tenant-id tenant_demo --apply
 
 ## TAORAN知识同步
 
-运行时使用项目内已审核的知识快照，不在按钮点击时访问远程知识库，避免网络延迟影响前端响应。需要更新知识时，由管理员在服务器环境中临时配置独立Key：
+默认规则引擎仍使用项目内已审核快照；“知识库反馈”则每次按钮点击实时访问远程知识库API。服务器必须通过环境变量配置独立Key：
 
 ```text
 DSM_TAORAN_KNOWLEDGE_API_KEY=replace-with-dedicated-api-key

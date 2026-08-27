@@ -3,9 +3,11 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime
 from importlib.resources import files
 from threading import Lock
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -25,12 +27,14 @@ from .connector import (
 from .field_labels import use_field_mapping
 from .gateway import verify_admin_access, verify_q40_service_access, verify_tenant_access
 from .jiandaoyun_api import JiandaoyunReadError, get_jiandaoyun_record
-from .knowledge import load_taoran_knowledge_snapshot
-from .llm import PROMPT_VERSION
+from .knowledge import KnowledgeApiClient, TaoranKnowledgeSnapshot, load_taoran_knowledge_snapshot
+from .llm import PROMPT_VERSION, ChatModelReviewer
 from .models import (
     ButtonPrecheckResponse,
     EvaluationAccepted,
     EvaluationResponse,
+    FeedbackMode,
+    Issue,
     JiandaoyunCheckRequest,
     JiandaoyunEvaluationRequest,
     JiandaoyunSubmittedEvent,
@@ -43,11 +47,15 @@ from .models import (
     Q40BatchResult,
     Q40PeriodFactsResponse,
     RuleCompatibilityResponse,
+    SemanticReview,
+    Severity,
 )
+from .precheck_engine import TaoranPrecheckEngine
 from .q40_integration import build_period_facts, rule_compatibility
 from .rules import canonical_hash
 from .runtime import build_agent
 from .scoring_contract import TOTAL_RULE_VERSION
+from .semantic import SemanticReviewer
 from .storage import AgentStore, IdempotencyConflictError
 from .tenant_admin import (
     JiandaoyunAuthorizationRequest,
@@ -63,12 +71,16 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.9.1",
-    description="提交前非阻断TAORAN检查、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
+    version="0.11.5",
+    description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
 _agents: dict[str, TaoranAgent] = {}
 _precheck_locks = [Lock() for _ in range(64)]
+_button_feedback_executor = ThreadPoolExecutor(
+    max_workers=4,
+    thread_name_prefix="taoran-button-feedback",
+)
 _ADMIN_SECURITY_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
@@ -125,6 +137,23 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
         mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
         with use_field_mapping(mapping_path):
             response = get_agent().evaluate(request, job_id)
+        post_feedback_request = PrecheckRequest(
+            context=request.context.model_copy(
+                update={"request_id": f"{request.context.request_id}__post_feedback"}
+            ),
+            visit=request.visit,
+            feedback_mode=FeedbackMode.RULE,
+        )
+        _, knowledge_feedback, model_feedback = _execute_three_feedback(
+            post_feedback_request,
+            get_settings(),
+        )
+        response = response.model_copy(
+            update={
+                "knowledge_feedback_text": knowledge_feedback.feedback_text,
+                "model_feedback_text": model_feedback.feedback_text,
+            }
+        )
         try:
             writeback = writeback_evaluation(get_settings(), request, response)
         except JiandaoyunWritebackError as exc:
@@ -351,25 +380,204 @@ def create_precheck(
 
 
 def _execute_precheck(request: PrecheckRequest) -> PrecheckResponse:
+    return _execute_precheck_with_agent(request, get_agent())
+
+
+def _execute_precheck_with_agent(
+    request: PrecheckRequest,
+    agent: TaoranAgent,
+) -> PrecheckResponse:
     store = get_store()
     existing = store.get_precheck_by_request(request.context.tenant_id, request.context.request_id)
     if existing:
-        current_hash = canonical_hash(
-            {
-                "form_revision": request.context.form_revision,
-                "source_record_id": request.context.source_record_id,
-                "visit": request.visit.model_dump(mode="json"),
-            }
-        )
+        snapshot_payload = {
+            "form_revision": request.context.form_revision,
+            "source_record_id": request.context.source_record_id,
+            "visit": request.visit.model_dump(mode="json"),
+        }
+        if request.feedback_mode.value != "rule":
+            snapshot_payload["feedback_mode"] = request.feedback_mode.value
+        current_hash = canonical_hash(snapshot_payload)
         if existing["input_snapshot_hash"] != current_hash:
             raise HTTPException(status_code=409, detail="idempotency key reused with new input")
         return PrecheckResponse.model_validate(existing["response"])
-    response = get_agent().precheck(request)
+    response = agent.precheck(request)
     try:
         store.save_precheck(request, response)
     except IdempotencyConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return response
+
+
+class _RuntimeKnowledgeReviewer(SemanticReviewer):
+    """将单次知识API结果交给共享大模型并发门控。"""
+
+    def __init__(
+        self,
+        reviewer: ChatModelReviewer,
+        snapshot: TaoranKnowledgeSnapshot,
+    ) -> None:
+        self.reviewer = reviewer
+        self.snapshot = snapshot
+
+    def review(self, visit):
+        return self.reviewer.review_with_runtime_knowledge(visit, self.snapshot)
+
+    def review_with_knowledge(self, visit):
+        return self.review(visit)
+
+
+class _FixedSemanticReviewer(SemanticReviewer):
+    def __init__(self, review: SemanticReview) -> None:
+        self._review = review
+
+    def review(self, visit):
+        del visit
+        return self._review.model_copy(deep=True)
+
+
+def _knowledge_feedback_unavailable(
+    request: PrecheckRequest,
+    *,
+    code: str,
+    message: str,
+    suggestion: str,
+) -> PrecheckResponse:
+    review = SemanticReview(
+        status="unavailable",
+        provider="knowledge-api",
+        failure_reason=code.lower(),
+        issues=[
+            Issue(
+                code=code,
+                dimension="SYSTEM",
+                severity=Severity.INFO,
+                field_paths=[],
+                message=message,
+                suggestion=suggestion,
+                source="system",
+            )
+        ],
+    )
+    response = _execute_precheck_with_agent(
+        request,
+        TaoranAgent(
+            _FixedSemanticReviewer(review),
+            TaoranPrecheckEngine(),
+        ),
+    )
+    return response.model_copy(
+        update={
+            "knowledge_snapshot_hash": "",
+            "knowledge_references": [],
+            "taoran_sections": [
+                item.model_copy(update={"knowledge_ids": []})
+                for item in response.taoran_sections
+            ],
+        }
+    )
+
+
+def _execute_live_knowledge_feedback(
+    request: PrecheckRequest,
+    settings: Settings,
+) -> PrecheckResponse:
+    if not settings.knowledge_api_key:
+        return _knowledge_feedback_unavailable(
+            request,
+            code="KNOWLEDGE_API_NOT_CONFIGURED",
+            message="知识库API尚未配置，本次未生成知识库反馈。",
+            suggestion="请管理员配置TAORAN专用知识库API Key后重试。",
+        )
+    shared_reviewer = get_agent().semantic_reviewer
+    if not isinstance(shared_reviewer, ChatModelReviewer):
+        return _knowledge_feedback_unavailable(
+            request,
+            code="KNOWLEDGE_MODEL_NOT_CONFIGURED",
+            message="智谱大模型尚未配置，本次未生成知识库反馈。",
+            suggestion="请管理员完成TAORAN专用智谱模型配置后重试。",
+        )
+    fetch_budget = max(
+        1.0,
+        min(
+            settings.knowledge_timeout_seconds,
+            settings.precheck_budget_seconds
+            - settings.llm_precheck_timeout_seconds
+            - 1.0,
+        ),
+    )
+    try:
+        snapshot = KnowledgeApiClient(
+            settings.knowledge_api_base_url,
+            settings.knowledge_api_key.get_secret_value(),
+            fetch_budget,
+        ).fetch_taoran_snapshot()
+    except Exception:  # noqa: BLE001 - 只暴露安全失败分类，不泄露供应方响应
+        return _knowledge_feedback_unavailable(
+            request,
+            code="KNOWLEDGE_API_UNAVAILABLE",
+            message="本次未能从知识库API取得可用内容，未生成知识库结论。",
+            suggestion="请稍后重新点击AI检测；持续失败请联系管理员。",
+        )
+    request = request.model_copy(
+        update={
+            "visit": request.visit.model_copy(
+                update={
+                    "metadata": {
+                        **request.visit.metadata,
+                        "runtime_knowledge_snapshot_hash": snapshot.snapshot_hash,
+                    }
+                }
+            )
+        }
+    )
+    return _execute_precheck_with_agent(
+        request,
+        TaoranAgent(
+            _RuntimeKnowledgeReviewer(shared_reviewer, snapshot),
+            TaoranPrecheckEngine(snapshot),
+        ),
+    )
+
+
+def _execute_three_feedback(
+    canonical_request: PrecheckRequest,
+    settings: Settings,
+) -> tuple[PrecheckResponse, PrecheckResponse, PrecheckResponse]:
+    """生成规则、实时知识库和纯大模型反馈，供按钮与提交后回写共用。"""
+    base_context = canonical_request.context
+    rule_request = canonical_request.model_copy(update={"feedback_mode": FeedbackMode.RULE})
+    model_request = canonical_request.model_copy(
+        update={
+            "context": base_context.model_copy(
+                update={"request_id": f"{base_context.request_id}__model"}
+            ),
+            "feedback_mode": FeedbackMode.AI,
+        }
+    )
+    knowledge_request = canonical_request.model_copy(
+        update={
+            "context": base_context.model_copy(
+                update={"request_id": f"{base_context.request_id}__knowledge"}
+            ),
+            "feedback_mode": FeedbackMode.KNOWLEDGE,
+        }
+    )
+    mapping_path = settings.jiandaoyun_mapping_path_for(base_context.tenant_id)
+    with use_field_mapping(mapping_path):
+        rule = _execute_precheck(rule_request)
+
+    def run_model() -> PrecheckResponse:
+        with use_field_mapping(mapping_path):
+            return _execute_precheck(model_request)
+
+    def run_knowledge() -> PrecheckResponse:
+        with use_field_mapping(mapping_path):
+            return _execute_live_knowledge_feedback(knowledge_request, settings)
+
+    model_future = _button_feedback_executor.submit(run_model)
+    knowledge_future = _button_feedback_executor.submit(run_knowledge)
+    return rule, knowledge_future.result(), model_future.result()
 
 
 @app.post("/api/v1/agent/visit/check", response_model=PrecheckResponse)
@@ -408,7 +616,8 @@ def jiandaoyun_button_precheck(
     x_tenant_id: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
 ) -> ButtonPrecheckResponse:
-    """简道云“AI检测”按钮：只返回规范建议，不生成或返回正式评分。"""
+    """简道云“AI检测”按钮：一次返回规则、实时知识库和纯大模型三份建议。"""
+    started = monotonic()
     if "context" in request and "form_data" in request:
         structured_request = JiandaoyunCheckRequest.model_validate(request)
     else:
@@ -417,6 +626,8 @@ def jiandaoyun_button_precheck(
         if not tenant_id:
             raise HTTPException(status_code=422, detail="tenant_id is required")
         user_id = str(flat_request.pop("user_id", "jiandaoyun-user")).strip()
+        # 旧版可选模式参数仅为兼容而丢弃；新按钮始终生成三份反馈。
+        flat_request.pop("feedback_mode", None)
         flat_request.pop("request_id", None)
         form_revision = flat_request.pop("form_revision", None)
         source_record_id = flat_request.pop("source_record_id", None)
@@ -431,10 +642,26 @@ def jiandaoyun_button_precheck(
                     "source_record_id": source_record_id,
                 },
                 "form_data": flat_request,
+                "feedback_mode": "rule",
             }
         )
-    precheck = jiandaoyun_precheck(structured_request, x_tenant_id, x_api_key)
-    return ButtonPrecheckResponse.from_precheck(precheck)
+    authorize(structured_request.context.tenant_id, x_tenant_id, x_api_key)
+    settings = get_settings()
+    mapping = tenant_mapping(settings, structured_request.context.tenant_id)
+    try:
+        canonical_request = adapt_jiandaoyun_request(structured_request, mapping)
+    except (FieldTransferError, ValidationError):
+        raise HTTPException(
+            status_code=422,
+            detail="本次检测未完成：字段传递格式异常，请核对本次字段值及子表绑定后重试。",
+        ) from None
+    rule, knowledge, model = _execute_three_feedback(canonical_request, settings)
+    return ButtonPrecheckResponse.from_three_prechecks(
+        rule,
+        knowledge,
+        model,
+        latency_ms=int((monotonic() - started) * 1000),
+    )
 
 
 @app.get("/api/v1/visit/checks/{check_id}")
@@ -740,6 +967,24 @@ def retry_evaluation_writeback(
         if not get_settings().llm_enabled:
             raise HTTPException(status_code=409, detail="请先恢复大模型配置，再重试模型复核与回写")
         evaluation = get_agent().evaluate(request, job_id)
+    if not evaluation.knowledge_feedback_text or not evaluation.model_feedback_text:
+        supplemental_request = PrecheckRequest(
+            context=request.context.model_copy(
+                update={"request_id": f"{request.context.request_id}__retry_feedback"}
+            ),
+            visit=request.visit,
+            feedback_mode=FeedbackMode.RULE,
+        )
+        _, knowledge_feedback, model_feedback = _execute_three_feedback(
+            supplemental_request,
+            get_settings(),
+        )
+        evaluation = evaluation.model_copy(
+            update={
+                "knowledge_feedback_text": knowledge_feedback.feedback_text,
+                "model_feedback_text": model_feedback.feedback_text,
+            }
+        )
     try:
         writeback = writeback_evaluation(get_settings(), request, evaluation)
     except JiandaoyunWritebackError as exc:

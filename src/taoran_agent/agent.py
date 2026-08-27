@@ -4,17 +4,23 @@ from datetime import UTC, datetime
 from time import monotonic
 from uuid import uuid4
 
-from .feedback import build_evaluation_feedback, build_precheck_feedback
+from .feedback import (
+    build_evaluation_feedback,
+    build_model_precheck_feedback,
+    build_precheck_feedback,
+)
 from .field_labels import display_field_name
 from .llm import section_issues
 from .models import (
     DimensionScore,
     EvaluationResponse,
+    FeedbackMode,
     Issue,
     PostEvaluationRequest,
     PrecheckRequest,
     PrecheckResponse,
     Severity,
+    TaoranSectionCheck,
     WritebackResult,
 )
 from .precheck_engine import TaoranPrecheckEngine
@@ -46,13 +52,15 @@ class TaoranAgent:
         """提交前按钮检查：只给修改建议，任何结果都不阻断简道云提交。"""
         started = monotonic()
         trace_id = f"tr_{uuid4().hex}"
-        snapshot_hash = canonical_hash(
-            {
-                "form_revision": request.context.form_revision,
-                "source_record_id": request.context.source_record_id,
-                "visit": request.visit.model_dump(mode="json"),
-            }
-        )
+        snapshot_payload = {
+            "form_revision": request.context.form_revision,
+            "source_record_id": request.context.source_record_id,
+            "visit": request.visit.model_dump(mode="json"),
+        }
+        # 保留默认rule模式的旧幂等哈希；只为新增模式扩展快照。
+        if request.feedback_mode != FeedbackMode.RULE:
+            snapshot_payload["feedback_mode"] = request.feedback_mode.value
+        snapshot_hash = canonical_hash(snapshot_payload)
         supplied_field_values = request.visit.metadata.get("source_supplied_fields")
         supplied_fields = (
             {str(field) for field in supplied_field_values}
@@ -64,13 +72,9 @@ class TaoranAgent:
             supplied_fields,
             self.vague_phrases,
         )
-        issues = [
-            *precheck_context_issues(request.visit, supplied_fields),
-            *self._precheck_default_issues(request),
-            *engine_result.issues,
-        ]
+        system_issues = self._precheck_default_issues(request)
         if supplied_fields == set():
-            issues.append(
+            system_issues.append(
                 Issue(
                     code="PRECHECK_FIELDS_NOT_RECEIVED",
                     dimension="SYSTEM",
@@ -81,13 +85,53 @@ class TaoranAgent:
                     source="system",
                 )
             )
-        # The pre-submit path is always local, even with a remote reviewer configured.
-        # Only evaluate() may call the model; a model outage cannot delay this button.
-        semantic_review = HeuristicSemanticReviewer().review(request.visit)
+        if request.feedback_mode == FeedbackMode.RULE:
+            # 默认路径保持本地、快速且不调用远程模型。
+            semantic_review = HeuristicSemanticReviewer().review(request.visit)
+            sections = engine_result.sections
+            issues = [
+                *precheck_context_issues(request.visit, supplied_fields),
+                *system_issues,
+                *engine_result.issues,
+            ]
+            knowledge_snapshot_hash = engine_result.knowledge_snapshot_hash
+            knowledge_references = engine_result.knowledge_references
+            engine_version = engine_result.engine_version
+        else:
+            semantic_review = (
+                self.semantic_reviewer.review_without_knowledge(request.visit)
+                if request.feedback_mode == FeedbackMode.AI
+                else self.semantic_reviewer.review_with_knowledge(request.visit)
+            )
+            sections = self._model_precheck_sections(
+                engine_result.sections,
+                semantic_review,
+                include_knowledge=request.feedback_mode == FeedbackMode.KNOWLEDGE,
+            )
+            issues = list(system_issues)
+            knowledge_snapshot_hash = (
+                engine_result.knowledge_snapshot_hash
+                if request.feedback_mode == FeedbackMode.KNOWLEDGE
+                else ""
+            )
+            knowledge_references = (
+                engine_result.knowledge_references
+                if request.feedback_mode == FeedbackMode.KNOWLEDGE
+                else []
+            )
+            engine_version = (
+                "TAORAN-PRECHECK-PURE-AI-V1"
+                if request.feedback_mode == FeedbackMode.AI
+                else "TAORAN-PRECHECK-KNOWLEDGE-AI-V1"
+            )
         semantic_issues = self._normalize_semantic_issues(semantic_review.issues)
         semantic_review.issues = semantic_issues
         issues.extend(semantic_issues)
-        quality_score = engine_result.score
+        quality_score = round(
+            sum(section.score for section in sections)
+            / max(1, sum(section.max_score for section in sections))
+            * 100
+        )
         elapsed = monotonic() - started
         if elapsed > self.catalog["precheck_response_budget_seconds"]:
             issues.append(
@@ -101,14 +145,14 @@ class TaoranAgent:
                     source="system",
                 )
             )
-        if semantic_review.status in {"unavailable", "timeout"} or elapsed > 12:
+        if semantic_review.status != "completed" or elapsed > 12:
             status = "review"
         elif any(
             issue.severity in {Severity.ERROR, Severity.WARNING, Severity.BLOCKING}
             and issue.source != "system" for issue in issues
-        ) or any(section.status == "needs_revision" for section in engine_result.sections):
+        ) or any(section.status == "needs_revision" for section in sections):
             status = "needs_revision"
-        elif any(section.status != "met" for section in engine_result.sections) or any(
+        elif any(section.status != "met" for section in sections) or any(
             issue.source == "system" and issue.severity != Severity.INFO for issue in issues
         ):
             status = "review"
@@ -129,6 +173,7 @@ class TaoranAgent:
             trace_id=trace_id,
             request_id=request.context.request_id,
             tenant_id=request.context.tenant_id,
+            feedback_mode=request.feedback_mode,
             status=status,
             can_submit=True,
             submission_policy="advisory_only",
@@ -142,33 +187,73 @@ class TaoranAgent:
                     score=section.score,
                     max_score=section.max_score,
                 )
-                for section in engine_result.sections
+                for section in sections
             ],
-            taoran_sections=engine_result.sections,
+            taoran_sections=sections,
             blocking_issues=[],
             issues=issues,
             questions=self._questions(issues),
             suggestions=suggestions,
-            feedback_text=build_precheck_feedback(
-                request.visit,
-                quality_score,
-                status,
-                issues,
-                supplied_fields,
-                engine_result.knowledge_references,
-                semantic_review,
-                taoran_sections=engine_result.sections,
+            feedback_text=(
+                build_precheck_feedback(
+                    request.visit,
+                    quality_score,
+                    status,
+                    issues,
+                    supplied_fields,
+                    knowledge_references,
+                    semantic_review,
+                    taoran_sections=sections,
+                )
+                if request.feedback_mode == FeedbackMode.RULE
+                else build_model_precheck_feedback(
+                    request.feedback_mode,
+                    status,
+                    issues,
+                    semantic_review,
+                )
             ),
             semantic_review=semantic_review,
             input_snapshot_hash=snapshot_hash,
             rule_version=TOTAL_RULE_VERSION,
-            engine_version=engine_result.engine_version,
-            knowledge_snapshot_hash=engine_result.knowledge_snapshot_hash,
-            knowledge_references=engine_result.knowledge_references,
+            engine_version=engine_version,
+            knowledge_snapshot_hash=knowledge_snapshot_hash,
+            knowledge_references=knowledge_references,
             agent_version=self.catalog["agent_version"],
             checked_at=datetime.now(UTC),
             latency_ms=int((monotonic() - started) * 1000),
         )
+
+    @staticmethod
+    def _model_precheck_sections(
+        rule_sections: list[TaoranSectionCheck],
+        semantic_review,
+        *,
+        include_knowledge: bool,
+    ) -> list[TaoranSectionCheck]:
+        """仅复用六项展示结构和权重，结论来自本次模型分析。"""
+        analyses = {item.code: item for item in semantic_review.sections}
+        sections: list[TaoranSectionCheck] = []
+        for section in rule_sections:
+            analysis = analyses.get(section.code)
+            if semantic_review.status != "completed" or analysis is None:
+                status = "not_received" if section.status == "not_received" else "partial_input"
+            elif analysis.verdict == "met":
+                status = "met"
+            elif analysis.verdict == "needs_revision":
+                status = "needs_revision"
+            else:
+                status = "not_received" if section.status == "not_received" else "partial_input"
+            sections.append(
+                section.model_copy(
+                    update={
+                        "status": status,
+                        "score": section.max_score if status == "met" else 0.0,
+                        "knowledge_ids": section.knowledge_ids if include_knowledge else [],
+                    }
+                )
+            )
+        return sections
 
     @staticmethod
     def _precheck_default_issues(request: PrecheckRequest) -> list[Issue]:

@@ -1,10 +1,18 @@
 // 简道云自建插件：后端函数 / Node.js 20。将本文件全文粘贴到代码编辑器。
 // 配置见项目根目录《过程详细描述传参接入.md》。仅传递草稿，不读写业务记录。
 const axios = require('axios');
-const feedback = (message) => ({
-  feedback_text: `【提交前TAORAN检查】\n本次检测未完成：${message}\n请重新点击“AI检测”，不要将上一次意见作为本次检查结果。`,
-  check_status: 'unavailable',
-});
+const feedback = (message) => {
+  const text = `【提交前TAORAN检查】\n本次检测未完成：${message}\n请重新点击“AI检测”，不要将上一次意见作为本次检查结果。`;
+  return {
+    feedback_text: text,
+    rule_feedback_text: text,
+    knowledge_feedback_text: text,
+    model_feedback_text: text,
+    check_status: 'unavailable',
+    knowledge_check_status: 'unavailable',
+    model_check_status: 'unavailable',
+  };
+};
 const config = agentConf || {};
 const draft = triggerConf || {};
 const tenant = typeof config.tenant_id === 'string' ? config.tenant_id.trim() : '';
@@ -129,11 +137,24 @@ try {
   if (response.status !== 200 || !result || result.stage !== 'pre_submit_advice' ||
       result.official_score_generated !== false || result.submission_blocked !== false ||
       !['passed', 'needs_revision', 'review'].includes(result.status) ||
-      typeof result.feedback_text !== 'string' || !result.feedback_text.trim()) {
+      typeof result.rule_feedback_text !== 'string' || !result.rule_feedback_text.trim() ||
+      typeof result.knowledge_feedback_text !== 'string' || !result.knowledge_feedback_text.trim() ||
+      typeof result.model_feedback_text !== 'string' || !result.model_feedback_text.trim() ||
+      result.feedback_text !== result.rule_feedback_text ||
+      !['passed', 'needs_revision', 'review'].includes(result.knowledge_status) ||
+      !['passed', 'needs_revision', 'review'].includes(result.model_status)) {
     return feedback('服务未返回有效的本次检查意见，请稍后重试。');
   }
-  // 不返回分数、知识依据、分析方式、密钥或客户原始字段。
-  return { feedback_text: result.feedback_text, check_status: result.status };
+  // feedback_text保留给旧规则反馈映射；新字段各取独立返回值。
+  return {
+    feedback_text: result.rule_feedback_text,
+    rule_feedback_text: result.rule_feedback_text,
+    knowledge_feedback_text: result.knowledge_feedback_text,
+    model_feedback_text: result.model_feedback_text,
+    check_status: result.status,
+    knowledge_check_status: result.knowledge_status,
+    model_check_status: result.model_status,
+  };
 } catch (_) {
   // 不回显错误对象：HTTP错误中可能包含请求头和完整拜访内容。
   return feedback('服务连接失败、超时或请求未被接受，请稍后重试；持续失败请联系管理员。');

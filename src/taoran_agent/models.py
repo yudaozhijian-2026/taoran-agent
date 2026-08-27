@@ -37,6 +37,14 @@ class Severity(str, Enum):
     INFO = "info"
 
 
+class FeedbackMode(str, Enum):
+    """提交前反馈的生成路径。"""
+
+    RULE = "rule"
+    AI = "ai"
+    KNOWLEDGE = "knowledge"
+
+
 class RequestContext(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
@@ -144,6 +152,7 @@ class PrecheckRequest(BaseModel):
 
     context: RequestContext
     visit: VisitDraftInput
+    feedback_mode: FeedbackMode = FeedbackMode.RULE
 
 
 class Issue(BaseModel):
@@ -217,6 +226,7 @@ class PrecheckResponse(BaseModel):
     trace_id: str
     request_id: str
     tenant_id: str
+    feedback_mode: FeedbackMode = FeedbackMode.RULE
     status: Literal["passed", "needs_revision", "review"]
     can_submit: bool
     submission_policy: Literal["advisory_only"] = "advisory_only"
@@ -242,12 +252,13 @@ class PrecheckResponse(BaseModel):
 
 
 class ButtonPrecheckResponse(BaseModel):
-    """提交前按钮的精简响应，不向前端提供任何正式评分字段。"""
+    """单次按钮同时返回三份反馈，不提供任何正式评分字段。"""
 
     check_id: str
     trace_id: str
     request_id: str
     tenant_id: str
+    feedback_mode: FeedbackMode = FeedbackMode.RULE
     stage: Literal["pre_submit_advice"] = "pre_submit_advice"
     official_score_generated: Literal[False] = False
     status: Literal["passed", "needs_revision", "review"]
@@ -257,7 +268,18 @@ class ButtonPrecheckResponse(BaseModel):
     issues: list[Issue]
     questions: list[str]
     suggestions: list[str]
+    # feedback_text保留为规则反馈别名，确保旧按钮输出映射不失效。
     feedback_text: str
+    rule_feedback_text: str = ""
+    knowledge_feedback_text: str = ""
+    model_feedback_text: str = ""
+    rule_status: Literal["passed", "needs_revision", "review"] = "review"
+    knowledge_status: Literal["passed", "needs_revision", "review"] = "review"
+    model_status: Literal["passed", "needs_revision", "review"] = "review"
+    knowledge_check_id: str | None = None
+    model_check_id: str | None = None
+    live_knowledge_snapshot_hash: str = ""
+    live_knowledge_references: list[KnowledgeReference] = Field(default_factory=list)
     input_snapshot_hash: str
     rule_version: str
     engine_version: str
@@ -269,7 +291,41 @@ class ButtonPrecheckResponse(BaseModel):
 
     @classmethod
     def from_precheck(cls, response: PrecheckResponse) -> ButtonPrecheckResponse:
-        return cls.model_validate(response.model_dump(mode="python"))
+        return cls.model_validate(
+            {
+                **response.model_dump(mode="python"),
+                "rule_feedback_text": response.feedback_text,
+                "rule_status": response.status,
+            }
+        )
+
+    @classmethod
+    def from_three_prechecks(
+        cls,
+        rule: PrecheckResponse,
+        knowledge: PrecheckResponse,
+        model: PrecheckResponse,
+        *,
+        latency_ms: int,
+    ) -> ButtonPrecheckResponse:
+        return cls.model_validate(
+            {
+                **rule.model_dump(mode="python"),
+                "feedback_mode": FeedbackMode.RULE,
+                "feedback_text": rule.feedback_text,
+                "rule_feedback_text": rule.feedback_text,
+                "knowledge_feedback_text": knowledge.feedback_text,
+                "model_feedback_text": model.feedback_text,
+                "rule_status": rule.status,
+                "knowledge_status": knowledge.status,
+                "model_status": model.status,
+                "knowledge_check_id": knowledge.check_id,
+                "model_check_id": model.check_id,
+                "live_knowledge_snapshot_hash": knowledge.knowledge_snapshot_hash,
+                "live_knowledge_references": knowledge.knowledge_references,
+                "latency_ms": latency_ms,
+            }
+        )
 
 
 class ScoreComponent(BaseModel):
@@ -391,6 +447,9 @@ class EvaluationResponse(BaseModel):
     manager_coaching_suggestions: list[str]
     recommended_training_projects: list[str]
     ai_opinion: str
+    # 提交后保留两条独立的填写检查反馈，供简道云新增字段回写。
+    knowledge_feedback_text: str = ""
+    model_feedback_text: str = ""
     semantic_facts: Q34SemanticFacts
     writeback: WritebackResult
     input_snapshot_hash: str
@@ -440,6 +499,7 @@ class JiandaoyunCheckRequest(BaseModel):
 
     context: RequestContext
     form_data: dict[str, Any]
+    feedback_mode: FeedbackMode = FeedbackMode.RULE
 
 
 class JiandaoyunEvaluationRequest(BaseModel):

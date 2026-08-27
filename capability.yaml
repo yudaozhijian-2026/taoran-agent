@@ -1,5 +1,5 @@
 agent_code: DSM-TAORAN-SCORING-AGENT
-version: 0.9.1
+version: 0.11.5
 capabilities:
   - code: configure_tenant_connections
     mode: administrative
@@ -13,9 +13,20 @@ capabilities:
     mode: synchronous
     target_latency_seconds: 12
     side_effect: advisory_only
-    rule_engine: TAORAN-PRECHECK-KB-V1
-    knowledge_runtime: reviewed_local_snapshot
-    model_calls: false
+    button_behavior: one_click_three_feedbacks
+    feedback_outputs:
+      rule:
+        engine: TAORAN-PRECHECK-KB-V1
+        model_calls: false
+      model:
+        engine: TAORAN-PRECHECK-PURE-AI-V1
+        knowledge_runtime: none
+        model_calls: true
+      knowledge:
+        engine: TAORAN-PRECHECK-KNOWLEDGE-AI-V1
+        knowledge_runtime: live_dsm_knowledge_api
+        local_snapshot_fallback: false
+        model_calls: true
   - code: sync_taoran_knowledge
     mode: administrative
     side_effect: reviewed_snapshot_only

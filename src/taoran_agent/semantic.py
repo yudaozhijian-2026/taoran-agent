@@ -21,6 +21,14 @@ class SemanticReviewer(ABC):
     def review(self, visit: VisitDraftInput) -> SemanticReview:
         raise NotImplementedError
 
+    def review_without_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
+        """纯AI反馈入口；旧语义服务默认沿用自身分析。"""
+        return self.review(visit)
+
+    def review_with_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
+        """知识库反馈入口；实现方应对知识来源负责。"""
+        return self.review(visit)
+
     def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
         return HeuristicSemanticReviewer().review_q34(visit)
 
@@ -82,6 +90,33 @@ class HeuristicSemanticReviewer(SemanticReviewer):
             provider="heuristic-v1",
             latency_ms=int((monotonic() - started) * 1000),
         )
+
+    @staticmethod
+    def _model_not_configured() -> SemanticReview:
+        return SemanticReview(
+            status="not_configured",
+            provider="not-configured",
+            failure_reason="model_not_configured",
+            issues=[
+                Issue(
+                    code="AI_FEEDBACK_NOT_CONFIGURED",
+                    dimension="SYSTEM",
+                    severity=Severity.INFO,
+                    field_paths=[],
+                    message="大模型反馈尚未配置，本次未生成AI结论。",
+                    suggestion="请管理员完成TAORAN专用模型配置后重试。",
+                    source="system",
+                )
+            ],
+        )
+
+    def review_without_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
+        del visit
+        return self._model_not_configured()
+
+    def review_with_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
+        del visit
+        return self._model_not_configured()
 
     def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
         started = monotonic()
@@ -203,6 +238,33 @@ class HttpSemanticReviewer(SemanticReviewer):
                 provider="external-http",
                 latency_ms=int((monotonic() - started) * 1000),
             )
+
+    @staticmethod
+    def _feedback_mode_not_supported() -> SemanticReview:
+        return SemanticReview(
+            status="unavailable",
+            provider="external-http",
+            failure_reason="feedback_mode_not_supported",
+            issues=[
+                Issue(
+                    code="EXTERNAL_SEMANTIC_FEEDBACK_MODE_UNSUPPORTED",
+                    dimension="SYSTEM",
+                    severity=Severity.INFO,
+                    field_paths=[],
+                    message="旧版语义服务无法证明是否使用知识库，本次未生成指定模式的反馈。",
+                    suggestion="请启用TAORAN直连模型后重试。",
+                    source="system",
+                )
+            ],
+        )
+
+    def review_without_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
+        del visit
+        return self._feedback_mode_not_supported()
+
+    def review_with_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
+        del visit
+        return self._feedback_mode_not_supported()
 
     def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
         started = monotonic()

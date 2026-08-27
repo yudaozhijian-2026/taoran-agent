@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     llm_max_output_tokens: int = Field(default=3000, ge=500, le=6000)
     llm_format_retries: int = Field(default=1, ge=0, le=1)
     knowledge_api_base_url: str = "https://knowledge.api.yudaozhijian.top"
-    knowledge_api_key: str | None = None
+    knowledge_api_key: SecretStr | None = None
     knowledge_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
     knowledge_snapshot_path: str | None = None
     jiandaoyun_mapping_path: str | None = None

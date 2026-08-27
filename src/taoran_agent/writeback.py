@@ -27,6 +27,8 @@ def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
         "effectiveness_level": response.effectiveness_level,
         "effective_visit_recommendation": response.count_as_effective_visit_recommendation,
         "ai_opinion": response.ai_opinion,
+        "knowledge_feedback": response.knowledge_feedback_text,
+        "model_feedback": response.model_feedback_text,
         "ai_suggestions": "\n".join(response.manager_coaching_suggestions),
         "rule_version": response.rule_version,
         "agent_version": response.agent_version,
@@ -54,14 +56,10 @@ def writeback_evaluation(
             status="failed", target_data_id=target.data_id, attempted_at=attempted_at,
             error_message="历史评分采用旧量纲，禁止直接回写；请使用新请求ID按100分制重新评价。",
         )
-    if (
+    official_writeback_blocked = (
         response.semantic_facts.provider.startswith("llm-")
         and response.semantic_facts.status != "completed"
-    ):
-        return WritebackResult(
-            status="failed", target_data_id=target.data_id, attempted_at=attempted_at,
-            error_message="大模型复核未完成，未覆盖原AI评分和AI反馈意见；重试时先重新分析。",
-        )
+    )
     tenant_id = request.context.tenant_id
     api_key = settings.jiandaoyun_api_key_for(tenant_id)
     if not api_key:
@@ -114,16 +112,29 @@ def writeback_evaluation(
             attempted_at=attempted_at,
         )
     canonical_values = evaluation_writeback_values(response)
+    if official_writeback_blocked:
+        # 正式评分与规则反馈继续受严格证据门控；两条非评分反馈独立回写。
+        canonical_values = {
+            name: value
+            for name, value in canonical_values.items()
+            if name in {"knowledge_feedback", "model_feedback"}
+        }
     values = {
         widget_id: _format_widget_value(canonical_values[name], output_fields[name])
         for name, widget_id in resolved_output_fields.items()
-        if name in canonical_values and widget_id
+        if name in canonical_values
+        and widget_id
+        and canonical_values[name] not in (None, "")
     }
     if not values:
         return WritebackResult(
             status="failed",
             target_data_id=target.data_id,
-            error_message="评价结果与回写字段没有可用映射",
+            error_message=(
+                "大模型复核未完成，未覆盖原AI评分和AI反馈意见；重试时先重新分析。"
+                if official_writeback_blocked
+                else "评价结果与回写字段没有可用映射"
+            ),
             attempted_at=attempted_at,
         )
     try:
@@ -147,9 +158,15 @@ def writeback_evaluation(
     except httpx.HTTPError as exc:
         raise JiandaoyunWritebackError("简道云评价回写请求失败") from exc
     return WritebackResult(
-        status="succeeded",
+        status="failed" if official_writeback_blocked else "succeeded",
         target_data_id=target.data_id,
         written_fields=sorted(values),
+        error_message=(
+            "大模型复核未完成，已保留知识库和大模型填写反馈；"
+            "未覆盖原AI评分和规则反馈，重试时先重新分析。"
+            if official_writeback_blocked
+            else None
+        ),
         attempted_at=attempted_at,
     )
 

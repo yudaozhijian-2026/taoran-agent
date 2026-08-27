@@ -4,6 +4,7 @@ from collections.abc import Iterable
 
 from .field_labels import display_field_name
 from .models import (
+    FeedbackMode,
     Issue,
     KnowledgeReference,
     Q34SemanticFacts,
@@ -94,6 +95,68 @@ def build_precheck_feedback(
     else:
         lines.extend(["", "优先修改建议：当前未发现需要优先补充的规范性问题。"])
     lines.append("提交成功后，系统将自动进行深度评价并回写正式评分与反馈意见。")
+    return "\n".join(lines)
+
+
+def build_model_precheck_feedback(
+    mode: FeedbackMode,
+    status: str,
+    issues: list[Issue],
+    semantic_review: SemanticReview,
+) -> str:
+    """将纯AI或知识库模型结果单独呈现，不混入规则结论。"""
+    if mode not in {FeedbackMode.AI, FeedbackMode.KNOWLEDGE}:
+        raise ValueError("模型反馈生成器仅支持ai和knowledge模式")
+    title = "纯AI反馈" if mode == FeedbackMode.AI else "知识库反馈"
+    status_text = {
+        "passed": "六项分析已完成，未发现明显规范问题",
+        "needs_revision": "六项分析已完成，存在需要优先完善的内容",
+        "review": "本次分析尚未完整完成，请核对系统提示后重试",
+    }[status]
+    lines = [
+        f"【提交前TAORAN检查｜{title}】",
+        f"检查结论：{status_text}",
+        "",
+        "TAORAN六项分析：",
+    ]
+    analyses = {section.code: section for section in semantic_review.sections}
+    for index, (display_code, name, _) in enumerate(_SECTIONS):
+        if index:
+            lines.append("")
+        model_code = {
+            "客户类型": "T",
+            "预约与拜访方式": "A1",
+            "拜访目的与关键结果": "O_KR",
+            "过程事实与结果": "R",
+            "达成评价": "A2",
+            "下一步客户行动": "N",
+        }[name]
+        analysis = analyses.get(model_code)
+        if semantic_review.status != "completed" or analysis is None:
+            lines.append(f"{display_code}｜{name}：未完成。")
+            continue
+        verdict = {
+            "met": "达标。",
+            "needs_revision": "待改进。",
+            "not_evaluated": "未检查。",
+        }[analysis.verdict]
+        lines.append(f"{display_code}｜{name}：{verdict}")
+        lines.append("分析：" + analysis.reason)
+        if analysis.evidence:
+            evidence = "；".join(
+                f"“{display_field_name(item.field)}”：{item.quote}"
+                for item in analysis.evidence
+            )
+            lines.append("输入依据：" + evidence)
+        if analysis.suggestion:
+            lines.append("修改建议：" + analysis.suggestion)
+    suggestions = _unique(issue.suggestion for issue in issues)
+    if suggestions:
+        lines.extend(["", "优先修改建议："])
+        lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(suggestions, 1))
+    elif semantic_review.status == "completed":
+        lines.extend(["", "优先修改建议：当前未发现需要优先补充的内容。"])
+    lines.append("本次只提供提交前建议，不阻断提交，不生成正式分数。")
     return "\n".join(lines)
 
 

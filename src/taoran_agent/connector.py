@@ -120,6 +120,7 @@ def adapt_jiandaoyun_request(
     return PrecheckRequest(
         context=request.context,
         visit=VisitDraftInput.model_validate(values),
+        feedback_mode=request.feedback_mode,
     )
 
 

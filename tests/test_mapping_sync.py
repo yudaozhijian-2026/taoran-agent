@@ -43,9 +43,21 @@ def test_mapping_is_synchronized_by_labels_and_subform_children() -> None:
                 "type": "number",
             },
             {
-                "label": "AI反馈意见",
+                "label": "AI反馈意见（规则反馈）",
                 "name": "_widget_1787037882560",
                 "widgetName": "_widget_1787037882560",
+                "type": "textarea",
+            },
+            {
+                "label": "AI反馈意见（知识库反馈）",
+                "name": "_widget_1787803259012",
+                "widgetName": "_widget_1787803259012",
+                "type": "textarea",
+            },
+            {
+                "label": "AI反馈意见（大模型反馈）",
+                "name": "_widget_1787803259013",
+                "widgetName": "_widget_1787803259013",
                 "type": "textarea",
             },
         ],
@@ -60,8 +72,10 @@ def test_mapping_is_synchronized_by_labels_and_subform_children() -> None:
         == "_widget_contact_id"
     )
     assert updated["output_fields"]["total_score"]["widget_type"] == "number"
+    assert updated["output_fields"]["knowledge_feedback"]["widget_id"] == "_widget_1787803259012"
+    assert updated["output_fields"]["model_feedback"]["widget_id"] == "_widget_1787803259013"
     assert updated["status"] == "copy_widget_ids_partially_synced"
-    assert report["matched_count"] == 5
+    assert report["matched_count"] == 7
     assert report["unresolved_count"] > 0
 
 

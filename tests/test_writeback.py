@@ -198,3 +198,88 @@ def test_active_copy_mapping_writes_only_confirmed_ai_fields(monkeypatch) -> Non
     assert isinstance(
         captured["body"]["data"]["_widget_1787037882560"]["value"], str
     )
+
+
+def test_active_copy_mapping_writes_three_feedback_fields(monkeypatch) -> None:
+    captured = {}
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(url, **kwargs):
+        captured["body"] = kwargs["json"]
+        return Response()
+
+    monkeypatch.setattr("taoran_agent.writeback.httpx.post", fake_post)
+    request = evaluation_request()
+    evaluation = TaoranAgent().evaluate(request, "job-three-feedback-writeback")
+    evaluation = evaluation.model_copy(
+        update={
+            "knowledge_feedback_text": "知识库填写反馈",
+            "model_feedback_text": "大模型填写反馈",
+        }
+    )
+    settings = Settings(
+        database_path=":memory:",
+        jiandaoyun_api_keys_json='{"tenant_demo":"secret"}',
+        jiandaoyun_mapping_path="config/jiandaoyun_field_mapping.example.json",
+    )
+
+    result = writeback_evaluation(settings, request, evaluation)
+
+    assert result.status == "succeeded"
+    assert set(captured["body"]["data"]) == {
+        "_widget_1787037882560",
+        "_widget_1787037882562",
+        "_widget_1787803259012",
+        "_widget_1787803259013",
+    }
+    assert captured["body"]["data"]["_widget_1787803259012"]["value"] == "知识库填写反馈"
+    assert captured["body"]["data"]["_widget_1787803259013"]["value"] == "大模型填写反馈"
+
+
+def test_failed_deep_review_still_writes_two_advisory_feedback_fields(monkeypatch) -> None:
+    captured = {}
+
+    class Response:
+        def raise_for_status(self) -> None:
+            return None
+
+    def fake_post(url, **kwargs):
+        captured["body"] = kwargs["json"]
+        return Response()
+
+    monkeypatch.setattr("taoran_agent.writeback.httpx.post", fake_post)
+    request = evaluation_request()
+    evaluation = TaoranAgent().evaluate(request, "job-partial-feedback-writeback")
+    evaluation = evaluation.model_copy(
+        update={
+            "knowledge_feedback_text": "知识库填写反馈",
+            "model_feedback_text": "大模型填写反馈",
+            "semantic_facts": evaluation.semantic_facts.model_copy(
+                update={
+                    "provider": "llm-unavailable-local-fallback",
+                    "status": "fallback",
+                }
+            ),
+        }
+    )
+    settings = Settings(
+        database_path=":memory:",
+        jiandaoyun_api_keys_json='{"tenant_demo":"secret"}',
+        jiandaoyun_mapping_path="config/jiandaoyun_field_mapping.example.json",
+    )
+
+    result = writeback_evaluation(settings, request, evaluation)
+
+    assert result.status == "failed"
+    assert set(captured["body"]["data"]) == {
+        "_widget_1787803259012",
+        "_widget_1787803259013",
+    }
+    assert set(result.written_fields) == {
+        "_widget_1787803259012",
+        "_widget_1787803259013",
+    }
+    assert "未覆盖原AI评分和规则反馈" in (result.error_message or "")

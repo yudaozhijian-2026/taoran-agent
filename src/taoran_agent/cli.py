@@ -224,7 +224,7 @@ def main() -> None:
             parser.error("请通过DSM_TAORAN_KNOWLEDGE_API_KEY配置应用专用Key")
         snapshot = KnowledgeApiClient(
             settings.knowledge_api_base_url,
-            settings.knowledge_api_key,
+            settings.knowledge_api_key.get_secret_value(),
             settings.knowledge_timeout_seconds,
         ).fetch_taoran_snapshot()
         if args.apply:

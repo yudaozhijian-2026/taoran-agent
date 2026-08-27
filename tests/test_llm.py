@@ -13,7 +13,7 @@ from taoran_agent.agent import TaoranAgent
 from taoran_agent.config import Settings
 from taoran_agent.knowledge import load_taoran_knowledge_snapshot
 from taoran_agent.llm import ChatModelReviewer
-from taoran_agent.models import PrecheckRequest, VisitDraftInput
+from taoran_agent.models import FeedbackMode, PrecheckRequest, VisitDraftInput
 from taoran_agent.runtime import build_agent
 from taoran_agent.semantic import HeuristicSemanticReviewer
 from taoran_agent.writeback import writeback_evaluation
@@ -142,6 +142,80 @@ def test_direct_precheck_sends_minimal_fields_and_approved_knowledge():
     assert "opportunity_id" not in json.dumps(data.get("opportunities"))
 
 
+def test_pure_ai_precheck_explicitly_excludes_knowledge_snapshot():
+    reviewer, calls = reviewer_for()
+    result = reviewer.review_without_knowledge(visit())
+    reviewer.close()
+
+    assert result.status == "completed"
+    assert result.prompt_version == "TAORAN-LLM-PURE-FEEDBACK-V1"
+    prompt = calls[0][1]["messages"][0]["content"]
+    assert "本次为纯AI反馈" in prompt
+    assert "DSM-BS-000" not in prompt
+    assert "DSM-BS-01-07" not in prompt
+    assert "知识基线：" not in prompt
+
+
+def test_precheck_sanitizes_invalid_model_references_without_weakening_postcheck():
+    def invalid_precheck(data):
+        payload = section_payload(data)
+        first = payload["sections"][0]
+        first["field_paths"] = ["unknown-private-field"]
+        first["evidence"] = [
+            {"field": "unknown-private-field", "quote": "伪造引用"}
+        ]
+        return payload
+
+    reviewer, _ = reviewer_for(invalid_precheck)
+    result = reviewer.review_without_knowledge(visit())
+    reviewer.close()
+
+    assert result.status == "completed"
+    section = next(item for item in result.sections if item.code == "T")
+    assert "unknown-private-field" not in section.field_paths
+    assert section.evidence == []
+
+
+@pytest.mark.parametrize(
+    ("mode", "title", "has_knowledge"),
+    [
+        (FeedbackMode.AI, "纯AI反馈", False),
+        (FeedbackMode.KNOWLEDGE, "知识库反馈", True),
+    ],
+)
+def test_precheck_supports_separate_ai_and_knowledge_feedback_modes(
+    mode, title, has_knowledge,
+):
+    reviewer, calls = reviewer_for()
+    payload = complete_precheck_payload(f"mode-{mode.value}")
+    payload["feedback_mode"] = mode.value
+    result = TaoranAgent(reviewer).precheck(PrecheckRequest.model_validate(payload))
+    reviewer.close()
+
+    assert result.feedback_mode == mode
+    assert f"｜{title}】" in result.feedback_text
+    assert result.status == "passed"
+    assert len(calls) == 1
+    assert bool(result.knowledge_references) is has_knowledge
+    assert bool(result.knowledge_snapshot_hash) is has_knowledge
+    prompt = calls[0][1]["messages"][0]["content"]
+    assert ("DSM-BS-01-07" in prompt) is has_knowledge
+    assert "TAORAN_KR_NOT_VERIFIABLE" not in {issue.code for issue in result.issues}
+
+
+def test_ai_feedback_without_configured_model_does_not_masquerade_as_rule_feedback():
+    payload = complete_precheck_payload("mode-ai-not-configured")
+    payload["feedback_mode"] = "ai"
+    result = TaoranAgent().precheck(PrecheckRequest.model_validate(payload))
+
+    assert result.feedback_mode == FeedbackMode.AI
+    assert result.status == "review"
+    assert result.semantic_review.status == "not_configured"
+    assert "纯AI反馈" in result.feedback_text
+    assert "未完成" in result.feedback_text
+    assert "检查标准：" not in result.feedback_text
+
+
 def test_precheck_keeps_local_rules_and_never_calls_configured_model():
     payload = complete_precheck_payload()
     payload["visit"]["expected_key_result"] = "采购部周五签回七台设备的清单"
@@ -191,7 +265,7 @@ def test_unreceived_fields_never_leave_server_or_become_model_failures():
 
 
 @pytest.mark.parametrize("case", ["forged_quote", "unknown_field", "score", "duplicate"])
-def test_invalid_or_untrusted_model_output_is_not_used(case):
+def test_precheck_sanitizes_references_but_rejects_invalid_contract(case):
     def invalid(data):
         payload = section_payload(data)
         if case == "forged_quote":
@@ -207,8 +281,10 @@ def test_invalid_or_untrusted_model_output_is_not_used(case):
     reviewer, calls = reviewer_for(invalid)
     result = reviewer.review(visit())
     reviewer.close()
-    assert result.status == "unavailable"
+    expected = "completed" if case in {"forged_quote", "unknown_field"} else "unavailable"
+    assert result.status == expected
     assert "客户承诺明天付款一亿元" not in result.model_dump_json()
+    assert "API_KEY" not in result.model_dump_json()
     assert len(calls) == 1
 
 
