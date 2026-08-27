@@ -47,7 +47,7 @@
             <span class="step">1</span>
           </div>
           <form id="tenantForm" class="stack onboarding-form">
-            <label class="full">
+            <label id="apiKeyField" class="full">
               <span>简道云 API Key <b>*</b></span>
               <input name="jiandaoyun_api_key" type="password" autocomplete="new-password" required placeholder="粘贴该客户的独立 API Key">
               <small>系统只读取该Key已授权的应用和表单，不会在浏览器保存</small>
@@ -60,6 +60,7 @@
                 <h2>选择授权表单</h2>
                 <span class="step">2</span>
               </div>
+              <p id="selectionModeMessage" class="automation-note hidden"></p>
               <div class="form-grid configuration-fields">
                 <label class="full">
                   <span>客户名称 <b>*</b></span>
@@ -75,7 +76,10 @@
                 </label>
               </div>
               <p class="automation-note">客户编号、应用ID、表单ID、表单名称、字段映射和接入密钥将自动生成。</p>
-              <button id="saveButton" type="submit" class="primary full">完成配置</button>
+              <div class="configuration-actions">
+                <button id="saveButton" type="submit" class="primary">完成配置</button>
+                <button id="cancelSelectionButton" type="button" class="ghost hidden">取消重新选择</button>
+              </div>
             </div>
           </form>
           <div id="saveMessage" class="message hidden" role="alert"></div>

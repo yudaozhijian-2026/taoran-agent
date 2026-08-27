@@ -5,6 +5,8 @@
   let authorizedApplications = [];
   let connectedApiKey = "";
   let oneTimeCredentials = null;
+  let authorizationReady = false;
+  let editingTenant = null;
   const $ = (selector) => document.querySelector(selector);
   const loginPanel = $("#loginPanel");
   const workspace = $("#workspace");
@@ -49,7 +51,15 @@
   function resetAuthorization() {
     authorizedApplications = [];
     connectedApiKey = "";
+    authorizationReady = false;
+    editingTenant = null;
     formConfiguration.classList.add("hidden");
+    $("#apiKeyField").classList.remove("hidden");
+    $("#connectButton").classList.remove("hidden");
+    $("#selectionModeMessage").classList.add("hidden");
+    $("#cancelSelectionButton").classList.add("hidden");
+    apiKeyInput.required = true;
+    $("#tenantForm").elements.display_name.value = "";
     $("#applicationSelect").replaceChildren();
     $("#formSelect").replaceChildren();
     clearMessage(connectionMessage);
@@ -78,6 +88,8 @@
       state.className = `pill ${tenant.enabled ? "on" : "off"}`;
       state.textContent = tenant.enabled ? "已启用" : "未启用";
       row.append(name, id, form, state);
+      const actions = document.createElement("div");
+      actions.className = "tenant-actions";
       if (!tenant.enabled && tenant.jiandaoyun.mapping_configured) {
         const manage = document.createElement("button");
         manage.type = "button";
@@ -87,8 +99,20 @@
           oneTimeCredentials = null;
           await confirmFields(tenant.tenant_id, {}, manage, saveMessage);
         });
-        row.append(manage);
+        actions.append(manage);
       }
+      if (tenant.jiandaoyun.api_key_configured) {
+        const changeForm = document.createElement("button");
+        changeForm.type = "button";
+        changeForm.className = "ghost compact-button";
+        changeForm.textContent = "更换表单";
+        changeForm.addEventListener("click", async () => {
+          oneTimeCredentials = null;
+          await startExistingFormSelection(tenant, changeForm);
+        });
+        actions.append(changeForm);
+      }
+      row.append(actions);
       return row;
     }));
   }
@@ -116,6 +140,54 @@
       applicationSelect.append(option);
     });
     populateForms();
+  }
+
+  function useAuthorizedApplications(result) {
+    authorizedApplications = (result.applications || []).filter((application) => application.forms?.length);
+    if (!authorizedApplications.length) {
+      throw new Error("当前授权范围内没有可用表单，请先在简道云中授权应用。");
+    }
+    authorizationReady = true;
+    populateApplications();
+  }
+
+  async function startExistingFormSelection(tenant, button) {
+    clearMessage(saveMessage);
+    const originalText = button.textContent;
+    button.disabled = true;
+    button.textContent = "正在读取授权表单…";
+    try {
+      const result = await request(
+        `/api/v1/admin/tenants/${encodeURIComponent(tenant.tenant_id)}/jiandaoyun/authorization`,
+      );
+      resetAuthorization();
+      useAuthorizedApplications(result);
+      editingTenant = tenant;
+      const currentApplicationId = tenant.jiandaoyun?.application_id;
+      const currentEntryId = tenant.jiandaoyun?.entry_id;
+      if (currentApplicationId) {
+        $("#applicationSelect").value = currentApplicationId;
+        populateForms();
+      }
+      if (currentEntryId) $("#formSelect").value = currentEntryId;
+      apiKeyInput.value = "";
+      apiKeyInput.required = false;
+      $("#apiKeyField").classList.add("hidden");
+      $("#connectButton").classList.add("hidden");
+      $("#cancelSelectionButton").classList.remove("hidden");
+      const modeMessage = $("#selectionModeMessage");
+      modeMessage.textContent = `正在为“${tenant.display_name}”重新选择表单；系统客户编号和现有密钥保持不变。`;
+      modeMessage.classList.remove("hidden");
+      $("#tenantForm").elements.display_name.value = tenant.display_name;
+      formConfiguration.classList.remove("hidden");
+      showMessage(connectionMessage, "已使用该客户现有授权重新读取应用和表单。", true);
+      formConfiguration.scrollIntoView({ behavior: "smooth", block: "start" });
+    } catch (error) {
+      showMessage(saveMessage, error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = originalText;
+    }
   }
 
   $("#loginForm").addEventListener("submit", async (event) => {
@@ -176,12 +248,8 @@
         method: "POST",
         body: JSON.stringify({ jiandaoyun_api_key: apiKey }),
       });
-      authorizedApplications = (result.applications || []).filter((application) => application.forms?.length);
-      if (!authorizedApplications.length) {
-        throw new Error("该 API Key 下没有可用表单，请先在简道云中为其授权应用。");
-      }
+      useAuthorizedApplications(result);
       connectedApiKey = apiKey;
-      populateApplications();
       formConfiguration.classList.remove("hidden");
       const formCount = authorizedApplications.reduce((total, application) => total + application.forms.length, 0);
       showMessage(connectionMessage, `连接成功，已读取 ${authorizedApplications.length} 个应用、${formCount} 个表单。`, true);
@@ -194,11 +262,17 @@
     }
   });
 
+  $("#cancelSelectionButton").addEventListener("click", () => {
+    resetAuthorization();
+    apiKeyInput.value = "";
+    showMessage(saveMessage, "已取消重新选择表单，原配置保持不变。", true);
+  });
+
   $("#tenantForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const onboardingForm = event.currentTarget;
     clearMessage(saveMessage);
-    if (!connectedApiKey || !authorizedApplications.length) {
+    if (!authorizationReady || !authorizedApplications.length) {
       showMessage(saveMessage, "请先连接简道云并读取授权表单。");
       return;
     }
@@ -211,13 +285,14 @@
       return;
     }
     const button = $("#saveButton");
+    const existingTenant = editingTenant;
     const payload = {
-      tenant_id: null,
+      tenant_id: existingTenant?.tenant_id || null,
       display_name: onboardingForm.elements.display_name.value.trim(),
       application_id: application.app_id,
       entry_id: selectedForm.entry_id,
       entry_name: selectedForm.name,
-      jiandaoyun_api_key: connectedApiKey,
+      jiandaoyun_api_key: existingTenant ? null : connectedApiKey,
       test_connection: true,
       enabled: true,
       rotate_access_key: false,
@@ -234,7 +309,9 @@
         oneTimeCredentials = result.one_time_credentials;
       }
       renderResult(result);
-      const stateText = result.activated ? "配置已写入并立即生效" : "配置已保存，请根据提示确认未匹配字段";
+      const stateText = existingTenant
+        ? (result.activated ? "表单配置已更新并立即生效" : "表单配置已更新，请确认未匹配字段")
+        : (result.activated ? "配置已写入并立即生效" : "配置已保存，请根据提示确认未匹配字段");
       showMessage(saveMessage, `${stateText}，系统客户编号：${result.tenant.tenant_id}`, true);
       apiKeyInput.value = "";
       onboardingForm.elements.display_name.value = "";
@@ -263,6 +340,15 @@
     identifier.className = "generated-id";
     identifier.textContent = `系统客户编号：${result.tenant.tenant_id}`;
     target.append(identifier);
+
+    const reselect = document.createElement("button");
+    reselect.type = "button";
+    reselect.className = "ghost result-action";
+    reselect.textContent = "返回重新选择表单";
+    reselect.addEventListener("click", async () => {
+      await startExistingFormSelection(result.tenant, reselect);
+    });
+    target.append(reselect);
 
     const metrics = document.createElement("div");
     metrics.className = "metrics";

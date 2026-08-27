@@ -66,6 +66,7 @@ from .tenant_admin import (
     TenantOnboardingResult,
     confirm_tenant_fields,
     discover_authorized_forms,
+    discover_tenant_authorized_forms,
     list_tenants,
     onboard_tenant,
 )
@@ -73,7 +74,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.11.6",
+    version="0.11.7",
     description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
@@ -297,6 +298,27 @@ def tenant_admin_discover_jiandaoyun(
     verify_admin_access(settings, x_admin_key)
     try:
         return discover_authorized_forms(settings, request)
+    except JiandaoyunSchemaSyncError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"简道云连接或授权信息读取失败：{exc}",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.get(
+    "/api/v1/admin/tenants/{tenant_id}/jiandaoyun/authorization",
+    response_model=JiandaoyunAuthorizationResponse,
+)
+def tenant_admin_discover_existing_jiandaoyun(
+    tenant_id: str,
+    x_admin_key: str | None = Header(default=None),
+) -> JiandaoyunAuthorizationResponse:
+    settings = get_settings()
+    verify_admin_access(settings, x_admin_key)
+    try:
+        return discover_tenant_authorized_forms(settings, tenant_id)
     except JiandaoyunSchemaSyncError as exc:
         raise HTTPException(
             status_code=502,

@@ -123,6 +123,33 @@ def discover_authorized_forms(
     return JiandaoyunAuthorizationResponse(applications=applications)
 
 
+def discover_tenant_authorized_forms(
+    settings: Settings,
+    tenant_id: str,
+) -> JiandaoyunAuthorizationResponse:
+    if not _TENANT_ID_PATTERN.fullmatch(tenant_id):
+        raise ValueError("客户编号格式无效")
+    registry = settings.reload_tenant_registry()
+    tenant = registry.tenants.get(tenant_id)
+    if tenant is None:
+        raise ValueError("客户不存在或尚未完成首次接入")
+    api_key = (
+        tenant.jiandaoyun.api_key.get_secret_value()
+        if tenant.jiandaoyun.api_key
+        else None
+    )
+    if not api_key:
+        raise ValueError("客户尚未配置简道云API Key")
+    applications = discover_jiandaoyun_authorization(
+        settings.jiandaoyun_base_url,
+        settings.jiandaoyun_timeout_seconds,
+        api_key,
+    )
+    if not any(application["forms"] for application in applications):
+        raise JiandaoyunSchemaSyncError("该客户的授权应用中没有可访问表单")
+    return JiandaoyunAuthorizationResponse(applications=applications)
+
+
 def onboard_tenant(
     settings: Settings,
     request: TenantOnboardingRequest,
@@ -465,6 +492,7 @@ __all__ = [
     "TenantOnboardingResult",
     "confirm_tenant_fields",
     "discover_authorized_forms",
+    "discover_tenant_authorized_forms",
     "list_tenants",
     "onboard_tenant",
 ]

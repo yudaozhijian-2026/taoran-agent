@@ -79,6 +79,8 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
     assert authenticated.status_code == 200
     assert authenticated.json()["tenant_count"] == 0
     assert script.status_code == 200
+    assert "返回重新选择表单" in script.text
+    assert "更换表单" in script.text
 
     monkeypatch.setenv("DSM_TAORAN_ADMIN_ENABLED", "false")
     monkeypatch.delenv("DSM_TAORAN_ADMIN_API_KEY")
@@ -114,6 +116,70 @@ def test_authorized_applications_and_forms_are_discovered(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json()["applications"][0]["forms"][0]["entry_id"] == "form-authorized"
+
+
+def test_existing_tenant_can_reuse_stored_key_to_reselect_form(
+    isolated_admin,
+    monkeypatch,
+) -> None:
+    client = TestClient(api.app)
+    headers = {"X-Admin-Key": "admin-test-key"}
+    created = client.post(
+        "/api/v1/admin/tenants",
+        headers=headers,
+        json=onboarding_payload(),
+    )
+    original_credentials = created.json()["one_time_credentials"]
+    monkeypatch.setattr(
+        "taoran_agent.tenant_admin.discover_jiandaoyun_authorization",
+        lambda *args: [
+            {
+                "app_id": "app-a",
+                "name": "销售管理",
+                "forms": [
+                    {"app_id": "app-a", "entry_id": "entry-a", "name": "拜访记录A"},
+                    {"app_id": "app-a", "entry_id": "entry-b", "name": "拜访记录B"},
+                ],
+            }
+        ],
+    )
+
+    choices = client.get(
+        "/api/v1/admin/tenants/customer_a/jiandaoyun/authorization",
+        headers=headers,
+    )
+    updated = client.post(
+        "/api/v1/admin/tenants",
+        headers=headers,
+        json=onboarding_payload(
+            entry_id="entry-b",
+            entry_name="拜访记录B",
+            jiandaoyun_api_key=None,
+        ),
+    )
+
+    assert choices.status_code == 200
+    assert [item["entry_id"] for item in choices.json()["applications"][0]["forms"]] == [
+        "entry-a",
+        "entry-b",
+    ]
+    assert updated.status_code == 200
+    assert updated.json()["tenant"]["tenant_id"] == "customer_a"
+    assert updated.json()["tenant"]["jiandaoyun"]["entry_id"] == "entry-b"
+    assert updated.json()["one_time_credentials"] == {
+        "access_key": None,
+        "webhook_secret": None,
+    }
+    registry = json.loads(
+        (isolated_admin / "tenant_registry.json").read_text(encoding="utf-8")
+    )
+    assert registry["tenants"]["customer_a"]["access_keys"] == [
+        original_credentials["access_key"]
+    ]
+    assert (
+        registry["tenants"]["customer_a"]["jiandaoyun"]["webhook_secret"]
+        == original_credentials["webhook_secret"]
+    )
 
 
 def test_customer_id_is_generated_when_not_supplied(isolated_admin) -> None:
