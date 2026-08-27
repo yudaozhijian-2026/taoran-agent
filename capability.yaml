@@ -1,5 +1,5 @@
 agent_code: DSM-TAORAN-SCORING-AGENT
-version: 0.11.9
+version: 0.12.0
 capabilities:
   - code: configure_tenant_connections
     mode: administrative
@@ -13,6 +13,7 @@ capabilities:
     existing_tenant_form_reselection: true
     unique_form_tenant_binding: true
     post_onboarding_deployment_guide: true
+    step_by_step_jiandaoyun_tutorial: true
     secrets_returned_by_api: one_time_on_generation_only
   - code: precheck_visit_record
     mode: synchronous

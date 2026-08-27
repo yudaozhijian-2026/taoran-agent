@@ -452,48 +452,80 @@
       : "请先处理全部待确认字段；字段确认完成后，再执行下面的简道云配置。";
     panel.append(title, intro);
 
-    const steps = document.createElement("ol");
-    steps.className = "deployment-steps";
     const fieldText = activated
       ? "字段映射已完成，客户已启用。"
       : (unresolvedCount === null
           ? "点击客户列表中的“查看并确认字段”，处理完所有待确认项。"
           : `先处理 ${unresolvedCount} 个待确认字段，全部确认后客户会自动启用。`);
-    addDeploymentStep(steps, "确认字段配置", fieldText, activated);
-    addDeploymentStep(
-      steps,
-      "保存接入密钥",
-      credentials?.access_key || credentials?.webhook_secret
-        ? "立即复制上方的TAORAN访问Key和推送签名密钥；两项密钥只显示一次。"
-        : "准备首次接入时已经保存的TAORAN访问Key和推送签名密钥；系统不会再次显示明文。",
-      false,
-    );
-    addDeploymentStep(
-      steps,
-      "配置“AI检测”插件",
-      "在简道云插件/前端事件中填写下面的检测接口、系统客户编号和TAORAN访问Key，并绑定表单输入字段及三个AI反馈输出字段。",
-      false,
-    );
-    addDeploymentStep(
-      steps,
-      "配置提交后深度评价",
-      "在该表单新建数据推送“TAORAN提交后深度评价”，监听数据新增和数据修改，填写下面的推送地址及推送签名密钥。",
-      false,
-    );
-    addDeploymentStep(
-      steps,
-      "完成真实测试后上线",
-      "先用一条专用测试记录点击AI检测，再提交记录；确认AI评分和各反馈字段成功回写且没有重复触发，最后再切换到正式表单。",
-      false,
-    );
-    panel.append(steps);
-
     const values = document.createElement("div");
     values.className = "deployment-values";
     addDeploymentValue(values, "AI检测接口", `${window.location.origin}/api/v1/connectors/jiandaoyun/visit/button-check`);
     addDeploymentValue(values, "系统客户编号", tenant.tenant_id);
     addDeploymentValue(values, "提交后推送地址", `${window.location.origin}/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=${encodeURIComponent(tenant.tenant_id)}`);
     panel.append(values);
+
+    const copyGuide = document.createElement("button");
+    copyGuide.type = "button";
+    copyGuide.className = "ghost copy-guide";
+    copyGuide.textContent = "复制本客户部署清单";
+    copyGuide.addEventListener("click", async () => {
+      const checklist = deploymentChecklistText(tenant);
+      await navigator.clipboard.writeText(checklist);
+      copyGuide.textContent = "部署清单已复制";
+    });
+    panel.append(copyGuide);
+
+    const tutorial = document.createElement("div");
+    tutorial.className = "deployment-tutorial";
+    addTutorialStep(tutorial, 1, "确认字段映射并启用客户", [
+      fieldText,
+      "如果状态是“未启用”，点击客户列表中的“查看并确认字段”。",
+      "逐项选择对应的简道云实际字段；简道云缺少字段时，先到表单设计器新增或改名，再点击“重新读取表单字段”。",
+      "确认“待确认字段”为0，并看到“客户已启用”后再进入下一步。",
+    ], activated ? "验收标准：客户状态为“已启用”，待确认字段为0。" : "当前未完成：插件和数据推送可以先查看，但不要进入正式测试。", true);
+
+    addTutorialStep(tutorial, 2, "保存并区分两类密钥", [
+      credentials?.access_key || credentials?.webhook_secret
+        ? "立即复制配置结果上方的“TAORAN访问Key”和“推送签名密钥”，它们只显示一次。"
+        : "找到首次接入时保存的“TAORAN访问Key”和“推送签名密钥”；关闭首次结果后系统不会再次显示明文。",
+      "把密钥保存到公司密码管理器，并在名称中注明客户名称和系统客户编号。",
+      "TAORAN访问Key只用于AI检测插件；推送签名密钥只用于提交后数据推送，不能互换。",
+    ], "验收标准：实施人员可以分别找到两项密钥，但页面、群聊和文档中没有明文泄露。", false);
+
+    addTutorialStep(tutorial, 3, "安装并配置TAORAN AI检测插件", [
+      "进入简道云管理后台，打开“插件管理/插件中心”，安装或打开公司统一提供的“TAORAN拜访草稿检查”插件。",
+      "如果需要新建自建插件：建立后端函数，运行环境选择Node.js 20，粘贴公司统一版本代码并启用；不要自行修改请求地址和认证逻辑。",
+      "在插件通用参数中创建 endpoint_url、tenant_id、api_key 三个文本参数。",
+      "endpoint_url填写上方“AI检测接口”；tenant_id填写“系统客户编号”；api_key填写“TAORAN访问Key”。",
+      "保存插件并运行一次函数调试，确认不是“服务地址或授权配置不正确”。",
+    ], "验收标准：插件已启用，函数调试可以连接TAORAN服务并返回本次检查结果。", false);
+
+    const bindingStep = addTutorialStep(tutorial, 4, "在表单中添加AI检测按钮并绑定字段", [
+      "进入已选择的拜访记录表单设计器，在“前端事件”中保留一个“AI检测”按钮，不要同时保留旧自定义请求和新插件两个动作。",
+      "按钮动作选择“TAORAN拜访草稿检查”插件，将下表参数绑定到当前表单字段。多行文本必须直接绑定字段值，不能改成固定文本。",
+      "联系人信息、关联商机阶段信息必须使用“按子表单赋值”，逐行绑定子字段，不能把整个子表当普通文本。",
+      "把三个插件返回值分别写入三个AI反馈字段；提交前按钮不要写入“AI评分”。",
+      "保存表单后关闭设计器，再重新打开一次，确认按钮动作和所有字段绑定仍然存在。",
+    ], "验收标准：草稿页点击一次AI检测，规则、知识库、大模型三个反馈字段都有本次内容。", false);
+    addBindingTables(bindingStep);
+
+    addTutorialStep(tutorial, 5, "配置提交后深度评价数据推送", [
+      "进入该拜访记录表单的“数据推送”设置，新建推送，名称填写“TAORAN提交后深度评价”。",
+      "触发事件同时勾选“数据新增”和“数据修改”，这样首次提交和后续修订都能重新评价。",
+      "请求方式选择POST，推送地址复制上方“提交后推送地址”。",
+      "签名/密钥位置填写“推送签名密钥”，不要填写TAORAN访问Key。",
+      "保存并启用数据推送；如果简道云提供连接测试，确认运行记录为成功。",
+    ], "验收标准：数据推送处于启用状态，目标地址包含本客户系统编号，新增和修改均会触发。", false);
+
+    const testStep = addTutorialStep(tutorial, 6, "使用专用测试记录完成上线验收", [
+      "先在测试副本新增一条专用记录，完整填写拜访目的、关键结果、过程详细描述、评价和下一次行动。",
+      "提交前点击“AI检测”，确认按钮有反馈；修改过程描述后再次点击，确认结果会更新，不会沿用上一次内容。",
+      "提交记录，等待深度评价完成，再刷新记录查看AI评分及三个AI反馈字段是否回写。",
+      "修改同一条记录后再次提交，确认可以形成新评价，同时TAORAN自身回写不会造成无限循环。",
+      "记录客户、表单、测试时间和结果；全部通过后，才把相同配置迁移到正式拜访记录表。",
+    ], "验收标准：按钮检测、提交后评分、四个输出字段回写和重复提交均通过，且没有影响其他表单。", false);
+    addTroubleshooting(testStep);
+    panel.append(tutorial);
 
     const reminder = document.createElement("p");
     reminder.className = "deployment-reminder";
@@ -502,15 +534,104 @@
     target.append(panel);
   }
 
-  function addDeploymentStep(parent, titleText, detailText, completed) {
-    const item = document.createElement("li");
-    if (completed) item.className = "completed";
+  function addTutorialStep(parent, number, titleText, instructions, successText, open) {
+    const details = document.createElement("details");
+    details.className = "tutorial-step";
+    details.open = open;
+    const summary = document.createElement("summary");
+    const numberBadge = document.createElement("span");
+    numberBadge.className = "tutorial-number";
+    numberBadge.textContent = String(number);
     const title = document.createElement("strong");
     title.textContent = titleText;
-    const detail = document.createElement("span");
-    detail.textContent = detailText;
-    item.append(title, detail);
-    parent.append(item);
+    summary.append(numberBadge, title);
+    const body = document.createElement("div");
+    body.className = "tutorial-body";
+    const list = document.createElement("ol");
+    instructions.forEach((instruction) => {
+      const item = document.createElement("li");
+      item.textContent = instruction;
+      list.append(item);
+    });
+    const success = document.createElement("p");
+    success.className = "tutorial-success";
+    success.textContent = successText;
+    body.append(list, success);
+    details.append(summary, body);
+    parent.append(details);
+    return body;
+  }
+
+  function addBindingTables(parent) {
+    addMappingTable(parent, "普通字段参数（逐项绑定当前表单字段）", [
+      ["visit_date", "拜访日期"], ["employee_id", "销售代表（通讯录）"],
+      ["customer_id", "客户编号"], ["customer_type_ii", "客户分类II"],
+      ["visit_method", "拜访方式"], ["is_appointment", "是否预约"],
+      ["purpose_code", "拜访目的"], ["other_purpose", "具体其他目的"],
+      ["expected_key_result", "想取得的关键结果"], ["process_description", "过程详细描述"],
+      ["self_assessment", "评价"], ["next_action_purpose", "下一次行动目的"],
+      ["next_action_other_purpose", "下一次具体其他目的"],
+      ["next_action_expected_result", "下次拜访期望的关键结果"],
+      ["next_contact_at", "下一次联系客户时间安排"],
+      ["actual_start_at", "实际拜访开始时间"], ["actual_end_at", "实际拜访结束时间"],
+      ["duration_minutes", "拜访时长"], ["evidence_ids", "上传相关文件"],
+    ]);
+    addMappingTable(parent, "子表参数（选择“按子表单赋值”）", [
+      ["participants.contact_id", "联系人信息 / 关联数据-主键"],
+      ["opportunities.opportunity_id", "关联商机阶段信息 / 商机编号"],
+      ["opportunities.historical_stage", "关联商机阶段信息 / 历史商机阶段"],
+      ["opportunities.current_stage", "关联商机阶段信息 / 最新商机阶段"],
+    ]);
+    addMappingTable(parent, "插件返回值（分别写入三个反馈字段）", [
+      ["rule_feedback_text", "AI反馈意见（规则反馈）"],
+      ["knowledge_feedback_text", "AI反馈意见（知识库反馈）"],
+      ["model_feedback_text", "AI反馈意见（大模型反馈）"],
+    ]);
+  }
+
+  function addMappingTable(parent, titleText, rows) {
+    const details = document.createElement("details");
+    details.className = "mapping-details";
+    const summary = document.createElement("summary");
+    summary.textContent = `${titleText}（${rows.length}项）`;
+    const table = document.createElement("div");
+    table.className = "tutorial-mapping-table";
+    rows.forEach(([parameter, field]) => {
+      const parameterCell = document.createElement("code");
+      parameterCell.textContent = parameter;
+      const fieldCell = document.createElement("span");
+      fieldCell.textContent = field;
+      table.append(parameterCell, fieldCell);
+    });
+    details.append(summary, table);
+    parent.append(details);
+  }
+
+  function addTroubleshooting(parent) {
+    addMappingTable(parent, "常见问题检查顺序", [
+      ["AI检测无反应", "检查插件是否启用、云币余额、三个通用参数、按钮动作和12秒超时"],
+      ["提示接口未获取", "检查过程详细描述、通讯录和两个子表是否按正确类型绑定"],
+      ["提交后没有评分", "检查数据推送已启用、监听新增/修改、地址中的客户编号及推送签名密钥"],
+      ["反馈有但评分为空", "查看深度评价是否仍在运行，稍后刷新；持续失败由管理员检查任务日志"],
+      ["重复触发", "确认TAORAN回写未再次启动业务触发，并且表单中只保留一个数据推送"],
+    ]);
+  }
+
+  function deploymentChecklistText(tenant) {
+    const origin = window.location.origin;
+    return [
+      `TAORAN客户部署清单：${tenant.display_name}`,
+      `系统客户编号：${tenant.tenant_id}`,
+      `AI检测接口：${origin}/api/v1/connectors/jiandaoyun/visit/button-check`,
+      `提交后推送地址：${origin}/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=${tenant.tenant_id}`,
+      "1. 确认待确认字段为0，客户状态为已启用。",
+      "2. 分别保存TAORAN访问Key和推送签名密钥。",
+      "3. 配置并启用TAORAN拜访草稿检查插件。",
+      "4. 为AI检测按钮绑定普通字段、联系人子表、商机子表和三个反馈输出。",
+      "5. 配置“TAORAN提交后深度评价”数据推送，监听数据新增和修改。",
+      "6. 使用专用记录完成按钮、提交、回写和再次提交测试。",
+      "安全提醒：本清单不包含密钥；密钥请从密码管理器获取。",
+    ].join("\n");
   }
 
   function addDeploymentValue(parent, labelText, value) {

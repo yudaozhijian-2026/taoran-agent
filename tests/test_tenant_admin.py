@@ -87,6 +87,11 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
     assert "下一步：完成该客户的简道云部署" in script.text
     assert "/api/v1/connectors/jiandaoyun/visit/button-check" in script.text
     assert "/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=" in script.text
+    assert "复制本客户部署清单" in script.text
+    assert "安装并配置TAORAN AI检测插件" in script.text
+    assert "按子表单赋值" in script.text
+    assert "rule_feedback_text" in script.text
+    assert "常见问题检查顺序" in script.text
 
     monkeypatch.setenv("DSM_TAORAN_ADMIN_ENABLED", "false")
     monkeypatch.delenv("DSM_TAORAN_ADMIN_API_KEY")
