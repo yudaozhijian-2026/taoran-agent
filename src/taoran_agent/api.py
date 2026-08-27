@@ -74,7 +74,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.11.7",
+    version="0.11.8",
     description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
@@ -273,7 +273,7 @@ def tenant_admin_status(
     return {
         "status": "ok",
         "version": app.version,
-        "tenant_count": len(settings.tenant_registry.tenants),
+        "tenant_count": len(list_tenants(settings)),
     }
 
 

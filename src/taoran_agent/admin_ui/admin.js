@@ -122,12 +122,26 @@
     const application = authorizedApplications.find((item) => item.app_id === applicationId);
     const formSelect = $("#formSelect");
     formSelect.replaceChildren();
+    let firstAvailable = null;
     (application?.forms || []).forEach((form) => {
       const option = document.createElement("option");
       option.value = form.entry_id;
-      option.textContent = form.name;
+      option.disabled = Boolean(form.already_connected);
+      option.textContent = form.already_connected
+        ? `${form.name}（已接入：${form.connected_display_name || "其他客户"}）`
+        : form.name;
+      if (!option.disabled && firstAvailable === null) firstAvailable = form.entry_id;
       formSelect.append(option);
     });
+    if (firstAvailable !== null) {
+      formSelect.value = firstAvailable;
+    } else {
+      const emptyOption = document.createElement("option");
+      emptyOption.value = "";
+      emptyOption.textContent = "该应用下的表单均已接入（同一个表单只能接入一次）";
+      emptyOption.selected = true;
+      formSelect.prepend(emptyOption);
+    }
   }
 
   function populateApplications() {
@@ -252,7 +266,12 @@
       connectedApiKey = apiKey;
       formConfiguration.classList.remove("hidden");
       const formCount = authorizedApplications.reduce((total, application) => total + application.forms.length, 0);
-      showMessage(connectionMessage, `连接成功，已读取 ${authorizedApplications.length} 个应用、${formCount} 个表单。`, true);
+      const connectedCount = authorizedApplications.reduce(
+        (total, application) => total + application.forms.filter((form) => form.already_connected).length,
+        0,
+      );
+      const connectedHint = connectedCount ? `；其中 ${connectedCount} 个表单已接入，不能重复选择` : "";
+      showMessage(connectionMessage, `连接成功，已读取 ${authorizedApplications.length} 个应用、${formCount} 个表单${connectedHint}。`, true);
     } catch (error) {
       resetAuthorization();
       showMessage(connectionMessage, error.message);

@@ -100,10 +100,24 @@ class TenantOnboardingResult(BaseModel):
 
 
 def list_tenants(settings: Settings) -> list[dict[str, Any]]:
-    return [
-        _tenant_summary(settings, tenant_id)
-        for tenant_id in sorted(settings.tenant_registry.tenants)
-    ]
+    registry = settings.reload_tenant_registry()
+    visible: list[dict[str, Any]] = []
+    seen_forms: set[tuple[str, str]] = set()
+    tenant_ids = sorted(
+        registry.tenants,
+        key=lambda tenant_id: (
+            registry.tenants[tenant_id].created_at or datetime.max.replace(tzinfo=UTC),
+            tenant_id,
+        ),
+    )
+    for tenant_id in tenant_ids:
+        identity = _tenant_form_identity(registry.tenants[tenant_id])
+        if identity and identity in seen_forms:
+            continue
+        if identity:
+            seen_forms.add(identity)
+        visible.append(_tenant_summary(settings, tenant_id))
+    return visible
 
 
 def discover_authorized_forms(
@@ -120,7 +134,9 @@ def discover_authorized_forms(
     )
     if not any(application["forms"] for application in applications):
         raise JiandaoyunSchemaSyncError("该API Key的授权应用中没有可访问表单")
-    return JiandaoyunAuthorizationResponse(applications=applications)
+    return JiandaoyunAuthorizationResponse(
+        applications=_annotate_connected_forms(settings, applications)
+    )
 
 
 def discover_tenant_authorized_forms(
@@ -147,7 +163,13 @@ def discover_tenant_authorized_forms(
     )
     if not any(application["forms"] for application in applications):
         raise JiandaoyunSchemaSyncError("该客户的授权应用中没有可访问表单")
-    return JiandaoyunAuthorizationResponse(applications=applications)
+    return JiandaoyunAuthorizationResponse(
+        applications=_annotate_connected_forms(
+            settings,
+            applications,
+            current_tenant_id=tenant_id,
+        )
+    )
 
 
 def onboard_tenant(
@@ -160,6 +182,22 @@ def onboard_tenant(
         registry = settings.reload_tenant_registry()
         tenant_id = request.tenant_id or _generate_tenant_id(registry)
         existing = registry.tenants.get(tenant_id)
+        requested_identity = (request.application_id, request.entry_id)
+        current_identity = _tenant_form_identity(existing) if existing else None
+        if current_identity != requested_identity:
+            owner = _find_form_owner(
+                registry,
+                request.application_id,
+                request.entry_id,
+                exclude_tenant_id=tenant_id,
+            )
+            if owner:
+                owner_id, owner_config = owner
+                owner_name = owner_config.display_name or owner_id
+                raise ValueError(
+                    f"该表单已接入客户“{owner_name}”，同一个表单只能接入一次。"
+                    "请在现有客户记录中修改配置。"
+                )
         existing_api_key = (
             existing.jiandaoyun.api_key.get_secret_value()
             if existing and existing.jiandaoyun.api_key
@@ -377,6 +415,71 @@ def _generate_tenant_id(registry: TenantConfigRegistry) -> str:
         if tenant_id not in registry.tenants:
             return tenant_id
     raise RuntimeError("无法生成唯一客户编号")
+
+
+def _tenant_form_identity(tenant) -> tuple[str, str] | None:
+    if tenant is None or not tenant.jiandaoyun.mapping_path:
+        return None
+    mapping_path = Path(tenant.jiandaoyun.mapping_path)
+    if not mapping_path.is_file():
+        return None
+    mapping = load_jiandaoyun_mapping(str(mapping_path))
+    application_id = str(mapping.get("source_application_id") or "").strip()
+    entry_id = str(mapping.get("source_entry_id") or "").strip()
+    return (application_id, entry_id) if application_id and entry_id else None
+
+
+def _find_form_owner(
+    registry: TenantConfigRegistry,
+    application_id: str,
+    entry_id: str,
+    *,
+    exclude_tenant_id: str | None = None,
+):
+    matches = []
+    for tenant_id, tenant in registry.tenants.items():
+        if tenant_id == exclude_tenant_id:
+            continue
+        if _tenant_form_identity(tenant) == (application_id, entry_id):
+            matches.append((tenant_id, tenant))
+    if not matches:
+        return None
+    return min(
+        matches,
+        key=lambda item: (
+            item[1].created_at or datetime.max.replace(tzinfo=UTC),
+            item[0],
+        ),
+    )
+
+
+def _annotate_connected_forms(
+    settings: Settings,
+    applications: list[dict[str, Any]],
+    *,
+    current_tenant_id: str | None = None,
+) -> list[dict[str, Any]]:
+    registry = settings.reload_tenant_registry()
+    current = registry.tenants.get(current_tenant_id) if current_tenant_id else None
+    current_identity = _tenant_form_identity(current)
+    annotated = json.loads(json.dumps(applications, ensure_ascii=False))
+    for application in annotated:
+        application_id = str(application.get("app_id") or "")
+        for form in application.get("forms", []):
+            identity = (application_id, str(form.get("entry_id") or ""))
+            owner = None
+            if identity != current_identity:
+                owner = _find_form_owner(
+                    registry,
+                    *identity,
+                    exclude_tenant_id=current_tenant_id,
+                )
+            form["already_connected"] = owner is not None
+            if owner:
+                owner_id, owner_config = owner
+                form["connected_tenant_id"] = owner_id
+                form["connected_display_name"] = owner_config.display_name or owner_id
+    return annotated
 
 
 def _base_mapping(settings: Settings, existing) -> dict[str, Any]:

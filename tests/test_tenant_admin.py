@@ -10,6 +10,7 @@ from taoran_agent.tenant_admin import (
     TenantFieldConfirmationRequest,
     TenantOnboardingRequest,
     confirm_tenant_fields,
+    list_tenants,
     onboard_tenant,
 )
 
@@ -81,6 +82,7 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
     assert script.status_code == 200
     assert "返回重新选择表单" in script.text
     assert "更换表单" in script.text
+    assert "同一个表单只能接入一次" in script.text
 
     monkeypatch.setenv("DSM_TAORAN_ADMIN_ENABLED", "false")
     monkeypatch.delenv("DSM_TAORAN_ADMIN_API_KEY")
@@ -201,6 +203,45 @@ def test_customer_id_is_generated_when_not_supplied(isolated_admin) -> None:
         (isolated_admin / "tenant_registry.json").read_text(encoding="utf-8")
     )
     assert tenant_id in registry["tenants"]
+
+
+def test_same_form_cannot_be_onboarded_twice(isolated_admin) -> None:
+    settings = get_settings()
+    first = TenantOnboardingRequest.model_validate(onboarding_payload())
+    onboard_tenant(settings, first)
+    duplicate = TenantOnboardingRequest.model_validate(
+        onboarding_payload(tenant_id="customer_b", display_name="客户B")
+    )
+
+    with pytest.raises(ValueError, match="同一个表单只能接入一次"):
+        onboard_tenant(settings, duplicate)
+
+    assert [tenant["tenant_id"] for tenant in list_tenants(settings)] == ["customer_a"]
+
+
+def test_legacy_duplicate_form_bindings_are_collapsed_in_customer_list(
+    isolated_admin,
+) -> None:
+    settings = get_settings()
+    onboard_tenant(
+        settings,
+        TenantOnboardingRequest.model_validate(onboarding_payload()),
+    )
+    registry_path = isolated_admin / "tenant_registry.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    duplicate = json.loads(json.dumps(registry["tenants"]["customer_a"]))
+    duplicate["display_name"] = "历史重复客户"
+    duplicate["created_at"] = "2026-08-28T00:00:00+00:00"
+    registry["tenants"]["customer_b"] = duplicate
+    registry_path.write_text(
+        json.dumps(registry, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+
+    listed = list_tenants(settings)
+
+    assert len(listed) == 1
+    assert listed[0]["tenant_id"] == "customer_a"
 
 
 def test_recheck_existing_tenant_activates_after_fields_are_complete(
