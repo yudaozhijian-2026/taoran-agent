@@ -90,6 +90,12 @@
       row.append(name, id, form, state);
       const actions = document.createElement("div");
       actions.className = "tenant-actions";
+      const deploy = document.createElement("button");
+      deploy.type = "button";
+      deploy.className = "primary compact-button";
+      deploy.textContent = "查看下一步部署";
+      deploy.addEventListener("click", () => showDeploymentGuide(tenant));
+      actions.append(deploy);
       if (!tenant.enabled && tenant.jiandaoyun.mapping_configured) {
         const manage = document.createElement("button");
         manage.type = "button";
@@ -409,6 +415,121 @@
       });
       target.append(warnings);
     }
+    renderDeploymentGuide(
+      target,
+      result.tenant,
+      result.activated,
+      credentials,
+      result.mapping_report.unresolved_count || 0,
+    );
+  }
+
+  function showDeploymentGuide(tenant) {
+    $("#emptyResult").classList.add("hidden");
+    const target = $("#resultContent");
+    target.classList.remove("hidden");
+    target.replaceChildren();
+    const badge = document.createElement("div");
+    badge.className = `result-badge ${tenant.enabled ? "active" : "pending"}`;
+    badge.textContent = tenant.enabled ? "字段配置已完成" : "字段配置尚未完成";
+    const identifier = document.createElement("p");
+    identifier.className = "generated-id";
+    identifier.textContent = `${tenant.display_name} · 系统客户编号：${tenant.tenant_id}`;
+    target.append(badge, identifier);
+    renderDeploymentGuide(target, tenant, tenant.enabled, null, tenant.enabled ? 0 : null);
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function renderDeploymentGuide(target, tenant, activated, credentials, unresolvedCount) {
+    const panel = document.createElement("section");
+    panel.className = "deployment-panel";
+    const title = document.createElement("h3");
+    title.textContent = "下一步：完成该客户的简道云部署";
+    const intro = document.createElement("p");
+    intro.className = activated ? "deployment-ready" : "deployment-waiting";
+    intro.textContent = activated
+      ? "表单字段已经匹配，可以继续配置AI检测按钮和提交后深度评价。"
+      : "请先处理全部待确认字段；字段确认完成后，再执行下面的简道云配置。";
+    panel.append(title, intro);
+
+    const steps = document.createElement("ol");
+    steps.className = "deployment-steps";
+    const fieldText = activated
+      ? "字段映射已完成，客户已启用。"
+      : (unresolvedCount === null
+          ? "点击客户列表中的“查看并确认字段”，处理完所有待确认项。"
+          : `先处理 ${unresolvedCount} 个待确认字段，全部确认后客户会自动启用。`);
+    addDeploymentStep(steps, "确认字段配置", fieldText, activated);
+    addDeploymentStep(
+      steps,
+      "保存接入密钥",
+      credentials?.access_key || credentials?.webhook_secret
+        ? "立即复制上方的TAORAN访问Key和推送签名密钥；两项密钥只显示一次。"
+        : "准备首次接入时已经保存的TAORAN访问Key和推送签名密钥；系统不会再次显示明文。",
+      false,
+    );
+    addDeploymentStep(
+      steps,
+      "配置“AI检测”插件",
+      "在简道云插件/前端事件中填写下面的检测接口、系统客户编号和TAORAN访问Key，并绑定表单输入字段及三个AI反馈输出字段。",
+      false,
+    );
+    addDeploymentStep(
+      steps,
+      "配置提交后深度评价",
+      "在该表单新建数据推送“TAORAN提交后深度评价”，监听数据新增和数据修改，填写下面的推送地址及推送签名密钥。",
+      false,
+    );
+    addDeploymentStep(
+      steps,
+      "完成真实测试后上线",
+      "先用一条专用测试记录点击AI检测，再提交记录；确认AI评分和各反馈字段成功回写且没有重复触发，最后再切换到正式表单。",
+      false,
+    );
+    panel.append(steps);
+
+    const values = document.createElement("div");
+    values.className = "deployment-values";
+    addDeploymentValue(values, "AI检测接口", `${window.location.origin}/api/v1/connectors/jiandaoyun/visit/button-check`);
+    addDeploymentValue(values, "系统客户编号", tenant.tenant_id);
+    addDeploymentValue(values, "提交后推送地址", `${window.location.origin}/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=${encodeURIComponent(tenant.tenant_id)}`);
+    panel.append(values);
+
+    const reminder = document.createElement("p");
+    reminder.className = "deployment-reminder";
+    reminder.textContent = "注意：API Key使用TAORAN访问Key；数据推送签名使用推送签名密钥，两者不能混用。";
+    panel.append(reminder);
+    target.append(panel);
+  }
+
+  function addDeploymentStep(parent, titleText, detailText, completed) {
+    const item = document.createElement("li");
+    if (completed) item.className = "completed";
+    const title = document.createElement("strong");
+    title.textContent = titleText;
+    const detail = document.createElement("span");
+    detail.textContent = detailText;
+    item.append(title, detail);
+    parent.append(item);
+  }
+
+  function addDeploymentValue(parent, labelText, value) {
+    const row = document.createElement("div");
+    row.className = "deployment-value";
+    const label = document.createElement("strong");
+    label.textContent = labelText;
+    const code = document.createElement("code");
+    code.textContent = value;
+    const copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "ghost compact-button";
+    copy.textContent = "复制";
+    copy.addEventListener("click", async () => {
+      await navigator.clipboard.writeText(value);
+      copy.textContent = "已复制";
+    });
+    row.append(label, code, copy);
+    parent.append(row);
   }
 
   function renderUnresolvedFields(target, result) {

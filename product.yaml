@@ -1,6 +1,6 @@
 product_code: dsm-taoran-visit-agent
 product_name: DSM TAORAN 拜访智能体
-version: 0.11.8
+version: 0.11.9
 status: knowledge_driven_precheck_q33_q34_integrated
 deployment_modes:
   - standalone
@@ -22,6 +22,7 @@ tenant_configuration:
   field_recheck_after_form_change: true
   existing_tenant_form_reselection: true
   unique_form_tenant_binding: true
+  post_onboarding_deployment_guide: true
 scenarios:
   - visit_precheck
   - visit_effectiveness_evaluation

@@ -83,6 +83,10 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
     assert "返回重新选择表单" in script.text
     assert "更换表单" in script.text
     assert "同一个表单只能接入一次" in script.text
+    assert "查看下一步部署" in script.text
+    assert "下一步：完成该客户的简道云部署" in script.text
+    assert "/api/v1/connectors/jiandaoyun/visit/button-check" in script.text
+    assert "/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=" in script.text
 
     monkeypatch.setenv("DSM_TAORAN_ADMIN_ENABLED", "false")
     monkeypatch.delenv("DSM_TAORAN_ADMIN_API_KEY")
