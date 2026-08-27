@@ -20,6 +20,7 @@ from .connector import (
     load_jiandaoyun_mapping,
     mapped_jiandaoyun_value,
 )
+from .field_labels import use_field_mapping
 from .gateway import verify_q40_service_access, verify_tenant_access
 from .jiandaoyun_api import JiandaoyunReadError, get_jiandaoyun_record
 from .knowledge import load_taoran_knowledge_snapshot
@@ -50,7 +51,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.7.0",
+    version="0.8.0",
     description="提交前非阻断TAORAN检查、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
@@ -88,10 +89,19 @@ def authorize(
     verify_tenant_access(get_settings(), tenant_id, x_tenant_id, x_api_key)
 
 
+def tenant_mapping(settings: Settings, tenant_id: str) -> dict[str, Any]:
+    mapping_path = settings.jiandaoyun_mapping_path_for(tenant_id)
+    if settings.tenant_config(tenant_id) is not None and not mapping_path:
+        raise HTTPException(status_code=503, detail="tenant Jiandaoyun mapping is not configured")
+    return load_jiandaoyun_mapping(mapping_path)
+
+
 def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
     store = get_store()
     try:
-        response = get_agent().evaluate(request, job_id)
+        mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
+        with use_field_mapping(mapping_path):
+            response = get_agent().evaluate(request, job_id)
         try:
             writeback = writeback_evaluation(get_settings(), request, response)
         except JiandaoyunWritebackError as exc:
@@ -188,7 +198,38 @@ def jiandaoyun_mapping(
     x_api_key: str | None = Header(default=None),
 ) -> dict:
     authorize(tenant_id, x_tenant_id, x_api_key)
-    return load_jiandaoyun_mapping(get_settings().jiandaoyun_mapping_path)
+    return tenant_mapping(get_settings(), tenant_id)
+
+
+@app.get("/api/v1/tenants/{tenant_id}/configuration")
+def tenant_configuration(
+    tenant_id: str,
+    x_tenant_id: str | None = Header(default=None),
+    x_api_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    """Return a secret-free readiness summary for customer onboarding and support."""
+    authorize(tenant_id, x_tenant_id, x_api_key)
+    settings = get_settings()
+    tenant = settings.tenant_config(tenant_id)
+    mapping_path = settings.jiandaoyun_mapping_path_for(tenant_id)
+    mapping = load_jiandaoyun_mapping(mapping_path) if mapping_path else {}
+    return {
+        "tenant_id": tenant_id,
+        "enabled": tenant.enabled if tenant else True,
+        "configuration_source": settings.tenant_configuration_source(tenant_id),
+        "access_key_count": len(settings.tenant_access_keys_for(tenant_id)),
+        "jiandaoyun": {
+            "api_key_configured": bool(settings.jiandaoyun_api_key_for(tenant_id)),
+            "webhook_secret_configured": bool(
+                settings.jiandaoyun_webhook_secret_for(tenant_id)
+            ),
+            "mapping_configured": bool(mapping_path),
+            "application_id": mapping.get("source_application_id"),
+            "entry_id": mapping.get("source_entry_id"),
+            "entry_name": mapping.get("source_entry_name"),
+            "mapping_version": mapping.get("mapping_version"),
+        },
+    }
 
 
 @app.post("/api/v1/visit/checks", response_model=PrecheckResponse)
@@ -202,7 +243,9 @@ def create_precheck(
         _precheck_locks
     )
     with _precheck_locks[lock_index]:
-        return _execute_precheck(request)
+        mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
+        with use_field_mapping(mapping_path):
+            return _execute_precheck(request)
 
 
 def _execute_precheck(request: PrecheckRequest) -> PrecheckResponse:
@@ -243,7 +286,7 @@ def jiandaoyun_precheck(
     x_api_key: str | None = Header(default=None),
 ) -> PrecheckResponse:
     authorize(request.context.tenant_id, x_tenant_id, x_api_key)
-    mapping = load_jiandaoyun_mapping(get_settings().jiandaoyun_mapping_path)
+    mapping = tenant_mapping(get_settings(), request.context.tenant_id)
     try:
         canonical_request = adapt_jiandaoyun_request(request, mapping)
     except (FieldTransferError, ValidationError):
@@ -347,7 +390,7 @@ def submit_jiandaoyun_evaluation(
     x_tenant_id: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
 ) -> EvaluationAccepted:
-    mapping = load_jiandaoyun_mapping(get_settings().jiandaoyun_mapping_path)
+    mapping = tenant_mapping(get_settings(), request.context.tenant_id)
     canonical_request = adapt_jiandaoyun_evaluation_request(request, mapping)
     return submit_evaluation(
         canonical_request,
@@ -371,7 +414,7 @@ def submit_jiandaoyun_record_event(
     """Read the authoritative submitted record, enqueue evaluation, and write back results."""
     authorize(event.tenant_id, x_tenant_id, x_api_key)
     settings = get_settings()
-    mapping = load_jiandaoyun_mapping(settings.jiandaoyun_mapping_path)
+    mapping = tenant_mapping(settings, event.tenant_id)
     configured_app_id = str(mapping.get("source_application_id", "")).strip()
     configured_entry_id = str(mapping.get("source_entry_id", "")).strip()
     app_id = event.app_id or configured_app_id
@@ -485,7 +528,13 @@ async def receive_jiandaoyun_visit_webhook(
     x_jdy_deliver_id: str | None = Header(default=None, alias="X-JDY-DeliverId"),
 ) -> dict[str, Any] | EvaluationAccepted:
     settings = get_settings()
-    secret = settings.jiandaoyun_webhook_secret
+    tenant = settings.tenant_config(tenant_id)
+    if tenant is not None and not tenant.enabled:
+        raise HTTPException(status_code=403, detail="tenant is disabled")
+    tenant_keys = settings.tenant_access_keys_for(tenant_id)
+    if settings.has_tenant_access_configuration and not tenant_keys:
+        raise HTTPException(status_code=401, detail="unknown tenant")
+    secret = settings.jiandaoyun_webhook_secret_for(tenant_id)
     if not secret:
         raise HTTPException(status_code=503, detail="Jiandaoyun webhook secret is not configured")
     payload = await request.body()
@@ -516,7 +565,7 @@ async def receive_jiandaoyun_visit_webhook(
             "operation": operation or "connection_test",
             "delivery_id": x_jdy_deliver_id,
         }
-    mapping = load_jiandaoyun_mapping(settings.jiandaoyun_mapping_path)
+    mapping = tenant_mapping(settings, tenant_id)
     configured_app_id = str(mapping.get("source_application_id", "")).strip()
     configured_entry_id = str(mapping.get("source_entry_id", "")).strip()
     app_id = str(record.get("appId") or record.get("app_id") or configured_app_id)
@@ -535,8 +584,7 @@ async def receive_jiandaoyun_visit_webhook(
     )
     # The signed webhook itself authenticates Jiandaoyun; tenant authorization is
     # still enforced internally with the configured tenant key.
-    tenant_key = settings.tenant_keys.get(tenant_id)
-    if not tenant_key:
+    if not tenant_keys:
         raise HTTPException(status_code=401, detail="unknown tenant")
     return _enqueue_jiandaoyun_record(
         event,
@@ -544,7 +592,7 @@ async def receive_jiandaoyun_visit_webhook(
         mapping,
         background_tasks,
         tenant_id,
-        tenant_key,
+        tenant_keys[0],
     )
 
 

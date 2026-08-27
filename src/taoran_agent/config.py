@@ -3,10 +3,64 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    PrivateAttr,
+    SecretStr,
+    field_validator,
+    model_validator,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class JiandaoyunTenantConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    api_key: SecretStr | None = None
+    webhook_secret: SecretStr | None = None
+    mapping_path: str | None = None
+
+    @field_validator("mapping_path", mode="before")
+    @classmethod
+    def normalize_mapping_path(cls, value):
+        return value.strip() or None if isinstance(value, str) else value
+
+
+class TenantConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+    access_keys: list[SecretStr] = Field(default_factory=list, max_length=2)
+    jiandaoyun: JiandaoyunTenantConfig = Field(default_factory=JiandaoyunTenantConfig)
+
+    @field_validator("access_keys")
+    @classmethod
+    def validate_access_keys(cls, values: list[SecretStr]) -> list[SecretStr]:
+        normalized = [value.get_secret_value().strip() for value in values]
+        if any(not value for value in normalized):
+            raise ValueError("租户访问Key不能为空")
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("租户访问Key不能重复")
+        return [SecretStr(value) for value in normalized]
+
+
+class TenantConfigRegistry(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: Literal[1] = 1
+    tenants: dict[str, TenantConfig] = Field(default_factory=dict)
+
+    @field_validator("tenants")
+    @classmethod
+    def validate_tenant_ids(cls, tenants: dict[str, TenantConfig]) -> dict[str, TenantConfig]:
+        if any(not tenant_id.strip() or tenant_id != tenant_id.strip() for tenant_id in tenants):
+            raise ValueError("租户ID不能为空或包含首尾空格")
+        return tenants
 
 
 class Settings(BaseSettings):
@@ -19,6 +73,8 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     database_path: str = str(Path("data") / "taoran_agent.db")
+    tenant_registry_path: str | None = None
+    tenant_registry_json: str = '{"version":1,"tenants":{}}'
     tenant_keys_json: str = "{}"
     jiandaoyun_api_keys_json: str = "{}"
     jiandaoyun_webhook_secret: str | None = None
@@ -47,6 +103,9 @@ class Settings(BaseSettings):
     q40_service_id: str = "dsm-q40-agent"
     q40_service_keys_json: str = "{}"
     shared_store_url: str | None = None
+    _tenant_registry_cache: TenantConfigRegistry = PrivateAttr(
+        default_factory=TenantConfigRegistry
+    )
 
     @field_validator("llm_api_url", "llm_api_key", "llm_model", mode="before")
     @classmethod
@@ -67,6 +126,7 @@ class Settings(BaseSettings):
                 raise ValueError("启用大模型前必须配置TAORAN专用接口、模型名称和API Key")
             if self.semantic_endpoint:
                 raise ValueError("直接大模型与旧版语义服务不能同时启用，请只配置一种")
+        self._tenant_registry_cache = self._read_tenant_registry()
         return self
 
     @field_validator(
@@ -94,6 +154,57 @@ class Settings(BaseSettings):
     @property
     def q40_service_keys(self) -> dict[str, str]:
         return json.loads(self.q40_service_keys_json)
+
+    @property
+    def tenant_registry(self) -> TenantConfigRegistry:
+        return self._tenant_registry_cache
+
+    def tenant_config(self, tenant_id: str) -> TenantConfig | None:
+        return self.tenant_registry.tenants.get(tenant_id)
+
+    def tenant_access_keys_for(self, tenant_id: str) -> list[str]:
+        tenant = self.tenant_config(tenant_id)
+        if tenant is not None:
+            return [key.get_secret_value() for key in tenant.access_keys]
+        legacy_key = self.tenant_keys.get(tenant_id)
+        return [legacy_key] if legacy_key else []
+
+    @property
+    def has_tenant_access_configuration(self) -> bool:
+        return bool(self.tenant_keys) or bool(self.tenant_registry.tenants)
+
+    def jiandaoyun_api_key_for(self, tenant_id: str) -> str | None:
+        tenant = self.tenant_config(tenant_id)
+        if tenant is not None:
+            api_key = tenant.jiandaoyun.api_key
+            return api_key.get_secret_value() if api_key else None
+        return self.jiandaoyun_api_keys.get(tenant_id)
+
+    def jiandaoyun_webhook_secret_for(self, tenant_id: str) -> str | None:
+        tenant = self.tenant_config(tenant_id)
+        if tenant is not None:
+            secret = tenant.jiandaoyun.webhook_secret
+            return secret.get_secret_value() if secret else None
+        return self.jiandaoyun_webhook_secret
+
+    def jiandaoyun_mapping_path_for(self, tenant_id: str) -> str | None:
+        tenant = self.tenant_config(tenant_id)
+        if tenant is not None:
+            return tenant.jiandaoyun.mapping_path
+        return self.jiandaoyun_mapping_path
+
+    def tenant_configuration_source(self, tenant_id: str) -> str:
+        return "registry" if self.tenant_config(tenant_id) else "legacy"
+
+    def _read_tenant_registry(self) -> TenantConfigRegistry:
+        try:
+            if self.tenant_registry_path:
+                raw = Path(self.tenant_registry_path).read_text(encoding="utf-8")
+            else:
+                raw = self.tenant_registry_json
+            return TenantConfigRegistry.model_validate_json(raw)
+        except (OSError, ValueError) as exc:
+            raise ValueError("租户注册表无法读取或格式无效") from exc
 
 
 @lru_cache

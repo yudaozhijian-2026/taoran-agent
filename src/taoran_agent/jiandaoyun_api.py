@@ -18,7 +18,7 @@ def get_jiandaoyun_record(
     entry_id: str,
     data_id: str,
 ) -> dict[str, Any]:
-    api_key = settings.jiandaoyun_api_keys.get(tenant_id)
+    api_key = settings.jiandaoyun_api_key_for(tenant_id)
     if not api_key:
         raise JiandaoyunReadError("未配置当前租户的简道云API密钥")
     try:

@@ -62,7 +62,8 @@ def writeback_evaluation(
             status="failed", target_data_id=target.data_id, attempted_at=attempted_at,
             error_message="大模型复核未完成，未覆盖原AI评分和AI反馈意见；重试时先重新分析。",
         )
-    api_key = settings.jiandaoyun_api_keys.get(request.context.tenant_id)
+    tenant_id = request.context.tenant_id
+    api_key = settings.jiandaoyun_api_key_for(tenant_id)
     if not api_key:
         return WritebackResult(
             status="failed",
@@ -70,7 +71,15 @@ def writeback_evaluation(
             error_message="未配置当前租户的简道云API密钥",
             attempted_at=attempted_at,
         )
-    mapping = load_jiandaoyun_mapping(settings.jiandaoyun_mapping_path)
+    mapping_path = settings.jiandaoyun_mapping_path_for(tenant_id)
+    if settings.tenant_config(tenant_id) is not None and not mapping_path:
+        return WritebackResult(
+            status="failed",
+            target_data_id=target.data_id,
+            error_message="未配置当前租户的简道云字段映射",
+            attempted_at=attempted_at,
+        )
+    mapping = load_jiandaoyun_mapping(mapping_path)
     output_fields = mapping.get("output_fields", {})
     if not output_fields:
         return WritebackResult(

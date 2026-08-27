@@ -1,6 +1,6 @@
 product_code: dsm-taoran-visit-agent
 product_name: DSM TAORAN 拜访智能体
-version: 0.7.0
+version: 0.8.0
 status: knowledge_driven_precheck_q33_q34_integrated
 deployment_modes:
   - standalone
@@ -9,6 +9,11 @@ interaction_sources:
   - jiandaoyun
   - dsm
   - api
+tenant_configuration:
+  registry_version: 1
+  legacy_environment_compatible: true
+  per_tenant_jiandaoyun_credentials: true
+  per_tenant_field_mapping: true
 scenarios:
   - visit_precheck
   - visit_effectiveness_evaluation

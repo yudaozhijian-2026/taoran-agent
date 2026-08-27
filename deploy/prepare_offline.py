@@ -76,8 +76,14 @@ def download(item):
 
 with ThreadPoolExecutor(max_workers=4) as pool:
     requirements = list(pool.map(download, selected))
-app_wheel = root / "dist/dsm_taoran_agent-0.7.0-py3-none-any.whl"
+project_version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))[
+    "project"
+]["version"]
+app_wheel = root / f"dist/dsm_taoran_agent-{project_version}-py3-none-any.whl"
 shutil.copy2(app_wheel, wheels / app_wheel.name)
-requirements.append("dsm-taoran-agent==0.7.0 --hash=sha256:" + hashlib.sha256(app_wheel.read_bytes()).hexdigest())
+requirements.append(
+    f"dsm-taoran-agent=={project_version} --hash=sha256:"
+    + hashlib.sha256(app_wheel.read_bytes()).hexdigest()
+)
 (output / "requirements.lock.txt").write_text("\n".join(requirements)+"\n")
 print(f"Verified {len(selected)} locked runtime wheels and project wheel; offline files prepared.")

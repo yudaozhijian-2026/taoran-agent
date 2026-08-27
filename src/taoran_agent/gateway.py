@@ -15,13 +15,19 @@ def verify_tenant_access(
 ) -> None:
     if header_tenant_id and header_tenant_id != tenant_id:
         raise HTTPException(status_code=403, detail="tenant header does not match request")
-    tenant_keys = settings.tenant_keys
-    if not tenant_keys and settings.environment == "development":
+    tenant = settings.tenant_config(tenant_id)
+    if tenant is not None and not tenant.enabled:
+        raise HTTPException(status_code=403, detail="tenant is disabled")
+    expected_keys = settings.tenant_access_keys_for(tenant_id)
+    if not settings.has_tenant_access_configuration and settings.environment == "development":
         return
-    if not tenant_keys:
+    if not settings.has_tenant_access_configuration:
         raise HTTPException(status_code=503, detail="tenant authentication is not configured")
-    expected = tenant_keys.get(tenant_id)
-    if expected is None or api_key is None or not secrets.compare_digest(expected, api_key):
+    matched = False
+    if api_key is not None:
+        for expected in expected_keys:
+            matched = secrets.compare_digest(expected, api_key) or matched
+    if not expected_keys or not matched:
         raise HTTPException(status_code=401, detail="invalid tenant credentials")
 
 

@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "tenants": {
+    "tenant_demo": {
+      "enabled": true,
+      "access_keys": [
+        "replace-with-current-tenant-key"
+      ],
+      "jiandaoyun": {
+        "api_key": "replace-with-jiandaoyun-api-key",
+        "webhook_secret": "replace-with-jiandaoyun-webhook-secret",
+        "mapping_path": "config/jiandaoyun_field_mapping.example.json"
+      }
+    },
+    "tenant_customer_b": {
+      "enabled": false,
+      "access_keys": [
+        "replace-with-customer-b-key"
+      ],
+      "jiandaoyun": {
+        "api_key": "replace-with-customer-b-jiandaoyun-api-key",
+        "webhook_secret": "replace-with-customer-b-webhook-secret",
+        "mapping_path": "runtime/tenants/tenant_customer_b/field_mapping.json"
+      }
+    }
+  }
+}

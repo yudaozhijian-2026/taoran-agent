@@ -18,6 +18,7 @@ htmlcov/
 data/*
 !data/.gitkeep
 outputs/
+runtime/
 *.db
 *.sqlite
 *.sqlite3

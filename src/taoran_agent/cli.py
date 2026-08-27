@@ -74,7 +74,7 @@ def main() -> None:
     sync_parser.add_argument(
         "--mapping",
         type=Path,
-        default=Path("config/jiandaoyun_field_mapping.example.json"),
+        help="字段映射文件；省略时使用该租户注册表中的mapping_path",
     )
     sync_parser.add_argument("--apply", action="store_true", help="确认后写回映射文件")
 
@@ -164,28 +164,44 @@ def main() -> None:
         uvicorn.run("taoran_agent.api:app", host=args.host, port=args.port)
         return
     if args.command == "sync-jiandaoyun-fields":
-        mapping = json.loads(args.mapping.read_text(encoding="utf-8"))
+        settings = get_settings()
+        configured_mapping_path = settings.jiandaoyun_mapping_path_for(args.tenant_id)
+        if (
+            not args.mapping
+            and settings.tenant_config(args.tenant_id) is not None
+            and not configured_mapping_path
+        ):
+            parser.error("当前租户尚未配置独立mapping_path")
+        mapping_path = args.mapping or Path(
+            configured_mapping_path or "config/jiandaoyun_field_mapping.example.json"
+        )
+        mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
         app_id = mapping.get("source_application_id")
         entry_id = mapping.get("source_entry_id")
         if not app_id or not entry_id:
             parser.error("映射文件缺少source_application_id或source_entry_id")
         schema = fetch_jiandaoyun_form_schema(
-            get_settings(), args.tenant_id, app_id, entry_id
+            settings, args.tenant_id, app_id, entry_id
         )
         updated, report = synchronize_mapping(mapping, schema)
         if args.apply:
             with NamedTemporaryFile(
                 "w",
                 encoding="utf-8",
-                dir=args.mapping.parent,
-                prefix=f".{args.mapping.name}.",
+                dir=mapping_path.parent,
+                prefix=f".{mapping_path.name}.",
                 suffix=".tmp",
                 delete=False,
             ) as temp_file:
                 temp_file.write(json.dumps(updated, ensure_ascii=False, indent=2) + "\n")
                 temporary_path = Path(temp_file.name)
-            temporary_path.replace(args.mapping)
-        print(json.dumps({"applied": args.apply, **report}, ensure_ascii=False, indent=2))
+            temporary_path.replace(mapping_path)
+        print(json.dumps({
+            "applied": args.apply,
+            "tenant_id": args.tenant_id,
+            "mapping_path": str(mapping_path),
+            **report,
+        }, ensure_ascii=False, indent=2))
         return
     if args.command == "calibrate":
         dataset = CalibrationDataset.model_validate_json(args.input.read_text(encoding="utf-8"))

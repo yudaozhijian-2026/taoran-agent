@@ -19,7 +19,7 @@ def fetch_jiandaoyun_form_schema(
     app_id: str,
     entry_id: str,
 ) -> dict[str, Any]:
-    api_key = settings.jiandaoyun_api_keys.get(tenant_id)
+    api_key = settings.jiandaoyun_api_key_for(tenant_id)
     if not api_key:
         raise JiandaoyunSchemaSyncError("未配置当前租户的简道云API密钥")
     try:
