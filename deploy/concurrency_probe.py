@@ -76,19 +76,14 @@ async def run_probe(base: str, users: int, ui_budget: float) -> dict:
                     return item
                 rule = body.get("rule_feedback_text", "")
                 knowledge = body.get("knowledge_feedback_text", "")
-                model = body.get("model_feedback_text", "")
                 item.update(
                     server_latency_ms=body.get("latency_ms"),
                     rule_nonempty=bool(rule.strip()),
                     knowledge_nonempty=bool(knowledge.strip()),
-                    model_nonempty=bool(model.strip()),
                     knowledge_ai_error="AI调用异常" in knowledge,
-                    model_ai_error="AI调用异常" in model,
                     knowledge_error_reason=ai_error_reason(knowledge),
-                    model_error_reason=ai_error_reason(model),
                     rule_status=body.get("rule_status"),
                     knowledge_status=body.get("knowledge_status"),
-                    model_status=body.get("model_status"),
                     knowledge_reference_count=len(body.get("live_knowledge_references", [])),
                 )
                 return item
@@ -115,13 +110,11 @@ async def run_probe(base: str, users: int, ui_budget: float) -> dict:
 
     elapsed_values = [float(item["elapsed_seconds"]) for item in results]
     successful = [item for item in results if item.get("http") == 200]
-    clean_three = [
+    clean_two = [
         item for item in successful
         if item.get("rule_nonempty")
         and item.get("knowledge_nonempty")
-        and item.get("model_nonempty")
         and not item.get("knowledge_ai_error")
-        and not item.get("model_ai_error")
     ]
     return {
         "synthetic_only": True,
@@ -135,14 +128,9 @@ async def run_probe(base: str, users: int, ui_budget: float) -> dict:
         "batch_elapsed_seconds": round(perf_counter() - batch_started, 3),
         "summary": {
             "http_200": len(successful),
-            "three_feedback_clean": len(clean_three),
+            "two_feedback_clean": len(clean_two),
             "within_ui_budget": sum(bool(item["within_ui_budget"]) for item in results),
             "knowledge_ai_errors": sum(bool(item.get("knowledge_ai_error")) for item in results),
-            "model_ai_errors": sum(bool(item.get("model_ai_error")) for item in results),
-            "partial_ai_feedback": sum(
-                bool(item.get("knowledge_ai_error")) != bool(item.get("model_ai_error"))
-                for item in results
-            ),
             "transport_or_http_errors": sum(item.get("http") != 200 for item in results),
             "mean_seconds": round(statistics.mean(elapsed_values), 3),
             "p50_seconds": round(percentile(elapsed_values, 0.50), 3),
@@ -157,7 +145,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="https://taoran.yudaozhijian.top")
     parser.add_argument("--users", type=int, default=10)
-    parser.add_argument("--ui-budget", type=float, default=30.0)
+    parser.add_argument("--ui-budget", type=float, default=15.0)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if not 1 <= args.users <= 50:

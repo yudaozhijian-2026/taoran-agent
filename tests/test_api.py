@@ -45,7 +45,7 @@ def test_health() -> None:
     assert response.json()["status"] == "ok"
 
 
-def test_model_button_still_returns_advice_only(monkeypatch):
+def test_button_returns_two_advisory_feedbacks_without_model_call(monkeypatch):
     from test_llm import reviewer_for
 
     from taoran_agent.agent import TaoranAgent
@@ -67,12 +67,24 @@ def test_model_button_still_returns_advice_only(monkeypatch):
     assert "规则＋大模型" not in response.json()["feedback_text"]
     body = response.json()
     assert body["feedback_text"] == body["rule_feedback_text"]
-    assert "纯AI反馈" in body["model_feedback_text"]
+    assert "model_feedback_text" not in body
+    assert "model_status" not in body
+    assert "model_check_id" not in body
     assert "配置TAORAN专用知识库API Key" in body["knowledge_feedback_text"]
-    assert len(calls) == 1
+    assert len(calls) == 0
 
 
-def test_button_returns_rule_live_knowledge_and_pure_model_feedback(monkeypatch):
+def test_public_pure_model_precheck_is_retired() -> None:
+    payload = complete_precheck_payload("retired-pure-model-feedback")
+    payload["feedback_mode"] = "ai"
+
+    response = TestClient(api.app).post("/api/v1/visit/checks", json=payload)
+
+    assert response.status_code == 410
+    assert "纯大模型反馈功能已取消" in response.json()["detail"]
+
+
+def test_button_returns_rule_and_live_knowledge_feedback(monkeypatch):
     from test_llm import reviewer_for
 
     from taoran_agent.agent import TaoranAgent
@@ -103,15 +115,13 @@ def test_button_returns_rule_live_knowledge_and_pure_model_feedback(monkeypatch)
     assert body["feedback_text"] == body["rule_feedback_text"]
     assert "TAORAN六项检查：" in body["rule_feedback_text"]
     assert "知识库反馈" in body["knowledge_feedback_text"]
-    assert "纯AI反馈" in body["model_feedback_text"]
+    assert "model_feedback_text" not in body
     assert body["live_knowledge_snapshot_hash"]
     assert {item["id"] for item in body["live_knowledge_references"]} == {
         "DSM-BS-000", "DSM-BS-01-07",
     }
     assert body["official_score_generated"] is False
-    assert len(calls) == 1
-    prompts = [call[1]["messages"][0]["content"] for call in calls]
-    assert all("LIVE-KNOWLEDGE-API-CONTENT" not in prompt for prompt in prompts)
+    assert len(calls) == 0
     assert "【提交前TAORAN检查｜知识库反馈（AI自然表达）】" in body["knowledge_feedback_text"]
     assert body["knowledge_status"] in {"passed", "needs_revision", "review"}
     assert body["live_knowledge_snapshot_hash"] == live_snapshot.snapshot_hash
@@ -182,7 +192,7 @@ def test_knowledge_ai_wording_uses_only_unmet_items_and_reuses_digest_cache(
 
     assert all(response.status_code == 200 for response in responses)
     assert wording_calls == 1
-    assert pure_calls == 2
+    assert pure_calls == 0
     assert all(
         "知识库反馈（AI自然表达）" in response.json()["knowledge_feedback_text"]
         for response in responses
@@ -298,13 +308,13 @@ def test_concurrent_buttons_use_one_model_call_each(monkeypatch, tmp_path):
         reviewer.close()
 
     assert all(response.status_code == 200 for response in responses)
-    assert calls == 4
+    assert calls == 0
     assert knowledge_fetches == 1
-    assert maximum_active == 4
+    assert maximum_active == 0
     for response in responses:
         body = response.json()
         assert "大模型调用超时" not in body["knowledge_feedback_text"]
-        assert "AI调用异常" not in body["model_feedback_text"]
+        assert "model_feedback_text" not in body
 
 
 def test_button_t03_uses_exact_knowledge_mapping_and_rejects_p6(monkeypatch):
@@ -370,12 +380,7 @@ def test_button_t03_uses_exact_knowledge_mapping_and_rejects_p6(monkeypatch):
         "DSM-BS-01-06"
     }
     assert calls == 1
-    prompts = [call[1]["messages"][0]["content"] for call in model_calls]
-    assert len(prompts) == 1
-    pure_prompt = prompts[0]
-    assert "潜力客户：收集信息" not in pure_prompt
-    assert "source_knowledge_id" not in pure_prompt
-    assert "allowed_purposes" not in pure_prompt
+    assert model_calls == []
 
 
 def test_direct_precheck_t03_accepts_current_stage_purpose(monkeypatch):
@@ -493,12 +498,12 @@ def test_model_failure_retry_requires_enabled_model_and_reanalysis(monkeypatch):
     retried = client.post(url, params={"tenant_id": "tenant_demo"})
     successful_reviewer.close()
     assert retried.status_code == 200
-    # 一次重新执行提交后深评，另一次补生成纯大模型填写反馈；知识库未配置时不调用模型。
-    assert len(calls) == 2
+    # 仅重新执行一次提交后深评；知识库未配置时不额外调用模型。
+    assert len(calls) == 1
     assert written == [100]
     assert retried.json()["writeback"]["status"] == "succeeded"
     assert retried.json()["knowledge_feedback_text"]
-    assert retried.json()["model_feedback_text"]
+    assert "model_feedback_text" not in retried.json()
 
 
 def test_model_activation_changes_auto_submission_identity_without_breaking_idempotency(monkeypatch):
@@ -687,7 +692,7 @@ def test_date_anomaly_returns_feedback_instead_of_server_error(shape, day, monke
     if shape != "standard":
         assert result["official_score_generated"] is False
         assert "record_quality_score" not in result
-    assert len(model_calls) == (0 if shape == "standard" else 1)
+    assert model_calls == []
 
 
 def test_repeated_date_anomaly_then_correction_refreshes_button_feedback():

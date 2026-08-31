@@ -7,10 +7,8 @@ const feedback = (message) => {
     feedback_text: text,
     rule_feedback_text: text,
     knowledge_feedback_text: text,
-    model_feedback_text: text,
     check_status: 'unavailable',
     knowledge_check_status: 'unavailable',
-    model_check_status: 'unavailable',
   };
 };
 const config = agentConf || {};
@@ -132,8 +130,8 @@ try {
     url: endpoint.toString(),
     headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenant, 'X-API-Key': key },
     data: payload,
-    // 三份反馈包含两次并行模型分析；保留30秒预算，避免模型在10秒边界完成后被前端提前中断。
-    timeout: 30000,
+    // 已取消独立纯大模型反馈；规则与知识库两份反馈应在简道云15秒窗口内完成。
+    timeout: 15000,
     maxRedirects: 0, // 防止带密钥的请求跟随重定向到其他地址。
     maxBodyLength: 262144,
     maxContentLength: 262144,
@@ -145,21 +143,17 @@ try {
       !['passed', 'needs_revision', 'review'].includes(result.status) ||
       typeof result.rule_feedback_text !== 'string' || !result.rule_feedback_text.trim() ||
       typeof result.knowledge_feedback_text !== 'string' || !result.knowledge_feedback_text.trim() ||
-      typeof result.model_feedback_text !== 'string' || !result.model_feedback_text.trim() ||
       result.feedback_text !== result.rule_feedback_text ||
-      !['passed', 'needs_revision', 'review'].includes(result.knowledge_status) ||
-      !['passed', 'needs_revision', 'review'].includes(result.model_status)) {
+      !['passed', 'needs_revision', 'review'].includes(result.knowledge_status)) {
     return feedback('服务未返回有效的本次检查意见，请稍后重试。');
   }
-  // feedback_text保留给旧规则反馈映射；新字段各取独立返回值。
+  // feedback_text保留给旧规则反馈映射；知识库反馈使用独立返回值。
   return {
     feedback_text: result.rule_feedback_text,
     rule_feedback_text: result.rule_feedback_text,
     knowledge_feedback_text: result.knowledge_feedback_text,
-    model_feedback_text: result.model_feedback_text,
     check_status: result.status,
     knowledge_check_status: result.knowledge_status,
-    model_check_status: result.model_status,
   };
 } catch (_) {
   // 不回显错误对象：HTTP错误中可能包含请求头和完整拜访内容。

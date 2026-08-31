@@ -1,0 +1,14 @@
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+USER root
+ARG PROJECT_WHEEL
+COPY ${PROJECT_WHEEL} /tmp/${PROJECT_WHEEL}
+RUN uv pip install \
+      --python /app/.venv/bin/python \
+      --no-deps \
+      --reinstall \
+      /tmp/${PROJECT_WHEEL} \
+    && rm /tmp/${PROJECT_WHEEL}
+
+USER 10001:10001

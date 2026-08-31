@@ -811,10 +811,9 @@
       ["opportunities.historical_stage", "关联商机阶段信息 / 历史商机阶段"],
       ["opportunities.current_stage", "关联商机阶段信息 / 最新商机阶段"],
     ]);
-    addMappingTable(parent, "插件返回值（分别写入三个反馈字段）", [
+    addMappingTable(parent, "插件返回值（分别写入两个反馈字段）", [
       ["rule_feedback_text", "AI反馈意见（规则反馈）"],
       ["knowledge_feedback_text", "AI反馈意见（知识库反馈）"],
-      ["model_feedback_text", "AI反馈意见（大模型反馈）"],
     ]);
   }
 

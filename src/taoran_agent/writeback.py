@@ -28,7 +28,6 @@ def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
         "effective_visit_recommendation": response.count_as_effective_visit_recommendation,
         "ai_opinion": response.ai_opinion,
         "knowledge_feedback": response.knowledge_feedback_text,
-        "model_feedback": response.model_feedback_text,
         "ai_suggestions": "\n".join(response.manager_coaching_suggestions),
         "rule_version": response.rule_version,
         "agent_version": response.agent_version,
@@ -113,11 +112,11 @@ def writeback_evaluation(
         )
     canonical_values = evaluation_writeback_values(response)
     if official_writeback_blocked:
-        # 正式评分与规则反馈继续受严格证据门控；两条非评分反馈独立回写。
+        # 正式评分与规则反馈继续受严格证据门控；知识库反馈可独立回写。
         canonical_values = {
             name: value
             for name, value in canonical_values.items()
-            if name in {"knowledge_feedback", "model_feedback"}
+            if name == "knowledge_feedback"
         }
     values = {
         widget_id: _format_widget_value(canonical_values[name], output_fields[name])
@@ -162,7 +161,7 @@ def writeback_evaluation(
         target_data_id=target.data_id,
         written_fields=sorted(values),
         error_message=(
-            "大模型复核未完成，已保留知识库和大模型填写反馈；"
+            "大模型复核未完成，已保留知识库填写反馈；"
             "未覆盖原AI评分和规则反馈，重试时先重新分析。"
             if official_writeback_blocked
             else None

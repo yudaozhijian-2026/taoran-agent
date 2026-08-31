@@ -314,7 +314,7 @@ class PrecheckResponse(BaseModel):
 
 
 class ButtonPrecheckResponse(BaseModel):
-    """单次按钮同时返回三份反馈，不提供任何正式评分字段。"""
+    """单次按钮同时返回规则和知识库两份反馈，不提供任何正式评分字段。"""
 
     check_id: str
     trace_id: str
@@ -334,12 +334,9 @@ class ButtonPrecheckResponse(BaseModel):
     feedback_text: str
     rule_feedback_text: str = ""
     knowledge_feedback_text: str = ""
-    model_feedback_text: str = ""
     rule_status: Literal["passed", "needs_revision", "review"] = "review"
     knowledge_status: Literal["passed", "needs_revision", "review"] = "review"
-    model_status: Literal["passed", "needs_revision", "review"] = "review"
     knowledge_check_id: str | None = None
-    model_check_id: str | None = None
     live_knowledge_snapshot_hash: str = ""
     live_knowledge_references: list[KnowledgeReference] = Field(default_factory=list)
     input_snapshot_hash: str
@@ -362,11 +359,10 @@ class ButtonPrecheckResponse(BaseModel):
         )
 
     @classmethod
-    def from_three_prechecks(
+    def from_two_prechecks(
         cls,
         rule: PrecheckResponse,
         knowledge: PrecheckResponse,
-        model: PrecheckResponse,
         *,
         latency_ms: int,
     ) -> ButtonPrecheckResponse:
@@ -377,12 +373,9 @@ class ButtonPrecheckResponse(BaseModel):
                 "feedback_text": rule.feedback_text,
                 "rule_feedback_text": rule.feedback_text,
                 "knowledge_feedback_text": knowledge.feedback_text,
-                "model_feedback_text": model.feedback_text,
                 "rule_status": rule.status,
                 "knowledge_status": knowledge.status,
-                "model_status": model.status,
                 "knowledge_check_id": knowledge.check_id,
-                "model_check_id": model.check_id,
                 "live_knowledge_snapshot_hash": knowledge.knowledge_snapshot_hash,
                 "live_knowledge_references": knowledge.knowledge_references,
                 "latency_ms": latency_ms,
@@ -509,9 +502,8 @@ class EvaluationResponse(BaseModel):
     manager_coaching_suggestions: list[str]
     recommended_training_projects: list[str]
     ai_opinion: str
-    # 提交后保留两条独立的填写检查反馈，供简道云新增字段回写。
+    # 提交后保留知识库填写检查反馈，供简道云独立字段回写。
     knowledge_feedback_text: str = ""
-    model_feedback_text: str = ""
     semantic_facts: Q34SemanticFacts
     writeback: WritebackResult
     input_snapshot_hash: str

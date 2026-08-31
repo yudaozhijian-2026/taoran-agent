@@ -42,21 +42,19 @@ def test_plugin_preserves_current_multiline_text(text):
         'next_contact_at': None,
     }
     assert call['headers']['X-API-Key'] == 'synthetic-test-key'
-    assert call['timeout'] == 30000
+    assert call['timeout'] == 15000
     assert call['maxRedirects'] == 0
     assert 'synthetic-test-key' not in call['url']
     assert result['result'] == {
         'feedback_text': '合成规则意见',
         'rule_feedback_text': '合成规则意见',
         'knowledge_feedback_text': '合成知识库意见',
-        'model_feedback_text': '合成大模型意见',
         'check_status': 'passed',
         'knowledge_check_status': 'passed',
-        'model_check_status': 'passed',
     }
 
 
-def test_plugin_one_click_returns_three_feedback_fields():
+def test_plugin_one_click_returns_two_feedback_fields():
     result = run_button_plugin(
         {'process_description': '客户确认测试安排。'},
     )
@@ -64,7 +62,7 @@ def test_plugin_one_click_returns_three_feedback_fields():
     assert result['calls'][0]['data']['next_contact_at'] is None
     assert result['result']['rule_feedback_text'] == '合成规则意见'
     assert result['result']['knowledge_feedback_text'] == '合成知识库意见'
-    assert result['result']['model_feedback_text'] == '合成大模型意见'
+    assert 'model_feedback_text' not in result['result']
 
 
 def test_plugin_distinguishes_missing_and_cleared_field():
@@ -168,8 +166,7 @@ def test_plugin_rejects_non_precheck_response(response):
     assert result['result']['check_status'] == 'unavailable'
     assert set(result['result']) == {
         'feedback_text', 'rule_feedback_text', 'knowledge_feedback_text',
-        'model_feedback_text', 'check_status', 'knowledge_check_status',
-        'model_check_status',
+        'check_status', 'knowledge_check_status',
     }
 
 

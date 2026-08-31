@@ -15,8 +15,7 @@ const fakeAxios = async (options) => {
       submission_blocked: false, status: 'passed', feedback_text: '合成规则意见',
       rule_feedback_text: '合成规则意见',
       knowledge_feedback_text: '合成知识库意见',
-      model_feedback_text: '合成大模型意见',
-      knowledge_status: 'passed', model_status: 'passed',
+      knowledge_status: 'passed',
     },
   };
 };
