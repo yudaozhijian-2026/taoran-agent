@@ -90,6 +90,14 @@
       row.append(name, id, form, state);
       const actions = document.createElement("div");
       actions.className = "tenant-actions";
+      const runtime = document.createElement("button");
+      runtime.type = "button";
+      runtime.className = "ghost compact-button";
+      runtime.textContent = "运行状态";
+      runtime.addEventListener("click", async () => {
+        await showView("runtime", tenant.tenant_id);
+      });
+      actions.append(runtime);
       const deploy = document.createElement("button");
       deploy.type = "button";
       deploy.className = "primary compact-button";
@@ -121,6 +129,213 @@
       row.append(actions);
       return row;
     }));
+  }
+
+  async function showView(view, focusTenantId = null) {
+    const runtimeView = $("#runtimeView");
+    const onboardingView = $("#onboardingView");
+    const showingRuntime = view === "runtime";
+    runtimeView.classList.toggle("hidden", !showingRuntime);
+    onboardingView.classList.toggle("hidden", showingRuntime);
+    $("#showRuntimeButton").classList.toggle("active", showingRuntime);
+    $("#showOnboardingButton").classList.toggle("active", !showingRuntime);
+    if (showingRuntime) {
+      await loadRuntimeStatus();
+      if (focusTenantId) {
+        document.getElementById(`runtime-${focusTenantId}`)?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }
+    }
+  }
+
+  async function loadRuntimeStatus() {
+    const message = $("#runtimeMessage");
+    clearMessage(message);
+    const button = $("#refreshRuntimeButton");
+    button.disabled = true;
+    button.textContent = "正在读取运行记录…";
+    try {
+      const data = await request("/api/v1/admin/runtime-status");
+      renderSystemRuntime(data.system, data.generated_at);
+      renderTenantRuntime(data.tenants || []);
+    } catch (error) {
+      showMessage(message, error.message);
+    } finally {
+      button.disabled = false;
+      button.textContent = "刷新运行状态";
+    }
+  }
+
+  function renderSystemRuntime(system, generatedAt) {
+    const cards = $("#systemRuntimeCards");
+    const items = [
+      ["TAORAN服务", system.service_status === "ok" ? "运行正常" : "异常", system.service_status === "ok"],
+      ["当前版本", `v${system.version}`, true],
+      ["大模型", system.llm_enabled ? `${system.llm_model} · 已启用` : "未启用", system.llm_enabled],
+      ["DSM知识库", system.knowledge_api_configured ? "已连接" : "未配置", system.knowledge_api_configured],
+    ];
+    cards.replaceChildren(...items.map(([label, value, ok]) => {
+      const card = document.createElement("div");
+      card.className = "runtime-system-card";
+      const caption = document.createElement("span");
+      caption.textContent = label;
+      const result = document.createElement("strong");
+      result.className = ok ? "runtime-ok" : "runtime-warn";
+      result.textContent = value;
+      card.append(caption, result);
+      return card;
+    }));
+    const updated = document.createElement("p");
+    updated.className = "runtime-updated";
+    updated.textContent = `状态更新时间：${formatRuntimeTime(generatedAt)}`;
+    cards.append(updated);
+  }
+
+  function renderTenantRuntime(tenants) {
+    const list = $("#tenantRuntimeList");
+    if (!tenants.length) {
+      const empty = document.createElement("div");
+      empty.className = "card empty";
+      empty.textContent = "尚未接入客户，完成客户接入后这里会显示运行状态。";
+      list.replaceChildren(empty);
+      return;
+    }
+    list.replaceChildren(...tenants.map(buildTenantRuntimeCard));
+  }
+
+  function buildTenantRuntimeCard(tenant) {
+    const state = runtimeState(tenant.deployment_state);
+    const activity = tenant.activity;
+    const precheck = activity.precheck;
+    const evaluation = activity.evaluation;
+    const latestCheck = precheck.latest;
+    const latestEvaluation = evaluation.latest;
+    const card = document.createElement("article");
+    card.id = `runtime-${tenant.tenant_id}`;
+    card.className = "card runtime-tenant-card";
+
+    const heading = document.createElement("div");
+    heading.className = "runtime-tenant-heading";
+    const identity = document.createElement("div");
+    const title = document.createElement("h3");
+    title.textContent = tenant.display_name;
+    const meta = document.createElement("p");
+    meta.className = "hint";
+    meta.textContent = `${tenant.jiandaoyun.entry_name || "表单待确认"} · ${tenant.tenant_id}`;
+    identity.append(title, meta);
+    const badge = document.createElement("span");
+    badge.className = `runtime-state ${state.kind}`;
+    badge.textContent = state.label;
+    heading.append(identity, badge);
+    card.append(heading);
+
+    const progress = document.createElement("div");
+    progress.className = "runtime-progress";
+    addRuntimeStage(progress, "1", "客户配置", tenant.enabled ? "字段已确认，客户已启用" : "仍有字段待确认", tenant.enabled);
+    addRuntimeStage(
+      progress,
+      "2",
+      "AI检测按钮",
+      precheck.total_count
+        ? `已收到 ${precheck.total_count} 次检测；最近 ${formatRuntimeTime(latestCheck?.created_at)}`
+        : "尚未收到真实AI检测",
+      precheck.total_count > 0,
+    );
+    addRuntimeStage(
+      progress,
+      "3",
+      "提交后评价",
+      evaluation.total_count
+        ? `共 ${evaluation.total_count} 次；最近状态：${evaluationStatusText(latestEvaluation?.status)}`
+        : "尚未收到表单提交事件",
+      latestEvaluation?.status === "completed",
+    );
+    addRuntimeStage(
+      progress,
+      "4",
+      "简道云回写",
+      latestEvaluation
+        ? `最近回写：${writebackStatusText(latestEvaluation.writeback_status)}`
+        : "尚无回写记录",
+      latestEvaluation?.writeback_status === "succeeded",
+    );
+    card.append(progress);
+
+    const next = document.createElement("p");
+    next.className = `runtime-next ${state.kind}`;
+    next.textContent = `下一步：${state.next}`;
+    card.append(next);
+
+    const facts = document.createElement("div");
+    facts.className = "runtime-facts";
+    addRuntimeFact(facts, "最近AI检测", latestCheck ? `${latestCheck.result_status || "已完成"} · ${latestCheck.semantic_model || "本地规则"}` : "无记录");
+    addRuntimeFact(facts, "最近评分", latestEvaluation?.total_score == null ? "无记录" : `${latestEvaluation.total_score}/100（Q33 ${latestEvaluation.q33_score}，Q34 ${latestEvaluation.q34_score}）`);
+    addRuntimeFact(facts, "评价任务统计", `完成 ${evaluation.completed_count} · 失败 ${evaluation.failed_count} · 处理中 ${evaluation.pending_count}`);
+    addRuntimeFact(facts, "成功回写次数", String(evaluation.writeback_succeeded_count));
+    card.append(facts);
+
+    const problem = latestEvaluation?.writeback_error || latestEvaluation?.job_error || latestEvaluation?.failure_reason || latestCheck?.failure_reason;
+    if (problem) {
+      const warning = document.createElement("p");
+      warning.className = "runtime-problem";
+      warning.textContent = `最近异常：${problem}`;
+      card.append(warning);
+    }
+    return card;
+  }
+
+  function addRuntimeStage(parent, number, titleText, detailText, completed) {
+    const item = document.createElement("div");
+    item.className = `runtime-stage ${completed ? "completed" : "pending"}`;
+    const numberBadge = document.createElement("span");
+    numberBadge.textContent = completed ? "✓" : number;
+    const text = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = titleText;
+    const detail = document.createElement("small");
+    detail.textContent = detailText;
+    text.append(title, detail);
+    item.append(numberBadge, text);
+    parent.append(item);
+  }
+
+  function addRuntimeFact(parent, labelText, valueText) {
+    const item = document.createElement("div");
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const value = document.createElement("strong");
+    value.textContent = valueText;
+    item.append(label, value);
+    parent.append(item);
+  }
+
+  function runtimeState(state) {
+    return ({
+      configuration_pending: { label: "配置未完成", kind: "warning", next: "返回客户接入配置，处理全部待确认字段。" },
+      awaiting_plugin_test: { label: "等待AI检测测试", kind: "waiting", next: "在简道云草稿页点击一次AI检测按钮。" },
+      awaiting_submission_test: { label: "等待提交测试", kind: "waiting", next: "提交一条专用测试记录，验证深度评价和回写。" },
+      evaluation_running: { label: "评价处理中", kind: "waiting", next: "稍后刷新本页查看评价和回写结果。" },
+      evaluation_failed: { label: "评价失败", kind: "danger", next: "检查最近异常，修复后重新提交测试记录。" },
+      writeback_attention: { label: "回写待处理", kind: "danger", next: "检查推送签名、输出字段和简道云API写入权限。" },
+      operational: { label: "部署完成 · 运行正常", kind: "success", next: "保持监控；正式迁移前再完成一次业务验收。" },
+    })[state] || { label: "状态未知", kind: "warning", next: "刷新页面或联系管理员检查服务。" };
+  }
+
+  function evaluationStatusText(status) {
+    return ({ queued: "等待中", running: "处理中", completed: "已完成", failed: "失败" })[status] || status || "未知";
+  }
+
+  function writebackStatusText(status) {
+    return ({ succeeded: "成功", failed: "失败", skipped: "未执行" })[status] || "尚未执行";
+  }
+
+  function formatRuntimeTime(value) {
+    if (!value) return "无记录";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return value;
+    return date.toLocaleString("zh-CN", { timeZone: "Asia/Shanghai", hour12: false });
   }
 
   function populateForms() {
@@ -237,11 +452,25 @@
     loginPanel.classList.remove("hidden");
     $("#serverStatus").textContent = "未连接";
     $("#serverStatus").className = "status muted";
+    $("#runtimeView").classList.add("hidden");
+    $("#onboardingView").classList.remove("hidden");
+    $("#showRuntimeButton").classList.remove("active");
+    $("#showOnboardingButton").classList.add("active");
   });
 
   $("#refreshButton").addEventListener("click", async () => {
     try { await loadTenants(); } catch (error) { showMessage(saveMessage, error.message); }
   });
+
+  $("#showOnboardingButton").addEventListener("click", async () => {
+    await showView("onboarding");
+  });
+
+  $("#showRuntimeButton").addEventListener("click", async () => {
+    await showView("runtime");
+  });
+
+  $("#refreshRuntimeButton").addEventListener("click", loadRuntimeStatus);
 
   apiKeyInput.addEventListener("input", () => {
     if (connectedApiKey && apiKeyInput.value.trim() !== connectedApiKey) {

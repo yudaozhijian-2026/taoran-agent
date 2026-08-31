@@ -74,7 +74,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.12.0",
+    version="0.13.0",
     description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
@@ -284,6 +284,54 @@ def tenant_admin_list(
     settings = get_settings()
     verify_admin_access(settings, x_admin_key)
     return {"tenants": list_tenants(settings)}
+
+
+@app.get("/api/v1/admin/runtime-status")
+def tenant_admin_runtime_status(
+    x_admin_key: str | None = Header(default=None),
+) -> dict[str, Any]:
+    settings = get_settings()
+    verify_admin_access(settings, x_admin_key)
+    store = get_store(settings)
+    tenants = []
+    for tenant in list_tenants(settings):
+        activity = store.tenant_runtime_activity(tenant["tenant_id"])
+        tenants.append(
+            {
+                **tenant,
+                "deployment_state": _deployment_state(tenant, activity),
+                "activity": activity,
+            }
+        )
+    return {
+        "generated_at": datetime.now(UTC).isoformat(),
+        "system": {
+            "service_status": "ok",
+            "version": app.version,
+            "llm_enabled": settings.llm_enabled,
+            "llm_model": settings.llm_model if settings.llm_enabled else None,
+            "knowledge_api_configured": bool(settings.knowledge_api_key),
+        },
+        "tenants": tenants,
+    }
+
+
+def _deployment_state(tenant: dict[str, Any], activity: dict[str, Any]) -> str:
+    if not tenant["enabled"]:
+        return "configuration_pending"
+    if activity["precheck"]["total_count"] == 0:
+        return "awaiting_plugin_test"
+    evaluation = activity["evaluation"]
+    if evaluation["total_count"] == 0:
+        return "awaiting_submission_test"
+    latest = evaluation["latest"] or {}
+    if latest.get("status") not in {"completed", "failed"}:
+        return "evaluation_running"
+    if latest.get("status") == "failed":
+        return "evaluation_failed"
+    if latest.get("writeback_status") != "succeeded":
+        return "writeback_attention"
+    return "operational"
 
 
 @app.post(

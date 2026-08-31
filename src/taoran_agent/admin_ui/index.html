@@ -40,7 +40,13 @@
         <button id="logoutButton" type="button" class="ghost">退出</button>
       </div>
 
-      <div class="grid">
+      <nav class="page-tabs" aria-label="管理页面">
+        <button id="showOnboardingButton" type="button" class="page-tab active">客户接入配置</button>
+        <button id="showRuntimeButton" type="button" class="page-tab">部署完成 / 运行状态</button>
+      </nav>
+
+      <div id="onboardingView" class="view-panel">
+        <div class="grid">
         <section class="card form-card">
           <div class="section-title">
             <h2>连接简道云</h2>
@@ -93,17 +99,32 @@
           <div id="emptyResult" class="empty">提交后，这里会显示连接、字段匹配和启用结果。</div>
           <div id="resultContent" class="hidden"></div>
         </aside>
+        </div>
+
+        <section class="card tenant-list-card">
+          <div class="section-title list-heading">
+            <div>
+              <h2>已接入客户</h2>
+              <p class="hint">已隐藏 API Key 和签名密钥。</p>
+            </div>
+            <button id="refreshButton" type="button" class="ghost">刷新</button>
+          </div>
+          <div id="tenantList" class="tenant-list"></div>
+        </section>
       </div>
 
-      <section class="card tenant-list-card">
-        <div class="section-title list-heading">
+      <section id="runtimeView" class="view-panel hidden">
+        <div class="runtime-heading">
           <div>
-            <h2>已接入客户</h2>
-            <p class="hint">已隐藏 API Key 和签名密钥。</p>
+            <p class="eyebrow">真实运行证据</p>
+            <h2>部署完成 / 运行状态</h2>
+            <p class="hint">根据客户配置、AI检测、提交后评价和简道云回写记录自动判断。</p>
           </div>
-          <button id="refreshButton" type="button" class="ghost">刷新</button>
+          <button id="refreshRuntimeButton" type="button" class="ghost">刷新运行状态</button>
         </div>
-        <div id="tenantList" class="tenant-list"></div>
+        <div id="runtimeMessage" class="message hidden" role="alert"></div>
+        <div id="systemRuntimeCards" class="runtime-system-grid"></div>
+        <div id="tenantRuntimeList" class="runtime-tenant-list"></div>
       </section>
     </section>
   </main>

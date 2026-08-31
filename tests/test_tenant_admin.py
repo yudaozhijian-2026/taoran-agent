@@ -75,6 +75,7 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
     assert 'name="tenant_id"' not in page.text
     assert 'id="applicationSelect"' in page.text
     assert 'id="formSelect"' in page.text
+    assert "部署完成 / 运行状态" in page.text
     assert "frame-ancestors 'none'" in page.headers["content-security-policy"]
     assert unauthenticated.status_code == 401
     assert authenticated.status_code == 200
@@ -92,6 +93,16 @@ def test_admin_page_is_protected_and_serves_packaged_assets(monkeypatch) -> None
     assert "按子表单赋值" in script.text
     assert "rule_feedback_text" in script.text
     assert "常见问题检查顺序" in script.text
+    assert "部署完成 · 运行正常" in script.text
+    assert "/api/v1/admin/runtime-status" in script.text
+
+    runtime_status = client.get(
+        "/api/v1/admin/runtime-status",
+        headers={"X-Admin-Key": "admin-test-key"},
+    )
+    assert runtime_status.status_code == 200
+    assert runtime_status.json()["system"]["service_status"] == "ok"
+    assert runtime_status.json()["tenants"] == []
 
     monkeypatch.setenv("DSM_TAORAN_ADMIN_ENABLED", "false")
     monkeypatch.delenv("DSM_TAORAN_ADMIN_API_KEY")
@@ -240,7 +251,7 @@ def test_legacy_duplicate_form_bindings_are_collapsed_in_customer_list(
     registry = json.loads(registry_path.read_text(encoding="utf-8"))
     duplicate = json.loads(json.dumps(registry["tenants"]["customer_a"]))
     duplicate["display_name"] = "历史重复客户"
-    duplicate["created_at"] = "2026-08-28T00:00:00+00:00"
+    duplicate["created_at"] = "2099-08-28T00:00:00+00:00"
     registry["tenants"]["customer_b"] = duplicate
     registry_path.write_text(
         json.dumps(registry, ensure_ascii=False, indent=2),

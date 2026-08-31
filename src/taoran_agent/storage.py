@@ -239,6 +239,79 @@ class AgentStore:
         ).fetchone()
         return self._evaluation_record(row) if row else None
 
+    def tenant_runtime_activity(self, tenant_id: str) -> dict[str, Any]:
+        """Return redacted operational evidence for the admin status dashboard."""
+        precheck_rows = self._connection.execute(
+            """
+            SELECT check_id, response_json, created_at FROM precheck_runs
+            WHERE tenant_id = ? ORDER BY created_at DESC
+            """,
+            (tenant_id,),
+        ).fetchall()
+        evaluation_rows = self._connection.execute(
+            """
+            SELECT job_id, status, response_json, error_message, created_at, updated_at
+            FROM evaluation_jobs WHERE tenant_id = ? ORDER BY updated_at DESC
+            """,
+            (tenant_id,),
+        ).fetchall()
+
+        latest_precheck = None
+        if precheck_rows:
+            row = precheck_rows[0]
+            response = json.loads(row["response_json"])
+            semantic = response.get("semantic_review") or {}
+            latest_precheck = {
+                "check_id": row["check_id"],
+                "created_at": row["created_at"],
+                "result_status": response.get("status"),
+                "semantic_status": semantic.get("status"),
+                "semantic_model": semantic.get("model"),
+                "failure_reason": semantic.get("failure_reason"),
+            }
+
+        latest_evaluation = None
+        writeback_succeeded_count = 0
+        for index, row in enumerate(evaluation_rows):
+            response = json.loads(row["response_json"]) if row["response_json"] else {}
+            writeback = response.get("writeback") or {}
+            if writeback.get("status") == "succeeded":
+                writeback_succeeded_count += 1
+            if index == 0:
+                semantic = response.get("semantic_facts") or {}
+                latest_evaluation = {
+                    "job_id": row["job_id"],
+                    "status": row["status"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"],
+                    "total_score": response.get("total_score"),
+                    "q33_score": response.get("q33_score"),
+                    "q34_score": response.get("q34_score"),
+                    "semantic_model": semantic.get("model"),
+                    "semantic_provider": semantic.get("provider"),
+                    "failure_reason": semantic.get("failure_reason"),
+                    "writeback_status": writeback.get("status"),
+                    "writeback_error": writeback.get("error_message"),
+                    "job_error": row["error_message"],
+                }
+
+        return {
+            "precheck": {
+                "total_count": len(precheck_rows),
+                "latest": latest_precheck,
+            },
+            "evaluation": {
+                "total_count": len(evaluation_rows),
+                "completed_count": sum(row["status"] == "completed" for row in evaluation_rows),
+                "failed_count": sum(row["status"] == "failed" for row in evaluation_rows),
+                "pending_count": sum(
+                    row["status"] not in {"completed", "failed"} for row in evaluation_rows
+                ),
+                "writeback_succeeded_count": writeback_succeeded_count,
+                "latest": latest_evaluation,
+            },
+        }
+
     def list_completed_evaluations(
         self,
         tenant_id: str,
