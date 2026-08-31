@@ -119,10 +119,10 @@ def test_missing_core_fields_returns_advice_without_blocking() -> None:
     assert "PRECHECK_CUSTOMER_ID_MISSING" in codes
     assert "AI调用异常。异常原因：系统未获取当前客户标识" in result.feedback_text
     assert "TAORAN_KR_MISSING" in codes
-    assert "O/KR｜拜访目的与关键结果：未达标。\n检查标准：" in result.feedback_text
-    assert "N｜下一步客户行动：未达标。\n检查标准：" in result.feedback_text
+    assert "O/KR｜拜访目的与关键结果：待改进。\n检查标准：" in result.feedback_text
+    assert "N｜下一步客户行动：待改进。\n检查标准：" in result.feedback_text
     assert "A｜预约与拜访方式：达标。\n检查标准：" in result.feedback_text
-    assert "R｜过程事实与结果：未达标。\n检查标准：" in result.feedback_text
+    assert "R｜过程事实与结果：待改进。\n检查标准：" in result.feedback_text
     assert result.feedback_text.count("达成评价缺少关键结果和过程事实支持") == 1
 
 

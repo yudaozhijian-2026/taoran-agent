@@ -584,6 +584,7 @@ def _with_live_purpose_policy(
             "purpose_mapping_knowledge_id": mapping.knowledge_id,
             "purpose_mapping_knowledge_version": mapping.knowledge_version,
             "purpose_mapping_content_hash": mapping.content_hash,
+            "purpose_mapping_policy_version": policy.policy_version,
         }
     )
     visit = request.visit.model_copy(
@@ -883,6 +884,9 @@ def jiandaoyun_button_precheck(
         flat_request.pop("request_id", None)
         form_revision = flat_request.pop("form_revision", None)
         source_record_id = flat_request.pop("source_record_id", None)
+        # 简道云会在日期字段为空时省略整个按钮参数。下一次联系日期允许暂时
+        # 未填写，因此将这种省略规范化为空值，让规则给出具体补充建议。
+        flat_request.setdefault("next_contact_at", None)
         structured_request = JiandaoyunCheckRequest.model_validate(
             {
                 "context": {

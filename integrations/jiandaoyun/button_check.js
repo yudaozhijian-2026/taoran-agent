@@ -56,6 +56,11 @@ for (const field of fields) {
     }
   }
 }
+// 简道云会省略空日期参数；下一次联系日期属于允许暂时未填写的业务字段，
+// 规范化为空值后由六项规则给出补充建议，不误报为插件漏传。
+if (!Object.prototype.hasOwnProperty.call(payload, 'next_contact_at')) {
+  payload.next_contact_at = null;
+}
 // 通讯录字段经插件文本参数传入 JSON 数组；只转发稳定编号，不转发姓名。
 try {
   let member = payload.employee_id;

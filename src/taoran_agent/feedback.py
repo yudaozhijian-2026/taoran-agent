@@ -321,7 +321,7 @@ def _failed_section_analysis(name: str, issues: list[Issue]) -> str:
     reasons = _unique(issue.message for issue in issues)
     suggestions = _unique(issue.suggestion for issue in issues)
     parts = [
-        "未达标。",
+        "待改进。",
         "检查标准：" + _precheck_standard(name),
         "数据分析：" + _join_sentences(reasons),
     ]
@@ -342,7 +342,7 @@ def _section_standard_and_status(name: str, status: str | None) -> str:
             "AI调用异常。",
             "系统仅获取部分相关字段，请管理员核对字段绑定与传递配置后重新检测。",
         ),
-        "needs_revision": ("未达标。", "本项规则检查未通过，请核对相关内容。"),
+        "needs_revision": ("待改进。", "本项规则检查未通过，请核对相关内容。"),
     }
     label, explanation = states.get(
         status,
@@ -453,11 +453,11 @@ def _issues_for_fields(issues: list[Issue], fields: set[str]) -> list[Issue]:
 
 
 def _evaluation_conclusion(total_score: float) -> str:
-    if total_score >= 170:
+    if total_score >= 85:
         return "高质量拜访记录，TAORAN关键闭环较完整。"
-    if total_score >= 140:
+    if total_score >= 70:
         return "记录基本有效，仍有少量关键内容需要完善。"
-    if total_score >= 100:
+    if total_score >= 50:
         return "记录存在明显缺口，建议经理复核后针对性改进。"
     return "有效性证据不足，需要补充事实并重新核验。"
 

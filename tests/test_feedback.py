@@ -71,7 +71,7 @@ def test_each_failed_section_displays_its_standard_analysis_and_suggestion(
     )
     feedback = build_precheck_feedback(visit, 90, "needs_revision", [issue], None)
 
-    assert f"｜{name}：未达标。\n检查标准：" in feedback
+    assert f"｜{name}：待改进。\n检查标准：" in feedback
     assert standard_hint in feedback
     assert feedback.count("检查标准：") == 6
     assert feedback.index("检查标准：") < feedback.index("数据分析：")
@@ -79,6 +79,8 @@ def test_each_failed_section_displays_its_standard_analysis_and_suggestion(
     assert issue.message in feedback
     assert issue.suggestion in feedback
     assert field not in feedback
+    assert "未达标" not in feedback
+    assert "待改善" not in feedback
     assert "知识依据" not in feedback
     assert "分析方式" not in feedback
 
@@ -125,7 +127,7 @@ def test_no_received_fields_still_show_six_standards_without_passing():
     assert result.feedback_text.count("检查标准：") == 6
     assert result.feedback_text.count("：AI调用异常。异常原因：系统未获取") == 6
     assert "：达标。" not in result.feedback_text
-    assert "：未达标。" not in result.feedback_text
+    assert "：待改进。" not in result.feedback_text
     assert "请管理员根据上述异常原因修复字段传递或调用配置后重新检测" in result.feedback_text
 
 
@@ -157,7 +159,7 @@ def test_scope_notice_does_not_turn_passed_check_into_failure():
 
     assert "A｜预约与拜访方式：达标。\n检查标准：" in result.feedback_text
     assert "说明：权威TAORAN标准的正式适用范围为TOB面对面销售" in result.feedback_text
-    assert "A｜预约与拜访方式：未达标" not in result.feedback_text
+    assert "A｜预约与拜访方式：待改进" not in result.feedback_text
     assert result.feedback_text.count("检查标准：") == 6
 
 
@@ -177,6 +179,6 @@ def test_actual_warning_is_still_shown_as_unmet_with_standard():
     payload["visit"]["is_appointment"] = False
     result = TaoranAgent().precheck(PrecheckRequest.model_validate(payload))
 
-    assert "A｜预约与拜访方式：未达标。\n检查标准：" in result.feedback_text
+    assert "A｜预约与拜访方式：待改进。\n检查标准：" in result.feedback_text
     assert "数据分析：当前客户类型的本次拜访未体现预约" in result.feedback_text
     assert result.feedback_text.count("检查标准：") == 6

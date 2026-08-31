@@ -98,6 +98,37 @@ def test_opportunity_without_stage_is_not_failed_by_t02_and_allows_p1_to_p5() ->
     assert "争取客户满意" not in policy.allowed_purposes
 
 
+@pytest.mark.parametrize(
+    ("customer_type", "stage", "purpose"),
+    [
+        ("potential", None, "保持接触"),
+        ("potential", None, "保持关系"),
+        ("opportunity", "P1", "获得参与"),
+        ("opportunity", "P5", "协助项目实施"),
+        ("opportunity", "P5", "完成合同签署"),
+    ],
+)
+def test_confirmed_company_purpose_additions_are_allowed(
+    customer_type: str,
+    stage: str | None,
+    purpose: str,
+) -> None:
+    mapping = structure_purpose_mapping(mapping_record())
+    policy = purpose_policy_for_visit(
+        mapping,
+        visit(
+            customer_type_ii=customer_type,
+            opportunity_stage=stage,
+            purpose_code=purpose,
+        ),
+    )
+
+    assert policy is not None
+    assert purpose in policy.allowed_purposes
+    assert policy.policy_version.endswith("+COMPANY-PURPOSE-MAP-20260831-V1")
+    assert "争取客户满意" not in policy.allowed_purposes
+
+
 def test_invalid_or_incomplete_mapping_is_rejected_instead_of_invented() -> None:
     with pytest.raises(PurposeMappingError):
         structure_purpose_mapping(mapping_record("潜力客户：收集信息。"))

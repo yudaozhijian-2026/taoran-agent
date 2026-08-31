@@ -36,7 +36,11 @@ def test_plugin_preserves_current_multiline_text(text):
     result = run_button_plugin({'process_description': text, 'AI评分': '200'})
     assert len(result['calls']) == 1
     call = result['calls'][0]
-    assert call['data'] == {'tenant_id': 'tenant_demo', 'process_description': text}
+    assert call['data'] == {
+        'tenant_id': 'tenant_demo',
+        'process_description': text,
+        'next_contact_at': None,
+    }
     assert call['headers']['X-API-Key'] == 'synthetic-test-key'
     assert call['timeout'] == 30000
     assert call['maxRedirects'] == 0
@@ -57,6 +61,7 @@ def test_plugin_one_click_returns_three_feedback_fields():
         {'process_description': '客户确认测试安排。'},
     )
     assert 'feedback_mode' not in result['calls'][0]['data']
+    assert result['calls'][0]['data']['next_contact_at'] is None
     assert result['result']['rule_feedback_text'] == '合成规则意见'
     assert result['result']['knowledge_feedback_text'] == '合成知识库意见'
     assert result['result']['model_feedback_text'] == '合成大模型意见'

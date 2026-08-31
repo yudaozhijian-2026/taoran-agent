@@ -22,6 +22,14 @@ _SECTION_END_MARKERS = (
     "后续接口",
 )
 _EXCLUDED_PURPOSE_MARKERS = ("P6", "争取客户满意")
+COMPANY_PURPOSE_POLICY_VERSION = "COMPANY-PURPOSE-MAP-20260831-V1"
+_COMPANY_CUSTOMER_PURPOSES = {
+    CustomerTypeII.POTENTIAL: ("保持接触", "保持关系"),
+}
+_COMPANY_STAGE_PURPOSES = {
+    "P1": ("获得参与",),
+    "P5": ("完成合同签署",),
+}
 
 
 class PurposeMappingError(ValueError):
@@ -103,9 +111,17 @@ def purpose_policy_for_visit(
             # T-02不校验阶段；阶段缺失时只收窄到商机客户全部P1-P5目的，避免误判。
             for values in mapping.opportunity_by_stage.values():
                 allowed.extend(values)
+    allowed.extend(_COMPANY_CUSTOMER_PURPOSES.get(visit.customer_type_ii, ()))
+    if visit.customer_type_ii == CustomerTypeII.OPPORTUNITY:
+        effective_stages = stages or list(mapping.opportunity_by_stage)
+        for stage in effective_stages:
+            allowed.extend(_COMPANY_STAGE_PURPOSES.get(stage, ()))
     allowed = [purpose for purpose in _unique_allowed(allowed) if not _excluded(purpose)]
     return PurposePolicyInput(
-        policy_version=f"{mapping.knowledge_id}:{mapping.knowledge_version}",
+        policy_version=(
+            f"{mapping.knowledge_id}:{mapping.knowledge_version}"
+            f"+{COMPANY_PURPOSE_POLICY_VERSION}"
+        ),
         status="active",
         allowed_purposes=allowed,
         effective_from=visit.visit_date,

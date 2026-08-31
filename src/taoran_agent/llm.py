@@ -285,7 +285,7 @@ class ChatModelReviewer(SemanticReviewer):
             "N的met必须有next_action_logic_ok=true；对应事实为false时该项不得met。"
             "上述事实为true不代表该整项所有条件都通过，仍可因其他缺口needs_revision。"
             "A2达标指自评客观且与purpose_achievement一致，不代表业务目标一定完成；"
-            "自评与实际达成不同必须needs_revision。其他证据缺口也可使A2未达标。\n"
+            "自评与实际达成不同必须needs_revision。其他证据缺口也可使A2待改进。\n"
             if not precheck
             else ""
         )

@@ -7,7 +7,7 @@ from test_llm import deep_payload, model_settings, reviewer_for, visit
 from test_writeback import evaluation_request
 
 from taoran_agent import TaoranAgent
-from taoran_agent.feedback import build_evaluation_feedback
+from taoran_agent.feedback import _evaluation_conclusion, build_evaluation_feedback
 from taoran_agent.models import PrecheckRequest, SelfAssessment
 from taoran_agent.writeback import writeback_evaluation
 
@@ -24,6 +24,20 @@ def check(changes=None, omitted=()):
 
 def section(result, code):
     return next(s for s in result.taoran_sections if s.code == code)
+
+
+@pytest.mark.parametrize(("score", "expected"), [
+    (100, "高质量拜访记录"),
+    (85, "高质量拜访记录"),
+    (84.99, "记录基本有效"),
+    (70, "记录基本有效"),
+    (69.99, "记录存在明显缺口"),
+    (50, "记录存在明显缺口"),
+    (49.99, "有效性证据不足"),
+    (0, "有效性证据不足"),
+])
+def test_evaluation_conclusion_uses_100_point_thresholds(score, expected):
+    assert _evaluation_conclusion(score).startswith(expected)
 
 
 @pytest.mark.parametrize("purpose", ["其他", "other", "其他目的"])

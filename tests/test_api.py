@@ -243,7 +243,7 @@ def test_button_t03_uses_exact_knowledge_mapping_and_rejects_p6(monkeypatch):
     assert "协助项目实施" in issue["suggestion"]
     assert "TAORAN_T03_PURPOSE_POLICY_MISMATCH" not in body["rule_feedback_text"]
     assert issue["message"] in body["rule_feedback_text"]
-    assert "T｜客户类型：未达标" in body["rule_feedback_text"]
+    assert "T｜客户类型：待改进" in body["rule_feedback_text"]
     assert {item["id"] for item in body["knowledge_references"]} >= {
         "DSM-BS-01-06"
     }
@@ -301,6 +301,10 @@ def test_direct_precheck_t03_accepts_current_stage_purpose(monkeypatch):
     assert stored_policy["source_knowledge_id"] == "DSM-BS-01-06"
     assert stored_policy["opportunity_stages"] == ["P5"]
     assert "协助项目实施" in stored_policy["allowed_purposes"]
+    assert "完成合同签署" in stored_policy["allowed_purposes"]
+    assert stored_policy["policy_version"].endswith(
+        "+COMPANY-PURPOSE-MAP-20260831-V1"
+    )
     assert "争取客户满意" not in stored_policy["allowed_purposes"]
 
 
@@ -553,7 +557,7 @@ def test_date_anomaly_returns_feedback_instead_of_server_error(shape, day, monke
     assert "TAORAN_NSA_TIME_NOT_AFTER_VISIT" in {i["code"] for i in result["issues"]}
     assert "TAORAN_NSA_TIME_MISSING" not in {i["code"] for i in result["issues"]}
     assert "下一次联系客户时间安排：异常。异常说明：" in result["feedback_text"]
-    assert "N｜下一步客户行动：未达标" in result["feedback_text"]
+    assert "N｜下一步客户行动：待改进" in result["feedback_text"]
     assert day in result["feedback_text"]
     assert "2026-08-18" in result["feedback_text"]
     for hidden in ("next_contact_at", "visit_date", "知识依据", "分析方式", "不阻断"):
@@ -644,6 +648,25 @@ def test_jiandaoyun_button_returns_advice_when_core_context_is_null() -> None:
     assert "异常原因：系统未获取销售代表" in body["feedback_text"]
 
 
+def test_flat_button_treats_omitted_empty_next_contact_date_as_business_data() -> None:
+    payload = complete_precheck_payload()["visit"]
+    payload.pop("next_contact_at")
+
+    response = TestClient(api.app).post(
+        "/api/v1/connectors/jiandaoyun/visit/button-check",
+        json={"tenant_id": "tenant_demo", **payload},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "下一次联系客户时间安排：未填写" in body["rule_feedback_text"]
+    assert "系统未获取“下一次联系日期”" not in body["rule_feedback_text"]
+    record = api.get_store().get_precheck("tenant_demo", body["check_id"])
+    assert "next_contact_at" in record["request"]["visit"]["metadata"][
+        "source_supplied_fields"
+    ]
+
+
 def test_jiandaoyun_button_shows_unreceived_section_without_claiming_pass_or_failure() -> None:
     response = TestClient(api.app).post(
         "/api/v1/connectors/jiandaoyun/visit/button-check",
@@ -714,7 +737,7 @@ def test_plugin_transmits_current_process_and_rechecks_after_edit(monkeypatch) -
         if text == "":
             assert "建议补充“过程详细描述”" in result["feedback_text"]
         elif text == "我觉得非常不错":
-            assert "R｜过程事实与结果：未达标" in result["feedback_text"]
+            assert "R｜过程事实与结果：待改进" in result["feedback_text"]
         else:
             assert "R｜过程事实与结果：达标" in result["feedback_text"]
 
@@ -749,7 +772,7 @@ def test_plugin_subforms_reach_agent_and_updates_replace_old_values(monkeypatch)
         assert body['submission_blocked'] is False
         assert 'total_score' not in body
         hashes.add(body['input_snapshot_hash'])
-        assert ('T｜客户类型：未达标' in body['feedback_text']) == (stage == '')
+        assert ('T｜客户类型：待改进' in body['feedback_text']) == (stage == '')
     assert len(hashes) == 3
 
 
