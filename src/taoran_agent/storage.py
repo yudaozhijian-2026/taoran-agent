@@ -159,6 +159,21 @@ class AgentStore:
                 ),
             )
 
+    def update_precheck_response(self, response: PrecheckResponse) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                UPDATE precheck_runs SET response_json = ?
+                WHERE tenant_id = ? AND check_id = ? AND input_snapshot_hash = ?
+                """,
+                (
+                    response.model_dump_json(),
+                    response.tenant_id,
+                    response.check_id,
+                    response.input_snapshot_hash,
+                ),
+            )
+
     def create_evaluation_job(
         self, job_id: str, request: PostEvaluationRequest, input_snapshot_hash: str
     ) -> tuple[dict[str, Any], bool]:

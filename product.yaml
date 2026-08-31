@@ -1,6 +1,6 @@
 product_code: dsm-taoran-visit-agent
 product_name: DSM TAORAN 拜访智能体
-version: 0.14.1
+version: 0.15.0
 status: knowledge_driven_precheck_q33_q34_integrated
 deployment_modes:
   - standalone
@@ -50,9 +50,13 @@ analysis:
   pre_submit_button:
     - local_rules_unchanged
     - pure_ai_without_knowledge
-    - ai_with_live_knowledge_api_content
+    - structured_live_knowledge_with_ai_wording_for_unmet_only
   post_submit: rules_and_glm_5_2
   prompt_version: TAORAN-LLM-FACTS-V2.6
+  knowledge_wording_prompt_version: TAORAN-KNOWLEDGE-WORDING-V1
+  front_end_budget_seconds: 8
+  knowledge_wording_timeout_seconds: 6
+  digest_cache_seconds: 300
 q40_integration:
   enabled_by_default: false
   activation: explicit_opt_in

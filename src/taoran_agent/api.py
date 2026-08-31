@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from importlib.resources import files
@@ -24,11 +25,18 @@ from .connector import (
     load_jiandaoyun_mapping,
     mapped_jiandaoyun_value,
 )
-from .field_labels import use_field_mapping
+from .evidence_standard import load_quality_evidence_standard
+from .feedback import build_knowledge_ai_feedback
+from .field_labels import display_field_name, use_field_mapping
 from .gateway import verify_admin_access, verify_q40_service_access, verify_tenant_access
 from .jiandaoyun_api import JiandaoyunReadError, get_jiandaoyun_record
 from .knowledge import KnowledgeApiClient, TaoranKnowledgeSnapshot, load_taoran_knowledge_snapshot
-from .llm import PROMPT_VERSION, PURE_AI_PROMPT_VERSION, ChatModelReviewer
+from .llm import (
+    KNOWLEDGE_WORDING_PROMPT_VERSION,
+    PROMPT_VERSION,
+    PURE_AI_PROMPT_VERSION,
+    ChatModelReviewer,
+)
 from .models import (
     ButtonPrecheckResponse,
     EvaluationAccepted,
@@ -38,6 +46,7 @@ from .models import (
     JiandaoyunCheckRequest,
     JiandaoyunEvaluationRequest,
     JiandaoyunSubmittedEvent,
+    KnowledgeWordingResult,
     PostEvaluationRequest,
     PrecheckRequest,
     PrecheckResponse,
@@ -80,7 +89,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.14.1",
+    version="0.15.0",
     description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
@@ -88,6 +97,8 @@ _agents: dict[str, TaoranAgent] = {}
 _precheck_locks = [Lock() for _ in range(64)]
 _live_knowledge_cache_lock = Lock()
 _live_knowledge_cache: dict[str, tuple[float, TaoranKnowledgeSnapshot]] = {}
+_knowledge_semantic_cache_lock = Lock()
+_knowledge_semantic_cache: dict[str, tuple[float, KnowledgeWordingResult]] = {}
 _ADMIN_SECURITY_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
@@ -723,15 +734,9 @@ def _execute_live_knowledge_feedback(
             message="知识库API尚未配置，本次未生成知识库反馈。",
             suggestion="请管理员配置TAORAN专用知识库API Key后重试。",
         )
-    fetch_budget = max(
-        1.0,
-        min(
-            settings.knowledge_timeout_seconds,
-            settings.precheck_budget_seconds
-            - settings.llm_precheck_timeout_seconds
-            - 1.0,
-        ),
-    )
+    # The front button has an 8-second total target. Knowledge retrieval is cached;
+    # a cache miss gets at most one second before the deterministic fallback returns.
+    fetch_budget = min(settings.knowledge_timeout_seconds, 1.0)
     if snapshot is None:
         try:
             snapshot = _fetch_live_knowledge_snapshot(settings, fetch_budget)
@@ -763,6 +768,119 @@ def _execute_live_knowledge_feedback(
     )
 
 
+def _structured_unmet_items(response: PrecheckResponse) -> list[dict[str, Any]]:
+    standard = load_quality_evidence_standard()
+    items: list[dict[str, Any]] = []
+    for section in response.taoran_sections:
+        if section.status != "needs_revision":
+            continue
+        paths = set(section.evaluated_fields)
+        issues = [
+            issue for issue in response.issues
+            if issue.severity != Severity.INFO
+            and (
+                issue.dimension == section.display_code
+                or bool(paths.intersection(issue.field_paths))
+            )
+        ]
+        evidence = [
+            {
+                "field": display_field_name(item.field_path),
+                "quote": item.quote[:120],
+                "category": item.category,
+            }
+            for item in section.classified_evidence[:4]
+        ]
+        items.append(
+            {
+                "code": section.code,
+                "name": section.name,
+                "standard": standard.sections[section.code].standard,
+                "problems": list(dict.fromkeys(issue.message for issue in issues))[:4],
+                "existing_suggestions": list(
+                    dict.fromkeys(issue.suggestion for issue in issues)
+                )[:4],
+                "input_evidence": evidence,
+            }
+        )
+    return items
+
+
+def _cached_knowledge_wording(
+    key: str,
+) -> KnowledgeWordingResult | None:
+    now = monotonic()
+    with _knowledge_semantic_cache_lock:
+        cached = _knowledge_semantic_cache.get(key)
+        if cached and cached[0] > now:
+            return cached[1].model_copy(update={"cache_hit": True, "latency_ms": 0})
+        if cached:
+            _knowledge_semantic_cache.pop(key, None)
+        expired = [item for item, value in _knowledge_semantic_cache.items() if value[0] <= now]
+        for item in expired:
+            _knowledge_semantic_cache.pop(item, None)
+        if len(_knowledge_semantic_cache) > 512:
+            oldest = min(_knowledge_semantic_cache, key=lambda item: _knowledge_semantic_cache[item][0])
+            _knowledge_semantic_cache.pop(oldest, None)
+    return None
+
+
+def _enhance_knowledge_feedback(
+    response: PrecheckResponse,
+    reviewer: ChatModelReviewer,
+    settings: Settings,
+    timeout_seconds: float,
+) -> PrecheckResponse:
+    if not response.knowledge_snapshot_hash or not response.knowledge_references:
+        return response
+    unmet = _structured_unmet_items(response)
+    cache_key = canonical_hash(
+        {
+            "tenant_id": response.tenant_id,
+            "input_snapshot_hash": response.input_snapshot_hash,
+            "knowledge_snapshot_hash": response.knowledge_snapshot_hash,
+            "prompt_version": KNOWLEDGE_WORDING_PROMPT_VERSION,
+            "model": settings.llm_model,
+            "unmet": unmet,
+        }
+    )
+    wording = _cached_knowledge_wording(cache_key)
+    if wording is None:
+        wording = reviewer.verbalize_knowledge_issues(unmet, timeout_seconds)
+        if wording.status == "completed" and settings.knowledge_semantic_cache_seconds > 0:
+            with _knowledge_semantic_cache_lock:
+                _knowledge_semantic_cache[cache_key] = (
+                    monotonic() + settings.knowledge_semantic_cache_seconds,
+                    wording.model_copy(deep=True),
+                )
+    if wording.status != "completed":
+        # Hard fallback: retain the already completed deterministic knowledge result.
+        return response
+    review = response.semantic_review.model_copy(
+        update={
+            "status": "completed",
+            "provider": wording.provider,
+            "model": wording.model,
+            "prompt_version": wording.prompt_version,
+            "latency_ms": wording.latency_ms,
+            "failure_reason": None,
+        }
+    )
+    audit = response.standard_audit
+    if audit is not None:
+        audit = audit.model_copy(update={"model_prompt_version": wording.prompt_version})
+    enhanced = response.model_copy(
+        update={
+            "feedback_text": build_knowledge_ai_feedback(response, wording),
+            "semantic_review": review,
+            "engine_version": "TAORAN-PRECHECK-KNOWLEDGE-AI-WORDING-V1",
+            "standard_audit": audit,
+        }
+    )
+    get_store(settings).update_precheck_response(enhanced)
+    return enhanced
+
+
 def _execute_three_feedback(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -778,9 +896,26 @@ def _execute_three_feedback(
         }
     )
     mapping_path = settings.jiandaoyun_mapping_path_for(base_context.tenant_id)
+    reviewer = get_agent().semantic_reviewer
+    model_budget = min(
+        settings.knowledge_semantic_timeout_seconds,
+        max(0.1, settings.button_total_budget_seconds - 1.0),
+    )
 
     def run_model() -> PrecheckResponse:
         with use_field_mapping(mapping_path):
+            if isinstance(reviewer, ChatModelReviewer):
+                review = reviewer.review_without_knowledge_for_button(
+                    model_request.visit,
+                    model_budget,
+                )
+                return _execute_precheck_with_agent(
+                    model_request,
+                    TaoranAgent(
+                        _FixedSemanticReviewer(review),
+                        TaoranPrecheckEngine(),
+                    ),
+                )
             return _execute_precheck(model_request)
 
     canonical_request, live_snapshot = _with_live_purpose_policy(
@@ -809,7 +944,6 @@ def _execute_three_feedback(
             live_snapshot,
         )
 
-    reviewer = get_agent().semantic_reviewer
     lease = (
         reviewer.button_feedback_scheduler.lease(
             settings.llm_button_queue_wait_seconds
@@ -829,8 +963,20 @@ def _execute_three_feedback(
                     lease_status,
                 ),
             )
-        # 知识库反馈已直接由实时知识快照生成；此处只调度唯一的纯大模型请求。
-        return rule, knowledge, run_model()
+        if not isinstance(reviewer, ChatModelReviewer):
+            return rule, knowledge, run_model()
+        # Two bounded calls run together: knowledge wording has priority and always
+        # falls back to the deterministic result; pure-AI feedback keeps compatibility.
+        with ThreadPoolExecutor(max_workers=2, thread_name_prefix="taoran-button") as pool:
+            knowledge_future = pool.submit(
+                _enhance_knowledge_feedback,
+                knowledge,
+                reviewer,
+                settings,
+                model_budget,
+            )
+            model_future = pool.submit(run_model)
+            return rule, knowledge_future.result(), model_future.result()
 
 
 @app.post("/api/v1/agent/visit/check", response_model=PrecheckResponse)

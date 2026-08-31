@@ -38,6 +38,9 @@ def test_precheck_model_has_20_second_and_compact_output_defaults() -> None:
     settings = Settings(_env_file=None)
 
     assert settings.llm_precheck_timeout_seconds == 20
+    assert settings.knowledge_semantic_timeout_seconds == 6
+    assert settings.button_total_budget_seconds == 8
+    assert settings.knowledge_semantic_cache_seconds == 300
     assert settings.llm_precheck_max_output_tokens == 2200
     assert settings.llm_max_output_tokens == 3000
     assert settings.knowledge_snapshot_cache_seconds == 30

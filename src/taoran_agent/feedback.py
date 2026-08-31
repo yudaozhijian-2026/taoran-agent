@@ -7,6 +7,8 @@ from .models import (
     FeedbackMode,
     Issue,
     KnowledgeReference,
+    KnowledgeWordingResult,
+    PrecheckResponse,
     Q34SemanticFacts,
     SemanticReview,
     Severity,
@@ -229,6 +231,69 @@ def build_model_precheck_feedback(
         lines.extend(["", "优先修改建议："])
         lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(suggestions, 1))
     elif semantic_review.status == "completed":
+        lines.extend(["", "优先修改建议：当前未发现需要优先补充的内容。"])
+    lines.append("本次只提供提交前建议，不阻断提交，不生成正式分数。")
+    return "\n".join(lines)
+
+
+def build_knowledge_ai_feedback(
+    structured: PrecheckResponse,
+    wording: KnowledgeWordingResult,
+) -> str:
+    """Keep deterministic verdicts/standards and naturalize only unmet items."""
+    if wording.status != "completed":
+        return structured.feedback_text
+    natural = {item.code: item for item in wording.items}
+    section_by_name = {section.name: section for section in structured.taoran_sections}
+    model_code_by_name = {
+        "客户类型": "T",
+        "预约与拜访方式": "A1",
+        "拜访目的与关键结果": "O_KR",
+        "过程事实与结果": "R",
+        "达成评价": "A2",
+        "下一步客户行动": "N",
+    }
+    lines = [
+        "【提交前TAORAN检查｜知识库反馈（AI自然表达）】",
+        "检查结论：" + (
+            "存在需要优先完善的内容"
+            if natural else "已检查字段未发现明显规范问题"
+        ),
+        "",
+        "TAORAN六项检查：",
+    ]
+    suggestions: list[str] = []
+    met_names: list[str] = []
+    for index, (display_code, name, _) in enumerate(_SECTIONS):
+        if index:
+            lines.append("")
+        section = section_by_name.get(name)
+        code = model_code_by_name[name]
+        item = natural.get(code)
+        if item is not None:
+            lines.append(f"{display_code}｜{name}：待改进。")
+            lines.append("分析：" + item.reason)
+            lines.append("修改建议：" + item.suggestion)
+            lines.append("检查标准：" + _precheck_standard(name))
+            suggestions.append(item.suggestion)
+        elif section is not None and section.status == "met":
+            lines.append(f"{display_code}｜{name}：达标。")
+            lines.append("检查标准：" + _precheck_standard(name))
+            met_names.append(name)
+        else:
+            lines.append(
+                f"{display_code}｜{name}："
+                + _section_standard_and_status(name, section.status if section else None)
+            )
+    if met_names:
+        lines.extend(["", "达标项说明：以上达标项不展开AI长篇分析。"])
+    if suggestions:
+        lines.extend(["", "优先修改建议："])
+        lines.extend(
+            f"{index}. {suggestion}"
+            for index, suggestion in enumerate(_unique(suggestions), 1)
+        )
+    else:
         lines.extend(["", "优先修改建议：当前未发现需要优先补充的内容。"])
     lines.append("本次只提供提交前建议，不阻断提交，不生成正式分数。")
     return "\n".join(lines)

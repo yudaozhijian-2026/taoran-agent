@@ -263,6 +263,25 @@ class SemanticReview(BaseModel):
     failure_reason: str | None = None
 
 
+class KnowledgeWordingItem(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    code: Literal["T", "A1", "O_KR", "R", "A2", "N"]
+    reason: str = Field(min_length=1, max_length=220)
+    suggestion: str = Field(min_length=1, max_length=220)
+
+
+class KnowledgeWordingResult(BaseModel):
+    status: Literal["completed", "unavailable", "timeout"]
+    items: list[KnowledgeWordingItem] = Field(default_factory=list, max_length=6)
+    provider: str = "structured-knowledge"
+    model: str | None = None
+    prompt_version: str | None = None
+    latency_ms: int = 0
+    cache_hit: bool = False
+    failure_reason: str | None = None
+
+
 class PrecheckResponse(BaseModel):
     check_id: str
     trace_id: str

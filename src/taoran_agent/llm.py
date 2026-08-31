@@ -19,6 +19,8 @@ from .field_labels import display_field_name
 from .knowledge import TaoranKnowledgeSnapshot
 from .models import (
     Issue,
+    KnowledgeWordingItem,
+    KnowledgeWordingResult,
     ModelAttemptAudit,
     ModelSectionAnalysis,
     ModelValidationIssue,
@@ -31,6 +33,7 @@ from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 
 PROMPT_VERSION = "TAORAN-LLM-FACTS-V2.6"
 PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.4"
+KNOWLEDGE_WORDING_PROMPT_VERSION = "TAORAN-KNOWLEDGE-WORDING-V1"
 PRECHECK_TOOL_NAME = "submit_taoran_precheck"
 SECTION_FIELDS = {
     "T": {"customer_type_ii", "opportunity_stage", "opportunities", "purpose_code"},
@@ -572,6 +575,7 @@ class ChatModelReviewer(SemanticReviewer):
         *,
         use_knowledge: bool = True,
         knowledge_snapshot: TaoranKnowledgeSnapshot | None = None,
+        timeout_override: float | None = None,
     ):
         attempts = attempts if attempts is not None else []
         data = self._input(visit, precheck=precheck)
@@ -581,11 +585,12 @@ class ChatModelReviewer(SemanticReviewer):
             use_knowledge=use_knowledge,
             knowledge_snapshot=knowledge_snapshot,
         )
-        timeout = (
+        configured_timeout = (
             self.settings.llm_precheck_timeout_seconds
             if precheck
             else self.settings.llm_evaluation_timeout_seconds
         )
+        timeout = min(configured_timeout, timeout_override) if timeout_override else configured_timeout
         deadline = monotonic() + timeout
         max_attempts = 1 + (0 if precheck else self.settings.llm_format_retries)
         for attempt in range(1, max_attempts + 1):
@@ -643,6 +648,7 @@ class ChatModelReviewer(SemanticReviewer):
         *,
         use_knowledge: bool,
         knowledge_snapshot: TaoranKnowledgeSnapshot | None = None,
+        timeout_override: float | None = None,
     ) -> SemanticReview:
         started = monotonic()
         try:
@@ -651,6 +657,7 @@ class ChatModelReviewer(SemanticReviewer):
                 True,
                 use_knowledge=use_knowledge,
                 knowledge_snapshot=knowledge_snapshot,
+                timeout_override=timeout_override,
             )
             return SemanticReview(
                 status="completed",
@@ -692,6 +699,155 @@ class ChatModelReviewer(SemanticReviewer):
 
     def review_without_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
         return self._review_precheck(visit, use_knowledge=False)
+
+    def review_without_knowledge_for_button(
+        self,
+        visit: VisitDraftInput,
+        timeout_seconds: float | None = None,
+    ) -> SemanticReview:
+        return self._review_precheck(
+            visit,
+            use_knowledge=False,
+            timeout_override=(
+                timeout_seconds or self.settings.knowledge_semantic_timeout_seconds
+            ),
+        )
+
+    def verbalize_knowledge_issues(
+        self,
+        items: list[dict],
+        timeout_seconds: float | None = None,
+    ) -> KnowledgeWordingResult:
+        """Naturalize fixed failed checks without allowing the model to rejudge them."""
+        started = monotonic()
+        expected_codes = [str(item["code"]) for item in items]
+        if not expected_codes:
+            return KnowledgeWordingResult(
+                status="completed",
+                provider="structured-knowledge-no-model",
+                model=self.settings.llm_model,
+                prompt_version=KNOWLEDGE_WORDING_PROMPT_VERSION,
+            )
+        schema = {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "minItems": len(expected_codes),
+                    "maxItems": len(expected_codes),
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string", "enum": expected_codes},
+                            "reason": {"type": "string"},
+                            "suggestion": {"type": "string"},
+                        },
+                        "required": ["code", "reason", "suggestion"],
+                        "additionalProperties": False,
+                    },
+                }
+            },
+            "required": ["items"],
+            "additionalProperties": False,
+        }
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "你是TAORAN知识反馈语言整理器。程序已经完成结构化判断，你只能把未达标项改写为"
+                    "自然、具体、简洁的中文反馈，不能改变项目代码、判断结论、检查标准或评分。"
+                    "不得增加输入中不存在的客户事实、承诺、日期、角色或原因。"
+                    "每项reason说明现有内容为什么未满足标准；suggestion给出可直接修改的写法方向。"
+                    "只返回指定未达标项，每项一次，不能返回达标项，不能输出Markdown或额外字段。"
+                    "reason和suggestion分别不超过90个汉字。"
+                    f"输出JSON结构：{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps({"unmet_checks": items}, ensure_ascii=False, separators=(",", ":")),
+            },
+        ]
+        timeout = min(
+            self.settings.knowledge_semantic_timeout_seconds,
+            timeout_seconds or self.settings.knowledge_semantic_timeout_seconds,
+        )
+        deadline = monotonic() + timeout
+        if not self._slots.acquire(timeout=timeout):
+            return KnowledgeWordingResult(
+                status="timeout",
+                provider="llm-chat-structured-wording",
+                model=self.settings.llm_model,
+                prompt_version=KNOWLEDGE_WORDING_PROMPT_VERSION,
+                latency_ms=int((monotonic() - started) * 1000),
+                failure_reason="queue_timeout",
+            )
+
+        def request_wording() -> dict:
+            body = {
+                "model": self.settings.llm_model,
+                "messages": messages,
+                "temperature": 0.2,
+                "max_tokens": self.settings.knowledge_semantic_max_output_tokens,
+                "stream": False,
+                "response_format": {"type": "json_object"},
+            }
+            if (self.settings.llm_model or "").lower().startswith("glm-"):
+                body["thinking"] = {"type": "disabled"}
+            with httpx.Client(
+                transport=self.transport,
+                timeout=max(0.1, deadline - monotonic()),
+                follow_redirects=False,
+            ) as client:
+                response = client.post(
+                    self.settings.llm_api_url,
+                    headers={
+                        "Authorization": f"Bearer {self.settings.llm_api_key.get_secret_value()}",
+                        "Content-Type": "application/json",
+                    },
+                    json=body,
+                )
+                response.raise_for_status()
+                if len(response.content) > 32768:
+                    raise ModelCallError("output_too_large")
+                envelope = _load_json(response.content)
+                return _load_json(envelope["choices"][0]["message"]["content"])
+
+        try:
+            future = self._executor.submit(request_wording)
+            try:
+                payload = future.result(timeout=max(0.0, deadline - monotonic()))
+            except FutureTimeout:
+                return KnowledgeWordingResult(
+                    status="timeout",
+                    provider="llm-chat-structured-wording",
+                    model=self.settings.llm_model,
+                    prompt_version=KNOWLEDGE_WORDING_PROMPT_VERSION,
+                    latency_ms=int((monotonic() - started) * 1000),
+                    failure_reason="timeout",
+                )
+            parsed = [KnowledgeWordingItem.model_validate(item) for item in payload["items"]]
+            if [item.code for item in parsed] != expected_codes:
+                raise ModelCallError("invalid_contract")
+            return KnowledgeWordingResult(
+                status="completed",
+                items=parsed,
+                provider="llm-chat-structured-wording",
+                model=self.settings.llm_model,
+                prompt_version=KNOWLEDGE_WORDING_PROMPT_VERSION,
+                latency_ms=int((monotonic() - started) * 1000),
+            )
+        except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
+            return KnowledgeWordingResult(
+                status="unavailable",
+                provider="llm-chat-structured-wording",
+                model=self.settings.llm_model,
+                prompt_version=KNOWLEDGE_WORDING_PROMPT_VERSION,
+                latency_ms=int((monotonic() - started) * 1000),
+                failure_reason=_failure_reason(exc),
+            )
+        finally:
+            self._slots.release()
 
     def review_with_runtime_knowledge(
         self,

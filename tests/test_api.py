@@ -2,6 +2,7 @@ import hashlib
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
+from copy import deepcopy
 from threading import Lock
 from time import sleep
 
@@ -28,11 +29,13 @@ def isolated_database(tmp_path, monkeypatch):
     api._stores.clear()
     api._agents.clear()
     api._live_knowledge_cache.clear()
+    api._knowledge_semantic_cache.clear()
     yield
     get_settings.cache_clear()
     api._stores.clear()
     api._agents.clear()
     api._live_knowledge_cache.clear()
+    api._knowledge_semantic_cache.clear()
 
 
 def test_health() -> None:
@@ -109,9 +112,128 @@ def test_button_returns_rule_live_knowledge_and_pure_model_feedback(monkeypatch)
     assert len(calls) == 1
     prompts = [call[1]["messages"][0]["content"] for call in calls]
     assert all("LIVE-KNOWLEDGE-API-CONTENT" not in prompt for prompt in prompts)
-    assert "【提交前TAORAN检查｜知识库反馈】" in body["knowledge_feedback_text"]
+    assert "【提交前TAORAN检查｜知识库反馈（AI自然表达）】" in body["knowledge_feedback_text"]
     assert body["knowledge_status"] in {"passed", "needs_revision", "review"}
     assert body["live_knowledge_snapshot_hash"] == live_snapshot.snapshot_hash
+
+
+def test_knowledge_ai_wording_uses_only_unmet_items_and_reuses_digest_cache(
+    monkeypatch, tmp_path,
+):
+    from test_llm import envelope, model_settings, section_payload
+
+    from taoran_agent.agent import TaoranAgent
+    from taoran_agent.knowledge import load_taoran_knowledge_snapshot
+    from taoran_agent.llm import ChatModelReviewer
+
+    wording_calls = 0
+    pure_calls = 0
+
+    def handler(request):
+        nonlocal wording_calls, pure_calls
+        body = json.loads(request.content)
+        data = json.loads(body["messages"][1]["content"])
+        if "unmet_checks" in data:
+            wording_calls += 1
+            codes = [item["code"] for item in data["unmet_checks"]]
+            assert "R" in codes
+            return httpx.Response(200, json=envelope({
+                "items": [
+                    {
+                        "code": code,
+                        "reason": f"{code}项现有内容缺少可核验事实。",
+                        "suggestion": f"请补充{code}项对应的客户事实。",
+                    }
+                    for code in codes
+                ]
+            }))
+        pure_calls += 1
+        visit_data = data["untrusted_visit_data"]
+        return httpx.Response(200, json=envelope(section_payload(visit_data)))
+
+    settings = model_settings(
+        database_path=str(tmp_path / "knowledge-ai-cache.db"),
+        knowledge_api_key="synthetic-knowledge-key",
+    )
+    snapshot = load_taoran_knowledge_snapshot()
+    reviewer = ChatModelReviewer(settings, snapshot, httpx.MockTransport(handler))
+    monkeypatch.setattr(api, "get_settings", lambda: settings)
+    monkeypatch.setattr(api, "get_agent", lambda: TaoranAgent(reviewer))
+    monkeypatch.setattr(
+        api.KnowledgeApiClient,
+        "fetch_taoran_snapshot",
+        lambda self: snapshot,
+    )
+    first = complete_precheck_payload("knowledge-cache-first")
+    first["visit"]["process_description"] = "我感觉客户非常满意，沟通顺利。"
+    second = deepcopy(first)
+    second["context"]["request_id"] = "knowledge-cache-second"
+    client = TestClient(api.app)
+    try:
+        responses = [
+            client.post(
+                "/api/v1/connectors/jiandaoyun/visit/button-check",
+                json={"context": payload["context"], "form_data": payload["visit"]},
+            )
+            for payload in (first, second)
+        ]
+    finally:
+        reviewer.close()
+
+    assert all(response.status_code == 200 for response in responses)
+    assert wording_calls == 1
+    assert pure_calls == 2
+    assert all(
+        "知识库反馈（AI自然表达）" in response.json()["knowledge_feedback_text"]
+        for response in responses
+    )
+    assert all(
+        "现有内容缺少可核验事实" in response.json()["knowledge_feedback_text"]
+        for response in responses
+    )
+
+
+def test_knowledge_ai_timeout_falls_back_to_structured_feedback(monkeypatch, tmp_path):
+    from test_llm import model_settings
+
+    from taoran_agent.agent import TaoranAgent
+    from taoran_agent.knowledge import load_taoran_knowledge_snapshot
+    from taoran_agent.llm import ChatModelReviewer
+
+    def handler(request):
+        del request
+        sleep(0.08)
+        return httpx.Response(500)
+
+    settings = model_settings(
+        database_path=str(tmp_path / "knowledge-ai-timeout.db"),
+        knowledge_api_key="synthetic-knowledge-key",
+        knowledge_semantic_timeout_seconds=0.03,
+    )
+    snapshot = load_taoran_knowledge_snapshot()
+    reviewer = ChatModelReviewer(settings, snapshot, httpx.MockTransport(handler))
+    monkeypatch.setattr(api, "get_settings", lambda: settings)
+    monkeypatch.setattr(api, "get_agent", lambda: TaoranAgent(reviewer))
+    monkeypatch.setattr(
+        api.KnowledgeApiClient,
+        "fetch_taoran_snapshot",
+        lambda self: snapshot,
+    )
+    payload = complete_precheck_payload("knowledge-timeout-fallback")
+    payload["visit"]["process_description"] = "我感觉客户非常满意。"
+    try:
+        response = TestClient(api.app).post(
+            "/api/v1/connectors/jiandaoyun/visit/button-check",
+            json={"context": payload["context"], "form_data": payload["visit"]},
+        )
+    finally:
+        reviewer.close()
+
+    assert response.status_code == 200
+    feedback = response.json()["knowledge_feedback_text"]
+    assert "【提交前TAORAN检查｜知识库反馈】" in feedback
+    assert "过程事实与结果" in feedback
+    assert "大模型调用超时" not in feedback
 
 
 def test_concurrent_buttons_use_one_model_call_each(monkeypatch, tmp_path):

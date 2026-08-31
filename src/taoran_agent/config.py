@@ -96,6 +96,10 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None
     llm_model: str | None = None
     llm_precheck_timeout_seconds: float = Field(default=20.0, gt=0, le=20)
+    knowledge_semantic_timeout_seconds: float = Field(default=6.0, gt=0, le=6)
+    button_total_budget_seconds: float = Field(default=8.0, gt=0, le=8)
+    knowledge_semantic_cache_seconds: float = Field(default=300.0, ge=0, le=3600)
+    knowledge_semantic_max_output_tokens: int = Field(default=700, ge=300, le=1200)
     llm_evaluation_timeout_seconds: float = Field(default=45.0, gt=0, le=90)
     llm_max_concurrency: int = Field(default=4, ge=1, le=8)
     llm_button_queue_capacity: int = Field(default=8, ge=0, le=50)

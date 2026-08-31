@@ -1,7 +1,7 @@
 import json
 from copy import deepcopy
 from threading import Event
-from time import monotonic
+from time import monotonic, sleep
 
 import httpx
 import pytest
@@ -138,6 +138,66 @@ def test_secret_is_redacted_and_enabled_factory_uses_direct_model():
     agent = build_agent(settings)
     assert isinstance(agent.semantic_reviewer, ChatModelReviewer)
     agent.semantic_reviewer.close()
+
+
+def test_structured_knowledge_wording_only_returns_requested_unmet_items():
+    captured = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        data = json.loads(body["messages"][1]["content"])
+        captured.append((body, data))
+        return httpx.Response(200, json=envelope({
+            "items": [{
+                "code": "R",
+                "reason": "过程记录只有主观判断，缺少客户确认或条件。",
+                "suggestion": "补充客户角色、确认事项及原始反馈。",
+            }]
+        }))
+
+    reviewer = ChatModelReviewer(
+        model_settings(),
+        load_taoran_knowledge_snapshot(),
+        httpx.MockTransport(handler),
+    )
+    result = reviewer.verbalize_knowledge_issues([{
+        "code": "R",
+        "name": "过程事实与结果",
+        "standard": "记录可核验客户事实。",
+        "problems": ["缺少客户事实。"],
+        "existing_suggestions": ["补充客户确认。"],
+        "input_evidence": [],
+    }])
+    reviewer.close()
+
+    assert result.status == "completed"
+    assert [item.code for item in result.items] == ["R"]
+    assert captured[0][1]["unmet_checks"][0]["code"] == "R"
+    assert "达标项" not in captured[0][1]
+    assert captured[0][0]["model"] == "glm-5.2"
+    assert captured[0][0]["thinking"] == {"type": "disabled"}
+
+
+def test_structured_knowledge_wording_timeout_returns_safe_status():
+    def handler(request):
+        del request
+        sleep(0.08)
+        return httpx.Response(200, json=envelope({"items": []}))
+
+    reviewer = ChatModelReviewer(
+        model_settings(knowledge_semantic_timeout_seconds=0.03),
+        load_taoran_knowledge_snapshot(),
+        httpx.MockTransport(handler),
+    )
+    result = reviewer.verbalize_knowledge_issues([{
+        "code": "R", "name": "过程事实与结果", "standard": "记录事实。",
+        "problems": ["缺少事实。"], "existing_suggestions": ["补充事实。"],
+        "input_evidence": [],
+    }])
+    reviewer.close()
+
+    assert result.status == "timeout"
+    assert result.items == []
 
 
 def test_direct_precheck_sends_minimal_fields_and_approved_knowledge():
