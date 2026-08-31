@@ -574,6 +574,13 @@ class TaoranPrecheckEngine:
         )
         checks = [
             _RuleCheck(
+                ("customer_id",),
+                bool(normalized_text(visit.customer_id)),
+                "TAORAN_NSA_CUSTOMER_MISSING",
+                "下一步行动对象是当前客户，但记录缺少可关联的客户。",
+                f"请确认“{display_field_name('customer_id')}”已关联；不要求另填具体联系人。",
+            ),
+            _RuleCheck(
                 (
                     ("next_action_other_purpose",)
                     if "other" in purpose or "其他" in purpose

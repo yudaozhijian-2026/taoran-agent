@@ -13,6 +13,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, SecretStr, field_validator
 
+from .company_policy import public_company_policy
 from .config import Settings, TenantConfigRegistry
 from .connector import load_jiandaoyun_mapping
 from .mapping_sync import (
@@ -516,6 +517,7 @@ def _tenant_summary(settings: Settings, tenant_id: str) -> dict[str, Any]:
         "created_at": tenant.created_at.isoformat() if tenant.created_at else None,
         "updated_at": tenant.updated_at.isoformat() if tenant.updated_at else None,
         "access_key_count": len(tenant.access_keys),
+        "company_policy": public_company_policy(),
         "jiandaoyun": {
             "api_key_configured": bool(tenant.jiandaoyun.api_key),
             "webhook_secret_configured": bool(tenant.jiandaoyun.webhook_secret),

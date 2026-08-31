@@ -80,7 +80,7 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.14.0",
+    version="0.14.1",
     description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}

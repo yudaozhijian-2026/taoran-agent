@@ -161,6 +161,22 @@ def test_next_step_defaults_to_current_customer_without_specific_contact() -> No
     assert next(section for section in result.sections if section.code == "N").status == "met"
 
 
+def test_next_step_object_means_current_customer() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["customer_id"] = None
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert "TAORAN_NSA_CUSTOMER_MISSING" in {
+        issue.code for issue in result.issues
+    }
+    issue = next(
+        item for item in result.issues if item.code == "TAORAN_NSA_CUSTOMER_MISSING"
+    )
+    assert "不要求另填具体联系人" in issue.suggestion
+
+
 @pytest.mark.parametrize(
     ("customer_type", "contact_at", "expected_issue"),
     [

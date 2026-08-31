@@ -1,13 +1,13 @@
 {
   "schema_version": "TAORAN-QUALITY-EVIDENCE-STANDARD-V1",
   "standard_id": "DSM-BS-01-07",
-  "standard_version": "TAORAN-EVIDENCE-V1.0",
+  "standard_version": "TAORAN-EVIDENCE-V1.1",
   "source_file": "TAORAN拜访记录质量标准解析.xlsx",
   "scoring_policy": "evidence_only_no_score_change",
   "sections": {
     "T": {
       "name": "客户类型/商机阶段",
-      "standard": "客户类型须为潜力客户、目标客户或商机客户；商机客户须有P1-P6当前阶段，且类型和阶段来源可追溯。",
+      "standard": "客户类型须为潜力客户、目标客户或商机客户；商机客户须有P1-P6当前阶段，且类型和阶段来源可追溯。P6为已结束的终态，不再进行销售拜访目的匹配。",
       "evidence": ["客户类型", "当前商机阶段", "字段来源", "拜访目的与类型/阶段匹配关系"]
     },
     "A1": {
@@ -32,8 +32,8 @@
     },
     "N": {
       "name": "下一步客户行动",
-      "standard": "下一步须明确时间、对象、目的、行动和期望结果，并承接本次客户事实、异议、条件、承诺或未完成事项。",
-      "evidence": ["行动对象", "联系时间", "行动目的", "具体期望结果", "与本次事实的衔接", "客户共识（商机客户）"]
+      "standard": "下一步须明确时间、对象、目的、行动和期望结果，并承接本次客户事实、异议、条件、承诺或未完成事项。对象统一指当前客户，不要求另填具体联系人。",
+      "evidence": ["当前客户", "联系时间", "行动目的", "具体期望结果", "与本次事实的衔接", "客户共识（商机客户）"]
     }
   }
 }

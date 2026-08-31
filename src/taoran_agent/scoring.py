@@ -3,6 +3,11 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import Any
 
+from .company_policy import (
+    COMPANY_POLICY_VERSION,
+    SUBMISSION_TIMELINESS_HOURS,
+    SUBMISSION_TIMELINESS_WINDOW,
+)
 from .field_labels import display_field_name
 from .models import (
     CustomerTypeII,
@@ -128,7 +133,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
     timely = bool(
         baseline
         and visit.submitted_at
-        and timedelta(0) <= visit.submitted_at - baseline <= timedelta(hours=24)
+        and timedelta(0) <= visit.submitted_at - baseline <= SUBMISSION_TIMELINESS_WINDOW
     )
     if visit.submitted_at is None:
         issues.append(
@@ -188,6 +193,9 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                         "submitted_at": visit.submitted_at,
                         "visit_end_baseline": baseline,
                         "baseline_source": baseline_source,
+                        "company_policy_version": COMPANY_POLICY_VERSION,
+                        "tenant_configurable": False,
+                        "window_hours": SUBMISSION_TIMELINESS_HOURS,
                     },
                 ),
             ],
@@ -196,6 +204,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                 "thresholds": [0.90, 0.80, 0.70, 0.50],
                 "single_record_projection": True,
                 "q40_period_rule_note": "周期评价先汇总记录比例，再按档位计算。",
+                "submission_timeliness_policy": "公司统一标准，不允许客户配置。",
             },
         ),
         issues,

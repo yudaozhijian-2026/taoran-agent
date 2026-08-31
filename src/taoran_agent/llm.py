@@ -29,8 +29,8 @@ from .models import (
 )
 from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 
-PROMPT_VERSION = "TAORAN-LLM-FACTS-V2.5"
-PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.3"
+PROMPT_VERSION = "TAORAN-LLM-FACTS-V2.6"
+PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.4"
 PRECHECK_TOOL_NAME = "submit_taoran_precheck"
 SECTION_FIELDS = {
     "T": {"customer_type_ii", "opportunity_stage", "opportunities", "purpose_code"},
@@ -319,7 +319,8 @@ class ChatModelReviewer(SemanticReviewer):
             "每条evidence必须按原文性质填写category：system_fact、customer_fact、"
             "customer_commitment、customer_objection_or_condition、sales_judgment、assumption、"
             "planned_action或other；不得把销售判断、计划或假设标成客户事实。"
-            "T检查客户分类与商机阶段背景；A1检查预约及方式；O_KR检查目的和可验证KR；"
+            "T检查客户分类与商机阶段背景；P6是商机已结束的终态，不再进行销售拜访目的匹配，"
+            "不得要求P6匹配P1-P5或新的销售拜访目的；A1检查预约及方式；O_KR检查目的和可验证KR；"
             "R检查客户事实而非主观感受；A2回到KR比较实际达成，不照抄销售自评；"
             "N按N-01至N-06检查：行动对象统一默认为当前客户，不要求具体联系人，也不得因未填写联系人而判错；"
             "N-01目的必须承接本次客户事实、结果、异议、条件、承诺或未完成事项，不能只写继续跟进、再沟通、"

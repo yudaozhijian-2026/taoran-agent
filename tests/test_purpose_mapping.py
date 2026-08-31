@@ -98,6 +98,17 @@ def test_opportunity_without_stage_is_not_failed_by_t02_and_allows_p1_to_p5() ->
     assert "争取客户满意" not in policy.allowed_purposes
 
 
+def test_p6_is_terminal_and_retires_sales_visit_purpose_matching() -> None:
+    mapping = structure_purpose_mapping(mapping_record())
+
+    policy = purpose_policy_for_visit(mapping, visit(opportunity_stage="P6"))
+
+    assert policy is not None
+    assert policy.status == "retired"
+    assert policy.opportunity_stages == ["P6"]
+    assert policy.allowed_purposes == []
+
+
 @pytest.mark.parametrize(
     ("customer_type", "stage", "purpose"),
     [

@@ -87,6 +87,9 @@ def test_q33_timeliness_boundaries_are_unchanged(hours, points):
     draft = draft.model_copy(update={"submitted_at": draft.actual_end_at + timedelta(hours=hours)})
     result, _ = score_q33(draft)
     assert result.components[1].score == points
+    assert result.components[1].details["tenant_configurable"] is False
+    assert result.components[1].details["window_hours"] == 24
+    assert "公司统一标准" in result.calculation_trace["submission_timeliness_policy"]
 
 
 @pytest.mark.parametrize(("consistent", "action_ok", "expected"), [

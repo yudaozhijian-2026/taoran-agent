@@ -1,5 +1,5 @@
 agent_code: DSM-TAORAN-SCORING-AGENT
-version: 0.14.0
+version: 0.14.1
 capabilities:
   - code: configure_tenant_connections
     mode: administrative

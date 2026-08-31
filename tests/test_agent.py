@@ -297,7 +297,7 @@ def test_standard_audit_is_saved_without_changing_score_contract() -> None:
     assert result.rule_version == "TAORAN-Q33-Q34-100-V2"
     assert result.standard_audit is not None
     assert result.standard_audit.standard_id == "DSM-BS-01-07"
-    assert result.standard_audit.standard_version == "TAORAN-EVIDENCE-V1.0"
+    assert result.standard_audit.standard_version == "TAORAN-EVIDENCE-V1.1"
     assert result.standard_audit.field_mapping_version == "mapping-test-v1"
     assert len(result.standard_audit.standard_content_hash) == 64
 

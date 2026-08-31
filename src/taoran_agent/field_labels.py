@@ -16,7 +16,7 @@ _BUSINESS_LABEL_OVERRIDES = {
     "opportunity_stage": "最新商机阶段",
     "customer_feedback": "客户反馈",
     "deviation_reason": "偏差原因",
-    "next_action_target_id": "下一次行动对象",
+    "next_action_target_id": "下一次行动联系人（兼容字段）",
     "information_collection_updated": "客户信息是否已更新",
     "opportunity_updated": "商机信息是否已更新",
     "purpose_policy": "拜访目的生效策略",

@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .company_policy import TERMINAL_OPPORTUNITY_STAGE
 from .knowledge import KnowledgeRecord, TaoranKnowledgeSnapshot
 from .models import CustomerTypeII, PurposePolicyInput, VisitDraftInput
 
@@ -103,6 +104,23 @@ def purpose_policy_for_visit(
         stages = []
     else:
         stages = _visit_stages(visit)
+        if stages and set(stages) == {TERMINAL_OPPORTUNITY_STAGE}:
+            # P6 is the closed terminal state. Keep the policy as auditable context,
+            # but retire purpose matching instead of falling back to all P1-P5 purposes.
+            return PurposePolicyInput(
+                policy_version=(
+                    f"{mapping.knowledge_id}:{mapping.knowledge_version}"
+                    f"+{COMPANY_PURPOSE_POLICY_VERSION}"
+                ),
+                status="retired",
+                allowed_purposes=[],
+                effective_from=visit.visit_date,
+                source_knowledge_id=mapping.knowledge_id,
+                source_content_hash=mapping.content_hash,
+                customer_type=visit.customer_type_ii,
+                opportunity_stages=stages,
+                excluded_purposes=["P6", "争取客户满意"],
+            )
         allowed = list(mapping.opportunity_common)
         if stages:
             for stage in stages:
@@ -235,7 +253,7 @@ def _visit_stages(visit: VisitDraftInput) -> list[str]:
         raw = [visit.opportunity_stage]
     stages: list[str] = []
     for value in raw:
-        match = re.search(r"\bP([1-5])\b", value.upper())
+        match = re.search(r"\bP([1-6])\b", value.upper())
         if match:
             stages.append(f"P{match.group(1)}")
     return list(dict.fromkeys(stages))
