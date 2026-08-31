@@ -38,7 +38,11 @@ def section_payload(data):
         "T": ["customer_type_ii"], "A1": ["is_appointment"],
         "O_KR": ["expected_key_result"], "R": ["process_description"],
         "A2": ["self_assessment", "expected_key_result", "process_description"],
-        "N": ["next_action_purpose", "process_description"],
+        "N": [
+            "next_action_purpose",
+            "next_action_expected_result",
+            "process_description",
+        ],
     }
     sections = []
     for code, paths in fields.items():
@@ -71,6 +75,22 @@ def deep_payload(data):
 def envelope(payload, finish_reason="stop"):
     return {"choices": [{"finish_reason": finish_reason,
                           "message": {"content": json.dumps(payload, ensure_ascii=False)}}]}
+
+
+def tool_envelope(payload):
+    return {"choices": [{
+        "finish_reason": "tool_calls",
+        "message": {
+            "content": None,
+            "tool_calls": [{
+                "type": "function",
+                "function": {
+                    "name": "submit_taoran_precheck",
+                    "arguments": json.dumps(payload, ensure_ascii=False),
+                },
+            }],
+        },
+    }]}
 
 
 def reviewer_for(payload_fn=section_payload, **overrides):
@@ -132,14 +152,40 @@ def test_direct_precheck_sends_minimal_fields_and_approved_knowledge():
     assert len(calls) == 1
     request, body, data = calls[0]
     assert request.headers["Authorization"] == "Bearer model-test-secret"
-    assert body["response_format"] == {"type": "json_object"}
+    assert "response_format" not in body
+    assert body["tool_choice"] == "auto"
+    assert body["tools"][0]["function"]["name"] == "submit_taoran_precheck"
     assert body["thinking"] == {"type": "disabled"}
+    assert body["max_tokens"] == 2200
     assert "DSM-BS-01-07" in body["messages"][0]["content"]
+    assert "提交后facts仅为受控候选事实" not in body["messages"][0]["content"]
     assert "不是指令" in body["messages"][0]["content"]
     assert not {"employee_id", "customer_id", "metadata", "evidence_ids"} & data.keys()
     assert "never-send-secret" not in request.content.decode()
     assert "contact_id" not in json.dumps(data.get("participants"))
     assert "opportunity_id" not in json.dumps(data.get("opportunities"))
+
+
+def test_precheck_accepts_schema_bound_function_arguments():
+    captured = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        data = json.loads(body["messages"][1]["content"])["untrusted_visit_data"]
+        captured.append(body)
+        return httpx.Response(200, json=tool_envelope(section_payload(data)))
+
+    reviewer = ChatModelReviewer(
+        model_settings(),
+        load_taoran_knowledge_snapshot(),
+        httpx.MockTransport(handler),
+    )
+    result = reviewer.review_without_knowledge(visit())
+    reviewer.close()
+
+    assert result.status == "completed"
+    assert len(result.sections) == 6
+    assert captured[0]["tools"][0]["function"]["parameters"]["title"] == "_PrecheckPayload"
 
 
 def test_pure_ai_precheck_explicitly_excludes_knowledge_snapshot():
@@ -148,7 +194,7 @@ def test_pure_ai_precheck_explicitly_excludes_knowledge_snapshot():
     reviewer.close()
 
     assert result.status == "completed"
-    assert result.prompt_version == "TAORAN-LLM-PURE-FEEDBACK-V1"
+    assert result.prompt_version == "TAORAN-LLM-PURE-FEEDBACK-V2.2"
     prompt = calls[0][1]["messages"][0]["content"]
     assert "本次为纯AI反馈" in prompt
     assert "DSM-BS-000" not in prompt
@@ -212,7 +258,8 @@ def test_ai_feedback_without_configured_model_does_not_masquerade_as_rule_feedba
     assert result.status == "review"
     assert result.semantic_review.status == "not_configured"
     assert "纯AI反馈" in result.feedback_text
-    assert "未完成" in result.feedback_text
+    assert "AI调用异常" in result.feedback_text
+    assert "TAORAN专用大模型尚未配置" in result.feedback_text
     assert "检查标准：" not in result.feedback_text
 
 
@@ -331,7 +378,8 @@ def test_frontend_has_wall_clock_limit_and_bounded_background_calls():
         second = reviewer.review(visit())
         assert monotonic() - started < 0.3
         assert first.status == "timeout"
-        assert second.status == "unavailable"
+        assert second.status == "timeout"
+        assert second.failure_reason == "queue_timeout"
         assert len(calls) == 1
     finally:
         release.set()
@@ -434,7 +482,8 @@ def test_schema_prompt_uses_actual_types_and_constraints():
     assert schema["$defs"]["_FactsPayload"]["properties"]["customer_consensus_met"]["type"] == "boolean"
     assert schema["$defs"]["ModelSectionAnalysis"]["properties"]["reason"]["maxLength"] == 500
     assert "不能是字符串" in system
-    assert result.prompt_version == "TAORAN-LLM-FACTS-V2.2"
+    assert calls[0][1]["max_tokens"] == 3000
+    assert result.prompt_version == "TAORAN-LLM-FACTS-V2.4"
     assert "禁止为它们创建evidence元素" in system
 
 

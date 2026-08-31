@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 ACTIVE_KNOWLEDGE_STATUSES = {"已批准", "已确认"}
 DEFAULT_QUERY = "TAORAN"
+REQUIRED_KNOWLEDGE_IDS = ("DSM-BS-01-06",)
 
 
 class KnowledgeRecord(BaseModel):
@@ -104,14 +105,40 @@ class KnowledgeApiClient:
             response.raise_for_status()
             result = response.json()
             items = result.get("items", [])
-            records = []
-            for item in items:
-                detail = client.get(f"/v1/knowledge/{item['id']}")
+            records_by_id: dict[str, dict[str, Any]] = {
+                item["id"]: item
+                for item in items
+                if item.get("id")
+                and item.get("content")
+                and item.get("status") in ACTIVE_KNOWLEDGE_STATUSES
+            }
+            missing_ids = list(
+                dict.fromkeys(
+                    [
+                        item["id"]
+                        for item in items
+                        if item.get("id") and item["id"] not in records_by_id
+                    ]
+                    + [
+                        record_id
+                        for record_id in REQUIRED_KNOWLEDGE_IDS
+                        if record_id not in records_by_id
+                    ]
+                )
+            )
+            for record_id in missing_ids:
+                detail = client.get(f"/v1/knowledge/{record_id}")
+                if detail.status_code == 404 and record_id in REQUIRED_KNOWLEDGE_IDS:
+                    continue
                 detail.raise_for_status()
                 payload: dict[str, Any] = detail.json()
                 record = payload.get("item") or payload.get("data") or payload
-                if record.get("status") in ACTIVE_KNOWLEDGE_STATUSES:
-                    records.append(record)
+                if (
+                    record.get("id") == record_id
+                    and record.get("status") in ACTIVE_KNOWLEDGE_STATUSES
+                ):
+                    records_by_id[record_id] = record
+            records = list(records_by_id.values())
         return TaoranKnowledgeSnapshot(
             source=f"{self.base_url}/v1/knowledge/search",
             query=DEFAULT_QUERY,

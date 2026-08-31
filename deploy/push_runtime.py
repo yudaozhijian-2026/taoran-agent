@@ -18,8 +18,11 @@ assert settings.jiandaoyun_webhook_secret
 names = [
     "tenant_keys_json", "jiandaoyun_api_keys_json", "jiandaoyun_webhook_secret",
     "jiandaoyun_base_url", "jiandaoyun_timeout_seconds", "precheck_budget_seconds",
-    "llm_enabled", "llm_api_url", "llm_model", "llm_evaluation_timeout_seconds",
-    "llm_max_concurrency", "llm_max_input_chars", "llm_max_output_tokens", "llm_format_retries",
+    "llm_enabled", "llm_api_url", "llm_model", "llm_precheck_timeout_seconds",
+    "llm_evaluation_timeout_seconds",
+    "llm_max_concurrency", "llm_button_queue_capacity", "llm_button_queue_wait_seconds",
+    "llm_max_input_chars", "llm_precheck_max_output_tokens", "llm_max_output_tokens",
+    "llm_format_retries", "knowledge_snapshot_cache_seconds",
 ]
 values = {name: getattr(settings, name) for name in names}
 values["llm_api_key"] = settings.llm_api_key.get_secret_value()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
-from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import UTC, date, datetime
 from importlib.resources import files
 from threading import Lock
@@ -28,7 +28,7 @@ from .field_labels import use_field_mapping
 from .gateway import verify_admin_access, verify_q40_service_access, verify_tenant_access
 from .jiandaoyun_api import JiandaoyunReadError, get_jiandaoyun_record
 from .knowledge import KnowledgeApiClient, TaoranKnowledgeSnapshot, load_taoran_knowledge_snapshot
-from .llm import PROMPT_VERSION, ChatModelReviewer
+from .llm import PROMPT_VERSION, PURE_AI_PROMPT_VERSION, ChatModelReviewer
 from .models import (
     ButtonPrecheckResponse,
     EvaluationAccepted,
@@ -51,6 +51,12 @@ from .models import (
     Severity,
 )
 from .precheck_engine import TaoranPrecheckEngine
+from .purpose_mapping import (
+    PurposeMappingError,
+    purpose_mapping_record,
+    purpose_policy_for_visit,
+    structure_purpose_mapping,
+)
 from .q40_integration import build_period_facts, rule_compatibility
 from .rules import canonical_hash
 from .runtime import build_agent
@@ -74,16 +80,14 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
-    version="0.13.0",
+    version="0.13.1",
     description="提交前单按钮三份非阻断TAORAN反馈、提交后Q33/Q34各50分合计100分评价及简道云回写服务。",
 )
 _stores: dict[str, AgentStore] = {}
 _agents: dict[str, TaoranAgent] = {}
 _precheck_locks = [Lock() for _ in range(64)]
-_button_feedback_executor = ThreadPoolExecutor(
-    max_workers=4,
-    thread_name_prefix="taoran-button-feedback",
-)
+_live_knowledge_cache_lock = Lock()
+_live_knowledge_cache: dict[str, tuple[float, TaoranKnowledgeSnapshot]] = {}
 _ADMIN_SECURITY_HEADERS = {
     "Cache-Control": "no-store",
     "Content-Security-Policy": (
@@ -117,6 +121,35 @@ def get_agent(settings: Settings | None = None) -> TaoranAgent:
     if key not in _agents:
         _agents[key] = build_agent(settings, snapshot)
     return _agents[key]
+
+
+def _fetch_live_knowledge_snapshot(
+    settings: Settings,
+    timeout_seconds: float,
+) -> TaoranKnowledgeSnapshot:
+    """短时缓存并合并同时取数，避免多人点击对知识API发起重复请求。"""
+    secret = settings.knowledge_api_key
+    if secret is None:
+        raise ValueError("knowledge_api_not_configured")
+    cache_key = hashlib.sha256(
+        (
+            settings.knowledge_api_base_url
+            + "\0"
+            + secret.get_secret_value()
+        ).encode()
+    ).hexdigest()
+    with _live_knowledge_cache_lock:
+        cached = _live_knowledge_cache.get(cache_key)
+        now = monotonic()
+        if cached and now - cached[0] <= settings.knowledge_snapshot_cache_seconds:
+            return cached[1]
+        snapshot = KnowledgeApiClient(
+            settings.knowledge_api_base_url,
+            secret.get_secret_value(),
+            timeout_seconds,
+        ).fetch_taoran_snapshot()
+        _live_knowledge_cache[cache_key] = (monotonic(), snapshot)
+        return snapshot
 
 
 def authorize(
@@ -468,13 +501,95 @@ def create_precheck(
         _precheck_locks
     )
     with _precheck_locks[lock_index]:
-        mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
+        settings = get_settings()
+        request, live_snapshot = _with_live_purpose_policy(request, settings)
+        mapping_path = settings.jiandaoyun_mapping_path_for(request.context.tenant_id)
         with use_field_mapping(mapping_path):
-            return _execute_precheck(request)
+            return _execute_precheck_with_agent(
+                request,
+                _agent_with_snapshot(live_snapshot),
+            )
 
 
 def _execute_precheck(request: PrecheckRequest) -> PrecheckResponse:
     return _execute_precheck_with_agent(request, get_agent())
+
+
+def _agent_with_snapshot(snapshot: TaoranKnowledgeSnapshot | None) -> TaoranAgent:
+    if snapshot is None:
+        return get_agent()
+    try:
+        return TaoranAgent(get_agent().semantic_reviewer, TaoranPrecheckEngine(snapshot))
+    except ValueError:
+        # 通用TAORAN核心知识缺失时不得把不完整实时快照冒充规则基线。
+        return get_agent()
+
+
+def _with_live_purpose_policy(
+    request: PrecheckRequest,
+    settings: Settings,
+    snapshot: TaoranKnowledgeSnapshot | None = None,
+) -> tuple[PrecheckRequest, TaoranKnowledgeSnapshot | None]:
+    """精确读取DSM-BS-01-06并生成当前记录的T-03确定性策略。"""
+    if request.visit.purpose_policy is not None:
+        return request, snapshot
+    metadata = dict(request.visit.metadata)
+    if request.visit.customer_type_ii is None:
+        metadata["purpose_mapping_status"] = "not_evaluated"
+        return request.model_copy(
+            update={"visit": request.visit.model_copy(update={"metadata": metadata})}
+        ), snapshot
+    if not settings.knowledge_api_key:
+        metadata["purpose_mapping_status"] = "unavailable"
+        metadata["purpose_mapping_failure_reason"] = "knowledge_api_not_configured"
+        return request.model_copy(
+            update={"visit": request.visit.model_copy(update={"metadata": metadata})}
+        ), snapshot
+    if snapshot is None:
+        try:
+            snapshot = _fetch_live_knowledge_snapshot(
+                settings,
+                settings.knowledge_timeout_seconds,
+            )
+        except Exception:  # noqa: BLE001 - 不暴露知识服务响应或密钥
+            metadata["purpose_mapping_status"] = "unavailable"
+            metadata["purpose_mapping_failure_reason"] = "knowledge_api_unavailable"
+            return request.model_copy(
+                update={"visit": request.visit.model_copy(update={"metadata": metadata})}
+            ), None
+    record = purpose_mapping_record(snapshot)
+    if record is None:
+        metadata["purpose_mapping_status"] = "unavailable"
+        metadata["purpose_mapping_failure_reason"] = "knowledge_record_missing"
+        return request.model_copy(
+            update={"visit": request.visit.model_copy(update={"metadata": metadata})}
+        ), snapshot
+    try:
+        mapping = structure_purpose_mapping(record)
+        policy = purpose_policy_for_visit(mapping, request.visit)
+    except PurposeMappingError:
+        metadata["purpose_mapping_status"] = "unavailable"
+        metadata["purpose_mapping_failure_reason"] = "knowledge_mapping_invalid"
+        return request.model_copy(
+            update={"visit": request.visit.model_copy(update={"metadata": metadata})}
+        ), snapshot
+    if policy is None:
+        metadata["purpose_mapping_status"] = "not_evaluated"
+        return request.model_copy(
+            update={"visit": request.visit.model_copy(update={"metadata": metadata})}
+        ), snapshot
+    metadata.update(
+        {
+            "purpose_mapping_status": "applied",
+            "purpose_mapping_knowledge_id": mapping.knowledge_id,
+            "purpose_mapping_knowledge_version": mapping.knowledge_version,
+            "purpose_mapping_content_hash": mapping.content_hash,
+        }
+    )
+    visit = request.visit.model_copy(
+        update={"purpose_policy": policy, "metadata": metadata}
+    )
+    return request.model_copy(update={"visit": visit}), snapshot
 
 
 def _execute_precheck_with_agent(
@@ -501,24 +616,6 @@ def _execute_precheck_with_agent(
     except IdempotencyConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return response
-
-
-class _RuntimeKnowledgeReviewer(SemanticReviewer):
-    """将单次知识API结果交给共享大模型并发门控。"""
-
-    def __init__(
-        self,
-        reviewer: ChatModelReviewer,
-        snapshot: TaoranKnowledgeSnapshot,
-    ) -> None:
-        self.reviewer = reviewer
-        self.snapshot = snapshot
-
-    def review(self, visit):
-        return self.reviewer.review_with_runtime_knowledge(visit, self.snapshot)
-
-    def review_with_knowledge(self, visit):
-        return self.review(visit)
 
 
 class _FixedSemanticReviewer(SemanticReviewer):
@@ -572,9 +669,51 @@ def _knowledge_feedback_unavailable(
     )
 
 
+def _queued_model_feedback_unavailable(
+    request: PrecheckRequest,
+    settings: Settings,
+    snapshot: TaoranKnowledgeSnapshot | None,
+    failure_reason: str,
+) -> PrecheckResponse:
+    message = {
+        "queue_full": "AI调用异常：当前同时检测人数已达到上限。",
+        "queue_timeout": "AI调用异常：等待大模型处理超时。",
+    }[failure_reason]
+    review = SemanticReview(
+        status="unavailable",
+        provider="llm-chat",
+        model=settings.llm_model,
+        prompt_version=(
+            PURE_AI_PROMPT_VERSION
+            if request.feedback_mode == FeedbackMode.AI
+            else PROMPT_VERSION
+        ),
+        failure_reason=failure_reason,
+        issues=[
+            Issue(
+                code="LLM_PRECHECK_UNAVAILABLE",
+                dimension="SYSTEM",
+                severity=Severity.INFO,
+                field_paths=[],
+                message=message,
+                suggestion="请稍后重新点击AI检测。",
+                source="system",
+            )
+        ],
+    )
+    return _execute_precheck_with_agent(
+        request,
+        TaoranAgent(
+            _FixedSemanticReviewer(review),
+            TaoranPrecheckEngine(snapshot),
+        ),
+    )
+
+
 def _execute_live_knowledge_feedback(
     request: PrecheckRequest,
     settings: Settings,
+    snapshot: TaoranKnowledgeSnapshot | None = None,
 ) -> PrecheckResponse:
     if not settings.knowledge_api_key:
         return _knowledge_feedback_unavailable(
@@ -582,14 +721,6 @@ def _execute_live_knowledge_feedback(
             code="KNOWLEDGE_API_NOT_CONFIGURED",
             message="知识库API尚未配置，本次未生成知识库反馈。",
             suggestion="请管理员配置TAORAN专用知识库API Key后重试。",
-        )
-    shared_reviewer = get_agent().semantic_reviewer
-    if not isinstance(shared_reviewer, ChatModelReviewer):
-        return _knowledge_feedback_unavailable(
-            request,
-            code="KNOWLEDGE_MODEL_NOT_CONFIGURED",
-            message="智谱大模型尚未配置，本次未生成知识库反馈。",
-            suggestion="请管理员完成TAORAN专用智谱模型配置后重试。",
         )
     fetch_budget = max(
         1.0,
@@ -600,19 +731,16 @@ def _execute_live_knowledge_feedback(
             - 1.0,
         ),
     )
-    try:
-        snapshot = KnowledgeApiClient(
-            settings.knowledge_api_base_url,
-            settings.knowledge_api_key.get_secret_value(),
-            fetch_budget,
-        ).fetch_taoran_snapshot()
-    except Exception:  # noqa: BLE001 - 只暴露安全失败分类，不泄露供应方响应
-        return _knowledge_feedback_unavailable(
-            request,
-            code="KNOWLEDGE_API_UNAVAILABLE",
-            message="本次未能从知识库API取得可用内容，未生成知识库结论。",
-            suggestion="请稍后重新点击AI检测；持续失败请联系管理员。",
-        )
+    if snapshot is None:
+        try:
+            snapshot = _fetch_live_knowledge_snapshot(settings, fetch_budget)
+        except Exception:  # noqa: BLE001 - 只暴露安全失败分类，不泄露供应方响应
+            return _knowledge_feedback_unavailable(
+                request,
+                code="KNOWLEDGE_API_UNAVAILABLE",
+                message="本次未能从知识库API取得可用内容，未生成知识库结论。",
+                suggestion="请稍后重新点击AI检测；持续失败请联系管理员。",
+            )
     request = request.model_copy(
         update={
             "visit": request.visit.model_copy(
@@ -628,8 +756,8 @@ def _execute_live_knowledge_feedback(
     return _execute_precheck_with_agent(
         request,
         TaoranAgent(
-            _RuntimeKnowledgeReviewer(shared_reviewer, snapshot),
-            TaoranPrecheckEngine(snapshot),
+            precheck_engine=TaoranPrecheckEngine(snapshot),
+            direct_knowledge_feedback=True,
         ),
     )
 
@@ -640,7 +768,6 @@ def _execute_three_feedback(
 ) -> tuple[PrecheckResponse, PrecheckResponse, PrecheckResponse]:
     """生成规则、实时知识库和纯大模型反馈，供按钮与提交后回写共用。"""
     base_context = canonical_request.context
-    rule_request = canonical_request.model_copy(update={"feedback_mode": FeedbackMode.RULE})
     model_request = canonical_request.model_copy(
         update={
             "context": base_context.model_copy(
@@ -649,6 +776,17 @@ def _execute_three_feedback(
             "feedback_mode": FeedbackMode.AI,
         }
     )
+    mapping_path = settings.jiandaoyun_mapping_path_for(base_context.tenant_id)
+
+    def run_model() -> PrecheckResponse:
+        with use_field_mapping(mapping_path):
+            return _execute_precheck(model_request)
+
+    canonical_request, live_snapshot = _with_live_purpose_policy(
+        canonical_request,
+        settings,
+    )
+    rule_request = canonical_request.model_copy(update={"feedback_mode": FeedbackMode.RULE})
     knowledge_request = canonical_request.model_copy(
         update={
             "context": base_context.model_copy(
@@ -657,21 +795,41 @@ def _execute_three_feedback(
             "feedback_mode": FeedbackMode.KNOWLEDGE,
         }
     )
-    mapping_path = settings.jiandaoyun_mapping_path_for(base_context.tenant_id)
     with use_field_mapping(mapping_path):
-        rule = _execute_precheck(rule_request)
+        rule = _execute_precheck_with_agent(
+            rule_request,
+            _agent_with_snapshot(live_snapshot),
+        )
 
-    def run_model() -> PrecheckResponse:
-        with use_field_mapping(mapping_path):
-            return _execute_precheck(model_request)
+    with use_field_mapping(mapping_path):
+        knowledge = _execute_live_knowledge_feedback(
+            knowledge_request,
+            settings,
+            live_snapshot,
+        )
 
-    def run_knowledge() -> PrecheckResponse:
-        with use_field_mapping(mapping_path):
-            return _execute_live_knowledge_feedback(knowledge_request, settings)
-
-    model_future = _button_feedback_executor.submit(run_model)
-    knowledge_future = _button_feedback_executor.submit(run_knowledge)
-    return rule, knowledge_future.result(), model_future.result()
+    reviewer = get_agent().semantic_reviewer
+    lease = (
+        reviewer.button_feedback_scheduler.lease(
+            settings.llm_button_queue_wait_seconds
+        )
+        if isinstance(reviewer, ChatModelReviewer)
+        else nullcontext("acquired")
+    )
+    with lease as lease_status:
+        if lease_status != "acquired":
+            return (
+                rule,
+                knowledge,
+                _queued_model_feedback_unavailable(
+                    model_request,
+                    settings,
+                    None,
+                    lease_status,
+                ),
+            )
+        # 知识库反馈已直接由实时知识快照生成；此处只调度唯一的纯大模型请求。
+        return rule, knowledge, run_model()
 
 
 @app.post("/api/v1/agent/visit/check", response_model=PrecheckResponse)
@@ -696,7 +854,7 @@ def jiandaoyun_precheck(
     except (FieldTransferError, ValidationError):
         raise HTTPException(
             status_code=422,
-            detail="本次检测未完成：字段传递格式异常，请核对本次字段值及子表绑定后重试。",
+            detail="AI调用异常。异常原因：字段传递格式异常。处理建议：请核对本次字段值及子表绑定后重试。",
         ) from None
     return create_precheck(canonical_request, x_tenant_id, x_api_key)
 
@@ -747,7 +905,7 @@ def jiandaoyun_button_precheck(
     except (FieldTransferError, ValidationError):
         raise HTTPException(
             status_code=422,
-            detail="本次检测未完成：字段传递格式异常，请核对本次字段值及子表绑定后重试。",
+            detail="AI调用异常。异常原因：字段传递格式异常。处理建议：请核对本次字段值及子表绑定后重试。",
         ) from None
     rule, knowledge, model = _execute_three_feedback(canonical_request, settings)
     return ButtonPrecheckResponse.from_three_prechecks(

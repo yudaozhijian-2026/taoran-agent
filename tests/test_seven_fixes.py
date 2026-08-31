@@ -45,7 +45,10 @@ def test_n_other_omitted_is_transport_gap_not_user_empty():
 
 
 def test_n_other_with_concrete_description_passes():
-    result = check({"next_action_purpose": "其他", "next_action_other_purpose": "安排客户技术交流"})
+    result = check({
+        "next_action_purpose": "其他",
+        "next_action_other_purpose": "确认客户技术验证范围和参会人员",
+    })
     assert section(result, "N").status == "met"
 
 
@@ -89,10 +92,10 @@ def test_warning_and_coverage_are_reflected_in_overall_summary():
     result = check(omitted=("process_description",))
     assert result.status == "review"
     assert section(result, "A2").unreceived_fields == ["process_description"]
-    assert "接口未获取：“过程详细描述”" in result.feedback_text
-    assert "接口未获取：“评价”" not in result.feedback_text
+    assert "AI调用异常。异常原因：系统未获取“过程详细描述”" in result.feedback_text
+    assert "系统未获取“评价”" not in result.feedback_text
     assert "建议补充“过程详细描述”" not in result.feedback_text
-    assert "暂不能给出完整结论" in result.feedback_text
+    assert "请管理员根据上述异常原因修复字段传递或调用配置后重新检测" in result.feedback_text
 
 
 def test_missing_date_only_lists_date_not_received_contact_date():
@@ -197,4 +200,4 @@ def test_incomplete_model_never_writes_or_displays_default_t_a_pass(monkeypatch)
     facts = deepcopy(result.semantic_facts)
     facts.provider, facts.status = "llm-chat", "completed"
     feedback = build_evaluation_feedback(request.visit, 50, 50, 100, [], facts)
-    assert "客户类型：本项检测未完成" in feedback
+    assert "客户类型：AI调用异常。异常原因：大模型未完成六项分析" in feedback

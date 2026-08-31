@@ -1,6 +1,6 @@
 product_code: dsm-taoran-visit-agent
 product_name: DSM TAORAN 拜访智能体
-version: 0.13.0
+version: 0.13.1
 status: knowledge_driven_precheck_q33_q34_integrated
 deployment_modes:
   - standalone

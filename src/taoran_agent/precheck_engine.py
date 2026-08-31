@@ -59,6 +59,45 @@ _VERIFIABLE_MARKERS = (
     "约定",
 )
 _JUDGMENT_MARKERS = ("我认为", "我感觉", "应该", "估计", "可能", "大概", "沟通顺利", "非常满意")
+_GENERIC_NEXT_PURPOSES = {
+    "继续跟进",
+    "持续跟进",
+    "后续跟进",
+    "再沟通",
+    "继续沟通",
+    "保持联系",
+    "发资料",
+    "发送资料",
+    "推进项目",
+}
+_CUSTOMER_ACTOR_MARKERS = (
+    "客户",
+    "院方",
+    "校方",
+    "对方",
+    "负责人",
+    "主任",
+    "经理",
+    "采购",
+    "技术",
+    "决策人",
+)
+_CUSTOMER_ACTION_MARKERS = ("确认", "同意", "认可", "提供", "决定", "承诺", "完成")
+_CONSENSUS_POSITIVE_MARKERS = ("同意", "确认", "认可", "约定", "愿意", "承诺", "达成一致")
+_CONSENSUS_NEGATIVE_MARKERS = (
+    "不同意",
+    "未同意",
+    "尚未同意",
+    "不确认",
+    "未确认",
+    "尚未确认",
+    "不认可",
+    "未认可",
+    "不承诺",
+    "未承诺",
+    "未约定",
+    "拒绝",
+)
 
 
 def _has_check_content(value: str | None, vague_phrases: set[str]) -> bool:
@@ -66,6 +105,22 @@ def _has_check_content(value: str | None, vague_phrases: set[str]) -> bool:
     text = normalized_text(value)
     return is_meaningful(value, vague_phrases) and not bool(
         re.fullmatch(r"(.{1,4})\1{2,}", text)
+    )
+
+
+def _meaningful_overlap(left: str | None, right: str | None) -> bool:
+    """Conservative local linkage signal; the model remains responsible for full semantics."""
+    a, b = normalized_text(left), normalized_text(right)
+    if not a or not b:
+        return False
+    stop = {"客户", "下一步", "进行", "完成", "安排", "相关", "本次", "继续"}
+    return any(a[index:index + 2] in b and a[index:index + 2] not in stop for index in range(len(a) - 1))
+
+
+def _has_time_or_condition(text: str) -> bool:
+    return bool(
+        re.search(r"\d{1,2}\s*(?:月|日|号|点|时)|(?:今天|明天|下周|月底|季度|会后|完成后)", text)
+        or any(token in text for token in ("如果", "若", "条件", "前提", "后", "之前", "以后"))
     )
 
 
@@ -406,41 +461,153 @@ class TaoranPrecheckEngine:
         visit: VisitDraftInput, vague_phrases: set[str]
     ) -> list[_RuleCheck]:
         purpose = normalized_text(visit.next_action_purpose)
-        purpose_ok = is_meaningful(visit.next_action_purpose, vague_phrases)
-        result_ok = is_meaningful(visit.next_action_expected_result, vague_phrases)
-        target_ok = bool(visit.next_action_target_id or visit.participants)
+        effective_purpose = (
+            visit.next_action_other_purpose
+            if "other" in purpose or "其他" in purpose
+            else visit.next_action_purpose
+        )
+        purpose_field = (
+            "next_action_other_purpose"
+            if "other" in purpose or "其他" in purpose
+            else "next_action_purpose"
+        )
+        purpose_text = normalized_text(effective_purpose)
+        purpose_has_value = bool(purpose_text)
+        source_text = normalized_text(
+            " ".join(
+                value for value in (visit.process_description, visit.customer_feedback) if value
+            )
+        )
+        purpose_present = _has_check_content(effective_purpose, vague_phrases)
+        purpose_ok = bool(
+            purpose_present
+            and purpose_text not in _GENERIC_NEXT_PURPOSES
+            and not any(
+                purpose_text.startswith(item) and len(purpose_text) <= len(item) + 2
+                for item in _GENERIC_NEXT_PURPOSES
+            )
+        )
+        purpose_linked = bool(
+            purpose_ok
+            and source_text
+            and _meaningful_overlap(purpose_text, source_text)
+        )
+        result_text = normalized_text(visit.next_action_expected_result)
+        result_present = is_meaningful(visit.next_action_expected_result, vague_phrases)
+        result_observable = bool(
+            _has_check_content(visit.next_action_expected_result, vague_phrases)
+            and len(result_text) >= 8
+            and any(marker in result_text for marker in _CUSTOMER_ACTOR_MARKERS)
+            and any(marker in result_text for marker in _CUSTOMER_ACTION_MARKERS)
+        )
+        result_linked = bool(
+            result_observable
+            and (
+                _meaningful_overlap(result_text, purpose_text)
+                or _meaningful_overlap(result_text, source_text)
+            )
+        )
         checks = [
             _RuleCheck(
-                ("next_action_purpose",),
+                (
+                    ("next_action_other_purpose",)
+                    if "other" in purpose or "其他" in purpose
+                    else ("next_action_purpose",)
+                ),
                 purpose_ok,
-                "TAORAN_NSA_PURPOSE_MISSING",
-                "下一步客户行动缺少明确目的。",
-                "请写明下一步针对客户完成什么行动。",
+                (
+                    "TAORAN_NSA_OTHER_PURPOSE_MISSING"
+                    if purpose_field == "next_action_other_purpose" and not purpose_has_value
+                    else "TAORAN_NSA_PURPOSE_MISSING"
+                    if not purpose_has_value
+                    else "TAORAN_NSA_PURPOSE_VAGUE"
+                ),
+                (
+                    "下一次行动目的选择了其他，但下一次具体其他目的未填写或内容无效。"
+                    if purpose_field == "next_action_other_purpose" and not purpose_has_value
+                    else "下一步客户行动缺少明确目的。"
+                    if not purpose_has_value
+                    else "下一步客户行动目的过于空泛，尚未形成具体客户任务。"
+                ),
+                (
+                    f"请补充“{display_field_name('next_action_other_purpose')}”，写明与本次客户事实衔接的具体客户任务。"
+                    if purpose_field == "next_action_other_purpose"
+                    else "请结合本次客户事实，写明下一步要推动的具体客户变化、决定、材料或承诺；不要只写继续跟进、再沟通、发资料或保持联系。"
+                ),
+            ),
+            _RuleCheck(
+                (purpose_field, "process_description"),
+                purpose_linked,
+                "TAORAN_NSA_PURPOSE_NOT_LINKED",
+                "下一步客户行动目的与本次拜访形成的客户事实、结果、异议、条件或未完成事项衔接不足。",
+                "请依据本次客户确认、异议、条件、承诺或未完成事项，改写下一步行动目的，使前后关系清楚。",
+                requires_all_supplied=True,
             ),
             TaoranPrecheckEngine._next_contact_time_check(visit),
             _RuleCheck(
-                ("next_action_expected_result",),
-                result_ok,
-                "TAORAN_NSA_RESULT_MISSING",
-                "下一步客户行动缺少期望结果。",
-                f"请补充“{display_field_name('next_action_expected_result')}”。",
-            ),
-            _RuleCheck(
-                ("next_action_target_id", "participants"),
-                target_ok,
-                "TAORAN_NSA_TARGET_MISSING",
-                "下一步客户行动缺少明确对象。",
-                "请明确下一步行动对应的客户联系人或参与对象。",
+                ("next_action_expected_result", purpose_field, "process_description"),
+                result_linked,
+                "TAORAN_NSA_RESULT_MISSING" if not result_present else "TAORAN_NSA_RESULT_NOT_ACTIONABLE",
+                "下一步客户行动缺少期望结果。" if not result_present else "下一步期望结果不是可观察的客户行动或与行动目的、本次事实衔接不足。",
+                f"请完善“{display_field_name('next_action_expected_result')}”，写明客户将确认、认可、提供、决定、承诺或完成什么，并与下一步目的及本次客户事实对应。",
+                requires_all_supplied=True,
             ),
         ]
-        if "other" in purpose or "其他" in purpose:
+        contact_date = visit.next_contact_date
+        if contact_date and contact_date > visit.visit_date:
+            period_ok = True
+            period_message = ""
+            period_suggestion = ""
+            if visit.customer_type_ii == CustomerTypeII.TARGET:
+                period_ok = (contact_date.year, contact_date.month) != (
+                    visit.visit_date.year,
+                    visit.visit_date.month,
+                )
+                period_message = "目标客户的下一次联系日期仍在本次拜访所在自然月内。"
+                period_suggestion = "请按北京时间自然月安排到下一个月份；公司周期标准优先于历史Q34口径。"
+            elif visit.customer_type_ii == CustomerTypeII.POTENTIAL:
+                current_quarter = (visit.visit_date.month - 1) // 3
+                next_quarter = (contact_date.month - 1) // 3
+                period_ok = (contact_date.year, next_quarter) != (
+                    visit.visit_date.year,
+                    current_quarter,
+                )
+                period_message = "潜力客户的下一次联系日期仍在本次拜访所在自然季度内。"
+                period_suggestion = "请按北京时间自然季度安排到下一个季度；公司周期标准优先于历史Q34口径。"
+            if visit.customer_type_ii in {CustomerTypeII.TARGET, CustomerTypeII.POTENTIAL}:
+                checks.append(
+                    _RuleCheck(
+                        ("next_contact_at", "visit_date", "customer_type_ii"),
+                        period_ok,
+                        "TAORAN_NSA_PERIOD_NOT_ALIGNED",
+                        period_message,
+                        period_suggestion,
+                        requires_all_supplied=True,
+                    )
+                )
+        if visit.customer_type_ii == CustomerTypeII.OPPORTUNITY:
+            affirmative_source = source_text
+            for marker in _CONSENSUS_NEGATIVE_MARKERS:
+                affirmative_source = affirmative_source.replace(marker, "")
+            has_positive = any(
+                marker in affirmative_source for marker in _CONSENSUS_POSITIVE_MARKERS
+            )
+            consensus_linked = bool(
+                has_positive
+                and _meaningful_overlap(source_text, purpose_text)
+                and (
+                    _has_time_or_condition(source_text)
+                    or _meaningful_overlap(source_text, result_text)
+                )
+            )
             checks.append(
                 _RuleCheck(
-                    ("next_action_other_purpose",),
-                    _has_check_content(visit.next_action_other_purpose, vague_phrases),
-                    "TAORAN_NSA_OTHER_PURPOSE_MISSING",
-                    "下一次行动目的选择了其他，但未填写有效的具体目的。",
-                    f"请补充“{display_field_name('next_action_other_purpose')}”，写明具体客户任务。",
+                    ("process_description", purpose_field, "next_action_expected_result"),
+                    consensus_linked,
+                    "TAORAN_NSA_CUSTOMER_CONSENSUS_MISSING",
+                    "商机客户记录中未形成可核验的下一步客户共识。",
+                    "请在过程详细描述或客户反馈中补充客户明确同意、确认、认可、约定或承诺的具体下一步，以及对应时间、条件或期望结果；销售人员单方面计划不能代替客户共识。",
+                    requires_all_supplied=True,
                 )
             )
         return checks

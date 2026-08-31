@@ -18,6 +18,7 @@ from .runtime import build_agent
 def _synthetic_visit(index: int) -> VisitDraftInput:
     data = {
         "employee_id": "synthetic", "visit_date": "2026-08-25",
+        "customer_id": "SYNTHETIC-CUSTOMER",
         "customer_type_ii": "opportunity", "opportunity_stage": "P3",
         "visit_method": "face_to_face", "is_appointment": True,
         "purpose_code": "确认验证计划", "expected_key_result": "客户确认验证日期和三台设备清单",

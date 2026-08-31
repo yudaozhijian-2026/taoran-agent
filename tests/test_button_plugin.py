@@ -38,7 +38,7 @@ def test_plugin_preserves_current_multiline_text(text):
     call = result['calls'][0]
     assert call['data'] == {'tenant_id': 'tenant_demo', 'process_description': text}
     assert call['headers']['X-API-Key'] == 'synthetic-test-key'
-    assert call['timeout'] == 12000
+    assert call['timeout'] == 30000
     assert call['maxRedirects'] == 0
     assert 'synthetic-test-key' not in call['url']
     assert result['result'] == {
@@ -147,7 +147,7 @@ def test_plugin_network_failure_returns_new_chinese_feedback_without_secrets():
     result = run_button_plugin({'process_description': '合成测试'}, fail=True)
     assert len(result['calls']) == 1
     assert result['result']['check_status'] == 'unavailable'
-    assert '本次检测未完成' in result['result']['feedback_text']
+    assert 'AI调用异常' in result['result']['feedback_text']
     assert 'simulated-secret' not in result['result']['feedback_text']
     assert 'customer content' not in result['result']['feedback_text']
 

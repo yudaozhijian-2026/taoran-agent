@@ -2,7 +2,7 @@
 // 配置见项目根目录《过程详细描述传参接入.md》。仅传递草稿，不读写业务记录。
 const axios = require('axios');
 const feedback = (message) => {
-  const text = `【提交前TAORAN检查】\n本次检测未完成：${message}\n请重新点击“AI检测”，不要将上一次意见作为本次检查结果。`;
+  const text = `【提交前TAORAN检查】\nAI调用异常。异常原因：${message}\n处理建议：请重新点击“AI检测”；持续失败请联系管理员核对接口配置。不要将上一次意见作为本次检查结果。`;
   return {
     feedback_text: text,
     rule_feedback_text: text,
@@ -127,7 +127,8 @@ try {
     url: endpoint.toString(),
     headers: { 'Content-Type': 'application/json', 'X-Tenant-Id': tenant, 'X-API-Key': key },
     data: payload,
-    timeout: 12000,
+    // 三份反馈包含两次并行模型分析；保留30秒预算，避免模型在10秒边界完成后被前端提前中断。
+    timeout: 30000,
     maxRedirects: 0, // 防止带密钥的请求跟随重定向到其他地址。
     maxBodyLength: 262144,
     maxContentLength: 262144,

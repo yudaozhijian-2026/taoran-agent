@@ -94,10 +94,11 @@ def test_passed_and_unreceived_sections_display_standards_with_accurate_status()
     payload["visit"].pop("process_description")
     payload["visit"]["metadata"] = {"source_supplied_fields": list(payload["visit"])}
     partial = TaoranAgent().precheck(PrecheckRequest.model_validate(payload))
-    assert "R｜过程事实与结果：未检查。\n检查标准：" in partial.feedback_text
-    assert "A｜达成评价：待复核。\n检查标准：" in partial.feedback_text
+    assert "R｜过程事实与结果：AI调用异常。异常原因：系统未获取“过程详细描述”" in partial.feedback_text
+    assert "A｜达成评价：AI调用异常。异常原因：系统未获取“过程详细描述”" in partial.feedback_text
     assert partial.feedback_text.count("检查标准：") == 6
-    assert partial.feedback_text.count("：达标。") == 4
+    assert partial.feedback_text.count("：达标。") == 3
+    assert "N｜下一步客户行动：AI调用异常。异常原因：系统未获取“过程详细描述”" in partial.feedback_text
     assert "建议补充“过程详细描述”" not in partial.feedback_text
 
 
@@ -122,10 +123,10 @@ def test_no_received_fields_still_show_six_standards_without_passing():
     result = TaoranAgent().precheck(PrecheckRequest.model_validate(payload))
 
     assert result.feedback_text.count("检查标准：") == 6
-    assert result.feedback_text.count("：未检查。") == 6
+    assert result.feedback_text.count("：AI调用异常。异常原因：系统未获取") == 6
     assert "：达标。" not in result.feedback_text
     assert "：未达标。" not in result.feedback_text
-    assert "请检查AI检测按钮的字段传递配置" in result.feedback_text
+    assert "请管理员根据上述异常原因修复字段传递或调用配置后重新检测" in result.feedback_text
 
 
 def test_default_date_does_not_make_next_action_display_as_passed():
@@ -136,8 +137,7 @@ def test_default_date_does_not_make_next_action_display_as_passed():
     }
     result = TaoranAgent().precheck(PrecheckRequest.model_validate(payload))
 
-    assert "N｜下一步客户行动：待复核。\n检查标准：" in result.feedback_text
-    assert "尚不能判定整项达标" in result.feedback_text
+    assert "N｜下一步客户行动：AI调用异常。异常原因：系统未获取“拜访日期”" in result.feedback_text
     assert "N｜下一步客户行动：达标" not in result.feedback_text
 
 
@@ -146,7 +146,7 @@ def test_missing_engine_results_are_not_assumed_passed_by_feedback_builder():
     feedback = build_precheck_feedback(visit, 100, "passed", [], None)
 
     assert feedback.count("检查标准：") == 6
-    assert feedback.count("：待复核。") == 6
+    assert feedback.count("：AI调用异常。") == 6
     assert "：达标。" not in feedback
 
 
@@ -159,6 +159,17 @@ def test_scope_notice_does_not_turn_passed_check_into_failure():
     assert "说明：权威TAORAN标准的正式适用范围为TOB面对面销售" in result.feedback_text
     assert "A｜预约与拜访方式：未达标" not in result.feedback_text
     assert result.feedback_text.count("检查标准：") == 6
+
+
+def test_empty_key_result_gets_specific_data_feedback_not_undetermined_conclusion():
+    payload = complete_precheck_payload()
+    payload["visit"]["expected_key_result"] = ""
+    result = TaoranAgent().precheck(PrecheckRequest.model_validate(payload))
+
+    assert "关键结果缺失" in result.feedback_text
+    assert "补充“想取得的关键结果”" in result.feedback_text
+    assert "客户确认、条件、承诺、时间或交付物" in result.feedback_text
+    assert all(word not in result.feedback_text for word in ("无法判断", "未检查", "待复核"))
 
 
 def test_actual_warning_is_still_shown_as_unmet_with_standard():

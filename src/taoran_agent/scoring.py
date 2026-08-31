@@ -223,6 +223,7 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
     next_contact_date = visit.next_contact_date
     concrete_next_action = bool(
         _purpose_present(visit.next_action_purpose, visit.next_action_other_purpose)
+        and _has_text(visit.next_action_expected_result)
         and next_contact_date
         and next_contact_date > visit.visit_date
     )
@@ -255,7 +256,7 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
         (
             "Q34_NEXT_ACTION_NOT_QUALIFIED",
             next_action_qualified,
-            ["next_action_purpose", "next_contact_at"],
+            ["next_action_purpose", "next_action_expected_result", "next_contact_at"],
         ),
     )
     for code, passed, fields in checks:
@@ -350,35 +351,34 @@ def precheck_context_issues(
     available_fields: set[str] | None = None,
 ) -> list[Issue]:
     issues: list[Issue] = []
-    if not visit.customer_id and (
-        available_fields is None or "customer_id" in available_fields
-    ):
-        issues.append(
-            Issue(
-                code="CUSTOMER_ID_MISSING",
-                dimension="DATA",
-                severity=Severity.ERROR,
-                field_paths=["customer_id"],
-                message="缺少客户稳定ID，跨表事实无法可靠关联。",
-                suggestion="请关联“客户编号”。",
-            )
-        )
     purpose = visit.purpose_code or visit.other_purpose
+    purpose_forbidden = bool(
+        purpose
+        and visit.purpose_policy
+        and any(
+            normalized_text(marker) in normalized_text(purpose)
+            for marker in visit.purpose_policy.excluded_purposes
+        )
+    )
     if (
         purpose
         and visit.purpose_policy
         and visit.purpose_policy.is_effective_on(visit.visit_date)
-        and normalized_text(purpose)
-        not in {normalized_text(value) for value in visit.purpose_policy.allowed_purposes}
+        and (
+            purpose_forbidden
+            or normalized_text(purpose)
+            not in {normalized_text(value) for value in visit.purpose_policy.allowed_purposes}
+        )
     ):
+        allowed = "、".join(visit.purpose_policy.allowed_purposes)
         issues.append(
             Issue(
-                code="PURPOSE_POLICY_MISMATCH",
-                dimension="Q34",
+                code="TAORAN_T03_PURPOSE_POLICY_MISMATCH",
+                dimension="T",
                 severity=Severity.ERROR,
                 field_paths=["purpose_code", "purpose_policy"],
-                message="拜访目的不在当前客户类型的生效目的策略中。",
-                suggestion="核对客户类型和拜访目的，不要由AI改写业务事实。",
+                message="当前填写的拜访目的与客户现阶段允许的拜访目的不一致。",
+                suggestion=f"请将拜访目的修改为以下合适内容之一：{allowed}。",
             )
         )
     return issues

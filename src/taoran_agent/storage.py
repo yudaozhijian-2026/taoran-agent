@@ -4,7 +4,7 @@ import json
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
-from threading import Lock
+from threading import RLock
 from typing import Any
 
 from .models import (
@@ -24,7 +24,10 @@ class IdempotencyConflictError(ValueError):
 class AgentStore:
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = str(database_path)
-        self._lock = Lock()
+        # 三反馈会在多个工作线程中共享同一个存储实例。SQLite 的单连接即使
+        # 设置 check_same_thread=False，也不能让无锁读取与事务写入并发交错。
+        # 使用可重入锁统一保护读写，并允许周期查询在锁内执行索引回填。
+        self._lock = RLock()
         if self.database_path != ":memory:":
             Path(self.database_path).parent.mkdir(parents=True, exist_ok=True)
         self._connection = sqlite3.connect(self.database_path, check_same_thread=False)
@@ -112,18 +115,20 @@ class AgentStore:
                 )
 
     def get_precheck_by_request(self, tenant_id: str, request_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT * FROM precheck_runs WHERE tenant_id = ? AND request_id = ?",
-            (tenant_id, request_id),
-        ).fetchone()
-        return self._precheck_record(row) if row else None
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM precheck_runs WHERE tenant_id = ? AND request_id = ?",
+                (tenant_id, request_id),
+            ).fetchone()
+            return self._precheck_record(row) if row else None
 
     def get_precheck(self, tenant_id: str, check_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT * FROM precheck_runs WHERE tenant_id = ? AND check_id = ?",
-            (tenant_id, check_id),
-        ).fetchone()
-        return self._precheck_record(row) if row else None
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM precheck_runs WHERE tenant_id = ? AND check_id = ?",
+                (tenant_id, check_id),
+            ).fetchone()
+            return self._precheck_record(row) if row else None
 
     def save_precheck(self, request: PrecheckRequest, response: PrecheckResponse) -> None:
         with self._lock, self._connection:
@@ -226,17 +231,19 @@ class AgentStore:
             )
 
     def get_evaluation_by_request(self, tenant_id: str, request_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT * FROM evaluation_jobs WHERE tenant_id = ? AND request_id = ?",
-            (tenant_id, request_id),
-        ).fetchone()
-        return self._evaluation_record(row) if row else None
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM evaluation_jobs WHERE tenant_id = ? AND request_id = ?",
+                (tenant_id, request_id),
+            ).fetchone()
+            return self._evaluation_record(row) if row else None
 
     def get_evaluation(self, tenant_id: str, job_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT * FROM evaluation_jobs WHERE tenant_id = ? AND job_id = ?",
-            (tenant_id, job_id),
-        ).fetchone()
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM evaluation_jobs WHERE tenant_id = ? AND job_id = ?",
+                (tenant_id, job_id),
+            ).fetchone()
         return self._evaluation_record(row) if row else None
 
     def tenant_runtime_activity(self, tenant_id: str) -> dict[str, Any]:
@@ -296,10 +303,7 @@ class AgentStore:
                 }
 
         return {
-            "precheck": {
-                "total_count": len(precheck_rows),
-                "latest": latest_precheck,
-            },
+            "precheck": {"total_count": len(precheck_rows), "latest": latest_precheck},
             "evaluation": {
                 "total_count": len(evaluation_rows),
                 "completed_count": sum(row["status"] == "completed" for row in evaluation_rows),
@@ -320,18 +324,19 @@ class AgentStore:
         period_end: str,
         rule_version: str,
     ) -> list[dict[str, Any]]:
-        self._backfill_evaluation_index(tenant_id)
-        rows = self._connection.execute(
-            """
-            SELECT * FROM evaluation_jobs
-            WHERE tenant_id = ? AND employee_id = ?
-              AND visit_date >= ? AND visit_date <= ?
-              AND status = 'completed' AND rule_version = ?
-            ORDER BY visit_date, updated_at
-            """,
-            (tenant_id, employee_id, period_start, period_end, rule_version),
-        ).fetchall()
-        records = [self._evaluation_record(row) for row in rows]
+        with self._lock:
+            self._backfill_evaluation_index(tenant_id)
+            rows = self._connection.execute(
+                """
+                SELECT * FROM evaluation_jobs
+                WHERE tenant_id = ? AND employee_id = ?
+                  AND visit_date >= ? AND visit_date <= ?
+                  AND status = 'completed' AND rule_version = ?
+                ORDER BY visit_date, updated_at
+                """,
+                (tenant_id, employee_id, period_start, period_end, rule_version),
+            ).fetchall()
+            records = [self._evaluation_record(row) for row in rows]
         latest: dict[str, dict[str, Any]] = {}
         for record in records:
             code = record["request"]["visit_record_code"]
@@ -339,14 +344,15 @@ class AgentStore:
         return list(latest.values())
 
     def _backfill_evaluation_index(self, tenant_id: str) -> None:
-        rows = self._connection.execute(
-            """
-            SELECT job_id, request_json, response_json FROM evaluation_jobs
-            WHERE tenant_id = ? AND status = 'completed'
-              AND (employee_id IS NULL OR visit_date IS NULL OR rule_version IS NULL)
-            """,
-            (tenant_id,),
-        ).fetchall()
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT job_id, request_json, response_json FROM evaluation_jobs
+                WHERE tenant_id = ? AND status = 'completed'
+                  AND (employee_id IS NULL OR visit_date IS NULL OR rule_version IS NULL)
+                """,
+                (tenant_id,),
+            ).fetchall()
         if not rows:
             return
         with self._lock, self._connection:
@@ -440,11 +446,12 @@ class AgentStore:
             )
 
     def get_q40_batch(self, tenant_id: str, batch_job_id: str) -> dict[str, Any] | None:
-        row = self._connection.execute(
-            "SELECT * FROM q40_batch_jobs WHERE tenant_id = ? AND batch_job_id = ?",
-            (tenant_id, batch_job_id),
-        ).fetchone()
-        return self._q40_batch_record(row) if row else None
+        with self._lock:
+            row = self._connection.execute(
+                "SELECT * FROM q40_batch_jobs WHERE tenant_id = ? AND batch_job_id = ?",
+                (tenant_id, batch_job_id),
+            ).fetchone()
+            return self._q40_batch_record(row) if row else None
 
     @staticmethod
     def _precheck_record(row: sqlite3.Row) -> dict[str, Any]:

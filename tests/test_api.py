@@ -1,6 +1,11 @@
 import hashlib
 import json
+import re
+from concurrent.futures import ThreadPoolExecutor
+from threading import Lock
+from time import sleep
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from test_agent import complete_precheck_payload
@@ -22,10 +27,12 @@ def isolated_database(tmp_path, monkeypatch):
     get_settings.cache_clear()
     api._stores.clear()
     api._agents.clear()
+    api._live_knowledge_cache.clear()
     yield
     get_settings.cache_clear()
     api._stores.clear()
     api._agents.clear()
+    api._live_knowledge_cache.clear()
 
 
 def test_health() -> None:
@@ -99,10 +106,230 @@ def test_button_returns_rule_live_knowledge_and_pure_model_feedback(monkeypatch)
         "DSM-BS-000", "DSM-BS-01-07",
     }
     assert body["official_score_generated"] is False
-    assert len(calls) == 2
+    assert len(calls) == 1
     prompts = [call[1]["messages"][0]["content"] for call in calls]
-    assert sum("LIVE-KNOWLEDGE-API-CONTENT" in prompt for prompt in prompts) == 1
+    assert all("LIVE-KNOWLEDGE-API-CONTENT" not in prompt for prompt in prompts)
+    assert "【提交前TAORAN检查｜知识库反馈】" in body["knowledge_feedback_text"]
+    assert body["knowledge_status"] in {"passed", "needs_revision", "review"}
     assert body["live_knowledge_snapshot_hash"] == live_snapshot.snapshot_hash
+
+
+def test_concurrent_buttons_use_one_model_call_each(monkeypatch, tmp_path):
+    from test_llm import envelope, model_settings, section_payload
+
+    from taoran_agent.agent import TaoranAgent
+    from taoran_agent.knowledge import load_taoran_knowledge_snapshot
+    from taoran_agent.llm import ChatModelReviewer
+
+    lock = Lock()
+    calls = 0
+    knowledge_fetches = 0
+    active = 0
+    maximum_active = 0
+
+    def handler(request):
+        nonlocal calls, active, maximum_active
+        with lock:
+            calls += 1
+            active += 1
+            maximum_active = max(maximum_active, active)
+        try:
+            sleep(0.05)
+            body = json.loads(request.content)
+            data = json.loads(body["messages"][1]["content"])["untrusted_visit_data"]
+            return httpx.Response(200, json=envelope(section_payload(data)))
+        finally:
+            with lock:
+                active -= 1
+
+    settings = model_settings(
+        database_path=str(tmp_path / "paired.db"),
+        llm_max_concurrency=4,
+        llm_button_queue_capacity=8,
+        llm_button_queue_wait_seconds=1,
+        knowledge_api_key="synthetic-knowledge-key",
+    )
+    snapshot = load_taoran_knowledge_snapshot()
+    reviewer = ChatModelReviewer(settings, snapshot, httpx.MockTransport(handler))
+    monkeypatch.setattr(api, "get_settings", lambda: settings)
+    monkeypatch.setattr(api, "get_agent", lambda: TaoranAgent(reviewer))
+    def fetch(self):
+        nonlocal knowledge_fetches
+        with lock:
+            knowledge_fetches += 1
+        sleep(0.02)
+        return snapshot
+
+    monkeypatch.setattr(api.KnowledgeApiClient, "fetch_taoran_snapshot", fetch)
+
+    def click(index: int):
+        payload = complete_precheck_payload(f"paired-{index}")
+        return TestClient(api.app).post(
+            "/api/v1/connectors/jiandaoyun/visit/button-check",
+            json={"context": payload["context"], "form_data": payload["visit"]},
+        )
+
+    try:
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            responses = list(executor.map(click, range(4)))
+    finally:
+        reviewer.close()
+
+    assert all(response.status_code == 200 for response in responses)
+    assert calls == 4
+    assert knowledge_fetches == 1
+    assert maximum_active == 4
+    for response in responses:
+        body = response.json()
+        assert "大模型调用超时" not in body["knowledge_feedback_text"]
+        assert "AI调用异常" not in body["model_feedback_text"]
+
+
+def test_button_t03_uses_exact_knowledge_mapping_and_rejects_p6(monkeypatch):
+    from test_llm import reviewer_for
+    from test_purpose_mapping import mapping_record
+
+    from taoran_agent.agent import TaoranAgent
+    from taoran_agent.knowledge import load_taoran_knowledge_snapshot
+
+    reviewer, model_calls = reviewer_for()
+    monkeypatch.setattr(api, "get_agent", lambda: TaoranAgent(reviewer))
+    monkeypatch.setenv("DSM_TAORAN_KNOWLEDGE_API_KEY", "synthetic-knowledge-key")
+    get_settings.cache_clear()
+    base = load_taoran_knowledge_snapshot()
+    snapshot = base.model_copy(
+        update={
+            "record_count": base.record_count + 1,
+            "records": [*base.records, mapping_record()],
+        }
+    )
+    calls = 0
+
+    def fetch(self):
+        nonlocal calls
+        calls += 1
+        return snapshot
+
+    monkeypatch.setattr(api.KnowledgeApiClient, "fetch_taoran_snapshot", fetch)
+    payload = complete_precheck_payload("api-t03-p6")
+    payload["visit"].pop("purpose_policy")
+    payload["visit"].update(
+        {
+            "visit_date": "2026-08-27",
+            "customer_type_ii": "opportunity",
+            "opportunity_stage": "P5",
+            "purpose_code": "争取客户满意",
+        }
+    )
+
+    response = TestClient(api.app).post(
+        "/api/v1/connectors/jiandaoyun/visit/button-check",
+        json={"context": payload["context"], "form_data": payload["visit"]},
+    )
+    reviewer.close()
+
+    assert response.status_code == 200
+    body = response.json()
+    issue = next(
+        item
+        for item in body["issues"]
+        if item["code"] == "TAORAN_T03_PURPOSE_POLICY_MISMATCH"
+    )
+    assert issue["dimension"] == "T"
+    assert issue["message"] == "当前填写的拜访目的与客户现阶段允许的拜访目的不一致。"
+    assert issue["suggestion"].startswith("请将拜访目的修改为以下合适内容之一：")
+    assert re.search(r"[B-HJ-Zb-hj-z]", issue["message"] + issue["suggestion"]) is None
+    assert "争取客户满意" not in issue["suggestion"]
+    assert "协助项目实施" in issue["suggestion"]
+    assert "TAORAN_T03_PURPOSE_POLICY_MISMATCH" not in body["rule_feedback_text"]
+    assert issue["message"] in body["rule_feedback_text"]
+    assert "T｜客户类型：未达标" in body["rule_feedback_text"]
+    assert {item["id"] for item in body["knowledge_references"]} >= {
+        "DSM-BS-01-06"
+    }
+    assert calls == 1
+    prompts = [call[1]["messages"][0]["content"] for call in model_calls]
+    assert len(prompts) == 1
+    pure_prompt = prompts[0]
+    assert "潜力客户：收集信息" not in pure_prompt
+    assert "source_knowledge_id" not in pure_prompt
+    assert "allowed_purposes" not in pure_prompt
+
+
+def test_direct_precheck_t03_accepts_current_stage_purpose(monkeypatch):
+    from test_purpose_mapping import mapping_record
+
+    from taoran_agent.knowledge import load_taoran_knowledge_snapshot
+
+    monkeypatch.setenv("DSM_TAORAN_KNOWLEDGE_API_KEY", "synthetic-knowledge-key")
+    get_settings.cache_clear()
+    base = load_taoran_knowledge_snapshot()
+    snapshot = base.model_copy(
+        update={
+            "record_count": base.record_count + 1,
+            "records": [*base.records, mapping_record()],
+        }
+    )
+    monkeypatch.setattr(
+        api.KnowledgeApiClient,
+        "fetch_taoran_snapshot",
+        lambda self: snapshot,
+    )
+    payload = complete_precheck_payload("api-t03-pass")
+    payload["visit"].pop("purpose_policy")
+    payload["visit"].update(
+        {
+            "visit_date": "2026-08-27",
+            "customer_type_ii": "opportunity",
+            "opportunity_stage": "P5",
+            "purpose_code": "协助项目实施",
+            "next_contact_at": "2026-08-28T10:00:00+08:00",
+        }
+    )
+
+    response = TestClient(api.app).post("/api/v1/visit/checks", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "TAORAN_T03_PURPOSE_POLICY_MISMATCH" not in {
+        item["code"] for item in body["issues"]
+    }
+    assert body["status"] == "passed"
+    stored_policy = api.get_store().get_precheck("tenant_demo", body["check_id"])[
+        "request"
+    ]["visit"]["purpose_policy"]
+    assert stored_policy["source_knowledge_id"] == "DSM-BS-01-06"
+    assert stored_policy["opportunity_stages"] == ["P5"]
+    assert "协助项目实施" in stored_policy["allowed_purposes"]
+    assert "争取客户满意" not in stored_policy["allowed_purposes"]
+
+
+def test_t03_knowledge_failure_is_detection_incomplete_not_business_failure(monkeypatch):
+    monkeypatch.setenv("DSM_TAORAN_KNOWLEDGE_API_KEY", "synthetic-knowledge-key")
+    get_settings.cache_clear()
+
+    def unavailable(self):
+        raise RuntimeError("synthetic unavailable")
+
+    monkeypatch.setattr(api.KnowledgeApiClient, "fetch_taoran_snapshot", unavailable)
+    payload = complete_precheck_payload("api-t03-unavailable")
+    payload["visit"].pop("purpose_policy")
+
+    response = TestClient(api.app).post("/api/v1/visit/checks", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    issue = next(
+        item
+        for item in body["issues"]
+        if item["code"] == "TAORAN_T03_PURPOSE_MAPPING_UNAVAILABLE"
+    )
+    assert issue["source"] == "system"
+    assert issue["severity"] == "info"
+    assert "AI调用异常：知识库接口调用失败" in issue["message"]
+    assert re.search(r"[B-HJ-Zb-hj-z]", issue["message"] + issue["suggestion"]) is None
+    t_section = next(item for item in body["taoran_sections"] if item["code"] == "T")
+    assert t_section["status"] == "partial_input"
 
 
 def test_model_failure_retry_requires_enabled_model_and_reanalysis(monkeypatch):
@@ -368,7 +595,7 @@ def test_default_visit_date_does_not_create_false_next_contact_anomaly(missing_d
     )
     assert response.status_code == 200
     result = response.json()
-    assert "请补充“拜访日期”" in result["feedback_text"]
+    assert "异常原因：系统未获取拜访日期" in result["feedback_text"]
     assert "下一次联系客户时间安排：异常" not in result["feedback_text"]
     assert "TAORAN_NSA_TIME_NOT_AFTER_VISIT" not in {i["code"] for i in result["issues"]}
 
@@ -413,8 +640,8 @@ def test_jiandaoyun_button_returns_advice_when_core_context_is_null() -> None:
     body = response.json()
     assert body["can_submit"] is True
     assert body["submission_blocked"] is False
-    assert "请补充“拜访日期”" in body["feedback_text"]
-    assert "请补充“销售代表（通讯录）”" in body["feedback_text"]
+    assert "异常原因：系统未获取拜访日期" in body["feedback_text"]
+    assert "异常原因：系统未获取销售代表" in body["feedback_text"]
 
 
 def test_jiandaoyun_button_shows_unreceived_section_without_claiming_pass_or_failure() -> None:
@@ -440,9 +667,9 @@ def test_jiandaoyun_button_shows_unreceived_section_without_claiming_pass_or_fai
     assert response.status_code == 200
     body = response.json()
     assert "本次AI检测未获取“过程详细描述”" not in body["feedback_text"]
-    assert "R｜过程事实与结果：未检查。\n检查标准：" in body["feedback_text"]
+    assert "R｜过程事实与结果：AI调用异常。异常原因：系统未获取“过程详细描述”" in body["feedback_text"]
     assert "R｜过程事实与结果：达标" not in body["feedback_text"]
-    assert "A｜达成评价：待复核。\n检查标准：" in body["feedback_text"]
+    assert "A｜达成评价：AI调用异常。异常原因：系统未获取“过程详细描述”" in body["feedback_text"]
     assert "建议补充“过程详细描述”" not in body["feedback_text"]
     assert "process_description" not in body["feedback_text"]
 
@@ -533,7 +760,7 @@ def test_button_malformed_subform_is_safe_422_not_silent_empty_or_500(rows):
         'tenant_id': 'tenant_demo', 'participants': rows,
     })
     assert response.status_code == 422
-    assert '检测未完成' in response.json()['detail']
+    assert 'AI调用异常' in response.json()['detail']
     assert 'secret' not in response.text
 
 

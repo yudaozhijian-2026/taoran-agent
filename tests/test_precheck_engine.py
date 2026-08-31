@@ -82,7 +82,7 @@ def test_connector_omitted_process_is_not_reported_as_user_missing() -> None:
     assert all("process_description" not in issue.field_paths for issue in result.issues)
 
 
-def test_next_step_requires_customer_target_when_field_is_available() -> None:
+def test_next_step_defaults_to_current_customer_without_specific_contact() -> None:
     payload = complete_precheck_payload()
     payload["visit"]["participants"] = []
     payload["visit"]["next_action_target_id"] = None
@@ -90,7 +90,87 @@ def test_next_step_requires_customer_target_when_field_is_available() -> None:
 
     result = _engine().check(request.visit, None, _vague_phrases())
 
-    assert "TAORAN_NSA_TARGET_MISSING" in {issue.code for issue in result.issues}
+    assert "TAORAN_NSA_TARGET_MISSING" not in {issue.code for issue in result.issues}
+    assert next(section for section in result.sections if section.code == "N").status == "met"
+
+
+@pytest.mark.parametrize(
+    ("customer_type", "contact_at", "expected_issue"),
+    [
+        ("target", "2026-08-28T10:00:00+08:00", True),
+        ("target", "2026-09-01T10:00:00+08:00", False),
+        ("potential", "2026-09-30T10:00:00+08:00", True),
+        ("potential", "2026-10-01T10:00:00+08:00", False),
+        ("opportunity", "2026-08-20T10:00:00+08:00", False),
+    ],
+)
+def test_next_step_uses_company_n06_natural_periods(
+    customer_type, contact_at, expected_issue
+) -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["customer_type_ii"] = customer_type
+    payload["visit"]["next_contact_at"] = contact_at
+    if customer_type != "opportunity":
+        payload["visit"]["opportunity_id"] = None
+        payload["visit"]["opportunity_stage"] = None
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert (
+        "TAORAN_NSA_PERIOD_NOT_ALIGNED" in {issue.code for issue in result.issues}
+    ) is expected_issue
+
+
+def test_opportunity_next_step_requires_explicit_customer_consensus() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["process_description"] = "销售计划8月25日发送验证方案并继续推进。"
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert "TAORAN_NSA_CUSTOMER_CONSENSUS_MISSING" in {
+        issue.code for issue in result.issues
+    }
+
+
+def test_opportunity_consensus_can_coexist_with_unrelated_negative_fact() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["process_description"] = (
+        "客户未确认预算，但技术负责人同意8月25日验证，并确认参会人员。"
+    )
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert "TAORAN_NSA_CUSTOMER_CONSENSUS_MISSING" not in {
+        issue.code for issue in result.issues
+    }
+
+
+def test_next_expected_result_accepts_customer_role_action_wording() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["next_action_expected_result"] = "技术负责人将在下周确认验证范围和参会人员"
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert "TAORAN_NSA_RESULT_NOT_ACTIONABLE" not in {
+        issue.code for issue in result.issues
+    }
+
+
+def test_next_step_rejects_generic_purpose_and_unobservable_result() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["next_action_purpose"] = "继续跟进"
+    payload["visit"]["next_action_expected_result"] = "完成沟通"
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+    codes = {issue.code for issue in result.issues}
+
+    assert "TAORAN_NSA_PURPOSE_VAGUE" in codes
+    assert "TAORAN_NSA_RESULT_NOT_ACTIONABLE" in codes
 
 
 @pytest.mark.parametrize(

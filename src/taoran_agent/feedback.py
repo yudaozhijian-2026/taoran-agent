@@ -32,14 +32,52 @@ _SECTIONS = (
         "N",
         "下一步客户行动",
         {
-            "next_action_target_id",
+            "customer_id",
+            "customer_type_ii",
             "next_action_purpose",
             "next_action_other_purpose",
             "next_action_expected_result",
             "next_contact_at",
+            "visit_date",
+            "process_description",
+            "customer_feedback",
         },
     ),
 )
+
+_FAILURE_REASON_LABELS = {
+    "timeout": "大模型调用超时",
+    "authentication_failed": "大模型鉴权失败",
+    "access_denied": "大模型访问被拒绝",
+    "rate_limited": "大模型服务限流",
+    "provider_http_error": "大模型服务返回异常",
+    "invalid_contract": "大模型返回格式不符合约定",
+    "invalid_json": "大模型返回内容无法解析",
+    "invalid_response_or_network_error": "大模型响应或网络异常",
+    "required_analysis_not_completed": "大模型未完成六项分析",
+    "section_fact_conflict": "大模型分析结果存在矛盾",
+    "assessment_fact_conflict": "达成评价与模型识别事实存在矛盾",
+    "model_not_configured": "TAORAN专用大模型尚未配置",
+    "feedback_mode_not_supported": "当前反馈模式不支持大模型分析",
+    "busy": "大模型服务繁忙",
+    "queue_full": "当前同时检测人数已达到上限",
+    "queue_timeout": "等待大模型处理超时",
+    "unavailable": "大模型服务不可用",
+    "input_too_large": "本次输入内容超过大模型处理上限",
+    "output_too_large": "大模型返回内容超过处理上限",
+    "incomplete_or_refused": "大模型未返回完整分析结果",
+    "invalid_content": "大模型返回内容格式异常",
+}
+
+
+def _failure_reason_text(reason: str | None, fallback: str) -> str:
+    if not reason:
+        return fallback
+    return _FAILURE_REASON_LABELS.get(reason, "模型服务返回未分类异常")
+
+
+def _ai_exception(reason: str, suggestion: str) -> str:
+    return f"AI调用异常。异常原因：{reason}。处理建议：{suggestion}"
 
 
 def build_precheck_feedback(
@@ -51,17 +89,24 @@ def build_precheck_feedback(
     knowledge_references: list[KnowledgeReference] | None = None,
     semantic_review: SemanticReview | None = None,
     taoran_sections: list[TaoranSectionCheck] | None = None,
+    title: str = "AI反馈意见",
+    review_status_text: str = "AI调用异常，请根据异常原因处理后重新检测",
 ) -> str:
     # `quality_score` is retained as an internal diagnostic used to select the
     # advice status. It must never be displayed as a pre-submit business score.
     del quality_score
+    has_system_error = taoran_sections is None or any(
+        issue.source == "system" and issue.severity != Severity.INFO for issue in issues
+    ) or any(section.unreceived_fields for section in taoran_sections or [])
     status_text = {
         "passed": "已检查字段未发现明显规范问题",
         "needs_revision": "存在需要优先完善的内容",
-        "review": "本次检测尚未完成，请核对字段传递或系统提示",
+        "review": review_status_text,
     }[status]
+    if has_system_error and status == "needs_revision":
+        status_text += "；另有AI调用异常需要处理"
     lines = [
-        "【提交前TAORAN检查｜AI反馈意见】",
+        f"【提交前TAORAN检查｜{title}】",
         f"检查结论：{status_text}",
     ]
     # Knowledge/model provenance remains in structured results and audit, not display text.
@@ -72,26 +117,48 @@ def build_precheck_feedback(
             lines.append("")
         section_issues = _precheck_issues_for_section(name, fields, issues)
         failed_issues = [issue for issue in section_issues if issue.severity != Severity.INFO]
-        if failed_issues:
-            analysis = _failed_section_analysis(name, failed_issues)
+        business_issues = [issue for issue in failed_issues if issue.source != "system"]
+        system_issues = [issue for issue in section_issues if issue.source == "system"]
+        if business_issues:
+            analysis = _failed_section_analysis(name, business_issues)
         else:
             section = section_results.get(name)
             analysis = _section_standard_and_status(name, section.status if section else None)
         section = section_results.get(name)
         if section and section.unreceived_fields:
             missing_labels = _unique(display_field_name(path) for path in section.unreceived_fields)
-            analysis += "\n接口未获取：" + "、".join(f"“{label}”" for label in missing_labels) + "。"
-            analysis += "请管理员核对本次字段传递，不能据此认定用户未填写。"
+            reason = "系统未获取" + "、".join(f"“{label}”" for label in missing_labels)
+            exception = _ai_exception(reason, "请管理员核对字段绑定与传递配置后重新检测")
+            analysis = analysis + "\n" + exception if business_issues else (
+                exception + "\n检查标准：" + _precheck_standard(name)
+            )
+        elif system_issues:
+            reason = _join_sentences(_unique(issue.message for issue in system_issues)).rstrip("。")
+            reason = reason.removeprefix("AI调用异常：").removeprefix("AI调用异常。").strip()
+            advice = _join_sentences(_unique(issue.suggestion for issue in system_issues)).rstrip("。")
+            exception = _ai_exception(reason, advice or "请管理员核对系统配置后重新检测")
+            analysis = analysis + "\n" + exception if business_issues else (
+                exception + "\n检查标准：" + _precheck_standard(name)
+            )
         lines.append(f"{code}｜{name}：" + analysis)
         notices = [issue.message for issue in section_issues if issue.severity == Severity.INFO]
         if notices:
             lines.append("说明：" + _join_sentences(_unique(notices)))
-    suggestions = _unique(issue.suggestion for issue in issues)
+    global_system_issues = [
+        issue for issue in issues
+        if issue.source == "system" and issue.severity != Severity.INFO
+    ]
+    if global_system_issues:
+        lines.extend(["", "系统异常："])
+        for issue in global_system_issues:
+            reason = issue.message.removeprefix("AI调用异常：").rstrip("。")
+            lines.append(_ai_exception(reason, issue.suggestion.rstrip("。")))
+    suggestions = _unique(issue.suggestion for issue in issues if issue.source != "system")
     if suggestions:
         lines.extend(["", "优先修改建议："])
         lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(suggestions, 1))
     elif any(section.status != "met" for section in taoran_sections or []):
-        lines.extend(["", "优先修改建议：请先补齐字段传递并重新检测，暂不能给出完整结论。"])
+        lines.extend(["", "优先修改建议：请管理员根据上述异常原因修复字段传递或调用配置后重新检测。"])
     else:
         lines.extend(["", "优先修改建议：当前未发现需要优先补充的规范性问题。"])
     lines.append("提交成功后，系统将自动进行深度评价并回写正式评分与反馈意见。")
@@ -108,10 +175,14 @@ def build_model_precheck_feedback(
     if mode not in {FeedbackMode.AI, FeedbackMode.KNOWLEDGE}:
         raise ValueError("模型反馈生成器仅支持ai和knowledge模式")
     title = "纯AI反馈" if mode == FeedbackMode.AI else "知识库反馈"
+    failure_reason = _failure_reason_text(
+        semantic_review.failure_reason,
+        "大模型未返回完整的六项分析",
+    )
     status_text = {
         "passed": "六项分析已完成，未发现明显规范问题",
         "needs_revision": "六项分析已完成，存在需要优先完善的内容",
-        "review": "本次分析尚未完整完成，请核对系统提示后重试",
+        "review": f"AI调用异常。异常原因：{failure_reason}",
     }[status]
     lines = [
         f"【提交前TAORAN检查｜{title}】",
@@ -133,12 +204,15 @@ def build_model_precheck_feedback(
         }[name]
         analysis = analyses.get(model_code)
         if semantic_review.status != "completed" or analysis is None:
-            lines.append(f"{display_code}｜{name}：未完成。")
+            lines.append(
+                f"{display_code}｜{name}："
+                + _ai_exception(failure_reason, "请稍后重试；持续失败请联系管理员核对模型服务配置")
+            )
             continue
         verdict = {
             "met": "达标。",
             "needs_revision": "待改进。",
-            "not_evaluated": "未检查。",
+            "not_evaluated": "需要修改。",
         }[analysis.verdict]
         lines.append(f"{display_code}｜{name}：{verdict}")
         lines.append("分析：" + analysis.reason)
@@ -176,7 +250,9 @@ def build_evaluation_feedback(
         "TAORAN六项判断：",
     ]
     if semantic_facts.provider.startswith("llm-") and semantic_facts.status != "completed":
-        lines.insert(1, "模型分析未完成：以下仅为本地参考结果，暂停正式评分回写，需重试复核。")
+        reason = _failure_reason_text(semantic_facts.failure_reason, "大模型未返回完整分析")
+        lines.insert(1, _ai_exception(reason, "请稍后重试；持续失败请联系管理员核对模型服务配置"))
+        lines.insert(2, "以下分数仅为本地参考结果，暂停正式评分回写。")
     for code, name, fields in _SECTIONS:
         section_issues = _issues_for_fields(issues, fields)
         lines.append(
@@ -229,8 +305,11 @@ def _precheck_standard(name: str) -> str:
         ),
         "下一步客户行动": (
             f"“{field('next_contact_at')}”应晚于“{field('visit_date')}”"
-            "（按北京时间自然日比较，同日不算晚于）；下一步应明确对象、目的及期望结果，"
-            "并承接本次客户事实。"
+            "（按北京时间自然日比较，同日不算晚于）；行动对象统一为当前客户，不要求细化联系人。"
+            "行动目的应承接本次客户事实、结果、异议、条件、承诺或未完成事项，不能只写继续跟进、"
+            "再沟通、发资料或保持联系；期望结果应写明客户将确认、认可、提供、决定、承诺或完成什么。"
+            "目标客户须跨自然月，潜力客户须跨自然季度；商机客户须有客户明确同意、确认、认可、"
+            "约定或承诺的具体下一步及时间、条件或期望结果。"
         ),
     }
     return standards[name]
@@ -254,16 +333,19 @@ def _section_standard_and_status(name: str, status: str | None) -> str:
     states = {
         "met": ("达标。", None),
         "not_received": (
-            "未检查。",
-            "本次AI检测未获取本项相关字段，暂不判定是否达标。",
+            "AI调用异常。",
+            "系统未获取本项相关字段，请管理员核对字段绑定与传递配置后重新检测。",
         ),
         "partial_input": (
-            "待复核。",
-            "本次仅获取部分相关字段，已检查内容未发现问题，尚不能判定整项达标。",
+            "AI调用异常。",
+            "系统仅获取部分相关字段，请管理员核对字段绑定与传递配置后重新检测。",
         ),
         "needs_revision": ("未达标。", "本项规则检查未通过，请核对相关内容。"),
     }
-    label, explanation = states.get(status, ("待复核。", "未获得完整检查结果，暂不判定是否达标。"))
+    label, explanation = states.get(
+        status,
+        ("AI调用异常。", "系统未返回本项检查结果，请管理员核对服务状态后重新检测。"),
+    )
     lines = [label, "检查标准：" + _precheck_standard(name)]
     if explanation:
         lines.append("检查说明：" + explanation)
@@ -276,7 +358,12 @@ def _precheck_issues_for_section(
     issues: list[Issue],
 ) -> list[Issue]:
     prefixes = {
-        "客户类型": ("TAORAN_TYPE_", "TAORAN_OPPORTUNITY_", "LLM_T_"),
+        "客户类型": (
+            "TAORAN_TYPE_",
+            "TAORAN_OPPORTUNITY_",
+            "TAORAN_T03_",
+            "LLM_T_",
+        ),
         "预约与拜访方式": ("TAORAN_APPOINTMENT_", "TAORAN_VISIT_METHOD_", "LLM_A1_"),
         "拜访目的与关键结果": ("TAORAN_OBJECTIVE_", "TAORAN_KR_", "KR_", "LLM_O_KR_"),
         "过程事实与结果": ("TAORAN_RESULT_", "TAORAN_FACT_", "RESULT_", "LLM_R_"),
@@ -319,7 +406,8 @@ def _evaluation_section_text(
         semantic_facts.status != "completed" or not analysis
         or analysis.verdict == "not_evaluated"
     ):
-        return "本项检测未完成，暂不判定达标；请完成分析后重新核验。"
+        reason = _failure_reason_text(semantic_facts.failure_reason, "大模型未完成本项分析")
+        return _ai_exception(reason, "请稍后重试；持续失败请联系管理员核对模型服务配置")
     if issues:
         return "待改进。" + "；".join(_unique(issue.suggestion for issue in issues))
     if name == "客户类型":
@@ -347,7 +435,7 @@ def _evaluation_section_text(
     return (
         "下一步客户行动与本次拜访结果衔接，具备继续执行条件。"
         if semantic_facts.next_action_logic_ok
-        else "下一步客户行动与本次结果衔接不足，需要明确时间、对象、目的和期望结果。"
+        else "下一步客户行动与本次结果衔接不足，需要明确联系日期、具体目的和可观察的客户期望结果；行动对象默认为当前客户。"
     )
 
 

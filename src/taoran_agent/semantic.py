@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from abc import ABC, abstractmethod
 from time import monotonic
 
@@ -14,6 +15,14 @@ from .models import (
     VisitDraftInput,
 )
 from .rules import normalized_text
+
+
+def _overlap(left: str, right: str) -> bool:
+    stop = {"客户", "下一步", "进行", "完成", "安排", "相关", "本次", "继续"}
+    return any(
+        left[index:index + 2] in right and left[index:index + 2] not in stop
+        for index in range(max(0, len(left) - 1))
+    )
 
 
 class SemanticReviewer(ABC):
@@ -122,7 +131,13 @@ class HeuristicSemanticReviewer(SemanticReviewer):
         started = monotonic()
         key_result = normalized_text(visit.expected_key_result)
         process = normalized_text(visit.process_description)
-        next_action = normalized_text(visit.next_action_purpose)
+        next_action_code = normalized_text(visit.next_action_purpose)
+        next_action = normalized_text(
+            visit.next_action_other_purpose
+            if "other" in next_action_code or "其他" in next_action_code
+            else visit.next_action_purpose
+        )
+        next_result = normalized_text(visit.next_action_expected_result)
         key_result_quality_ok = bool(
             key_result
             and len(key_result) >= 8
@@ -162,9 +177,27 @@ class HeuristicSemanticReviewer(SemanticReviewer):
                 )
             )
         )
-        negative = any(token in process for token in ("未同意", "拒绝", "未确认", "未达成"))
+        consensus_source = normalized_text(
+            " ".join(
+                value for value in (visit.process_description, visit.customer_feedback) if value
+            )
+        )
+        negative = any(
+            token in consensus_source
+            for token in (
+                "不同意", "未同意", "尚未同意", "拒绝", "不确认", "未确认",
+                "尚未确认", "不认可", "未认可", "不承诺", "未承诺", "未约定",
+            )
+        )
+        affirmative_source = consensus_source
+        for token in (
+            "不同意", "未同意", "尚未同意", "拒绝", "不确认", "未确认",
+            "尚未确认", "不认可", "未认可", "不承诺", "未承诺", "未约定",
+        ):
+            affirmative_source = affirmative_source.replace(token, "")
         positive = any(
-            token in process for token in ("确认", "同意", "认可", "承诺", "约定", "达成一致")
+            token in affirmative_source
+            for token in ("确认", "同意", "认可", "愿意", "承诺", "约定", "达成一致")
         )
         if process_fact_based and key_result_quality_ok and positive and not negative:
             achievement = SelfAssessment.ACHIEVED
@@ -172,12 +205,49 @@ class HeuristicSemanticReviewer(SemanticReviewer):
             achievement = SelfAssessment.PARTIALLY_ACHIEVED
         else:
             achievement = SelfAssessment.NOT_ACHIEVED
-        consensus = positive and not negative
+        consensus = bool(
+            positive
+            and _overlap(consensus_source, next_action)
+            and (
+                _overlap(consensus_source, next_result)
+                or re.search(
+                    r"\d{1,2}\s*(?:月|日|号|点|时)|(?:今天|明天|下周|月底|季度|会后|完成后)|如果|若|条件|前提",
+                    consensus_source,
+                )
+            )
+        )
+        contact_date = visit.next_contact_date
+        segment_gate = True
+        if visit.customer_type_ii and contact_date:
+            if visit.customer_type_ii.value == "target":
+                segment_gate = (contact_date.year, contact_date.month) != (
+                    visit.visit_date.year,
+                    visit.visit_date.month,
+                )
+            elif visit.customer_type_ii.value == "potential":
+                segment_gate = (
+                    contact_date.year,
+                    (contact_date.month - 1) // 3,
+                ) != (
+                    visit.visit_date.year,
+                    (visit.visit_date.month - 1) // 3,
+                )
+            elif visit.customer_type_ii.value == "opportunity":
+                segment_gate = consensus
         next_action_logic_ok = bool(
             next_action
             and len(next_action) >= 6
-            and visit.next_contact_date
-            and visit.next_contact_date > visit.visit_date
+            and next_result
+            and len(next_result) >= 8
+            and any(
+                token in next_result
+                for token in ("确认", "认可", "同意", "提供", "决定", "承诺", "完成")
+            )
+            and _overlap(next_action, process)
+            and (_overlap(next_result, next_action) or _overlap(next_result, process))
+            and contact_date
+            and contact_date > visit.visit_date
+            and segment_gate
         )
         evidence_fields = [
             field
@@ -185,6 +255,7 @@ class HeuristicSemanticReviewer(SemanticReviewer):
                 ("expected_key_result", visit.expected_key_result),
                 ("process_description", visit.process_description),
                 ("next_action_purpose", visit.next_action_purpose),
+                ("next_action_expected_result", visit.next_action_expected_result),
                 ("next_contact_at", visit.next_contact_at),
             )
             if value

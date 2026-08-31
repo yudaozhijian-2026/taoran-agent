@@ -35,15 +35,27 @@ from .scoring_contract import QUESTION_MAX_SCORE, TOTAL_MAX_SCORE, TOTAL_RULE_VE
 from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 
 
+def _purpose_mapping_failure_message(reason: object) -> str:
+    return {
+        "knowledge_api_not_configured": "知识库接口尚未配置。",
+        "knowledge_api_unavailable": "知识库接口调用失败。",
+        "knowledge_record_missing": "知识库未返回拜访目的与关键结果标准。",
+        "knowledge_mapping_invalid": "知识库标准无法形成有效的拜访目的与商机阶段映射。",
+    }.get(str(reason), "未取得可用的拜访目的与商机阶段公司标准。")
+
+
 class TaoranAgent:
     def __init__(
         self,
         semantic_reviewer: SemanticReviewer | None = None,
         precheck_engine: TaoranPrecheckEngine | None = None,
+        *,
+        direct_knowledge_feedback: bool = False,
     ) -> None:
         self.catalog = load_rule_catalog()
         self.semantic_reviewer = semantic_reviewer or HeuristicSemanticReviewer()
         self.precheck_engine = precheck_engine or TaoranPrecheckEngine()
+        self.direct_knowledge_feedback = direct_knowledge_feedback
         self.vague_phrases = {
             normalized_text(value) for value in self.catalog["vague_exact_phrases"]
         }
@@ -85,8 +97,13 @@ class TaoranAgent:
                     source="system",
                 )
             )
-        if request.feedback_mode == FeedbackMode.RULE:
-            # 默认路径保持本地、快速且不调用远程模型。
+        direct_feedback = request.feedback_mode == FeedbackMode.RULE or (
+            request.feedback_mode == FeedbackMode.KNOWLEDGE
+            and self.direct_knowledge_feedback
+        )
+        if direct_feedback:
+            # 规则反馈使用原本地规则；知识库反馈直接使用实时知识快照中的受控标准。
+            # 两条路径都不调用远程大模型。
             semantic_review = HeuristicSemanticReviewer().review(request.visit)
             sections = engine_result.sections
             issues = [
@@ -94,9 +111,14 @@ class TaoranAgent:
                 *system_issues,
                 *engine_result.issues,
             ]
+            sections = self._apply_t03_status(sections, issues, request.visit.metadata)
             knowledge_snapshot_hash = engine_result.knowledge_snapshot_hash
             knowledge_references = engine_result.knowledge_references
-            engine_version = engine_result.engine_version
+            engine_version = (
+                engine_result.engine_version
+                if request.feedback_mode == FeedbackMode.RULE
+                else "TAORAN-PRECHECK-KNOWLEDGE-DIRECT-V1"
+            )
         else:
             semantic_review = (
                 self.semantic_reviewer.review_without_knowledge(request.visit)
@@ -145,7 +167,10 @@ class TaoranAgent:
                     source="system",
                 )
             )
-        if semantic_review.status != "completed" or elapsed > 12:
+        if (
+            semantic_review.status != "completed"
+            or elapsed > self.catalog["precheck_response_budget_seconds"]
+        ):
             status = "review"
         elif any(
             issue.severity in {Severity.ERROR, Severity.WARNING, Severity.BLOCKING}
@@ -204,8 +229,18 @@ class TaoranAgent:
                     knowledge_references,
                     semantic_review,
                     taoran_sections=sections,
+                    title=(
+                        "知识库反馈"
+                        if request.feedback_mode == FeedbackMode.KNOWLEDGE
+                        else "AI反馈意见"
+                    ),
+                    review_status_text=(
+                        "已按知识库标准完成检查，部分内容需要补充或完善"
+                        if request.feedback_mode == FeedbackMode.KNOWLEDGE
+                        else "AI调用异常，请根据异常原因处理后重新检测"
+                    ),
                 )
-                if request.feedback_mode == FeedbackMode.RULE
+                if direct_feedback
                 else build_model_precheck_feedback(
                     request.feedback_mode,
                     status,
@@ -259,24 +294,88 @@ class TaoranAgent:
     def _precheck_default_issues(request: PrecheckRequest) -> list[Issue]:
         defaulted = request.visit.metadata.get("precheck_defaulted_fields")
         if not isinstance(defaulted, list):
-            return []
+            defaulted = []
         messages = {
-            "visit_date": "本次AI检测未获取拜访日期。",
-            "employee_id": "本次AI检测未获取销售代表。",
+            "visit_date": "AI调用异常：系统未获取拜访日期。",
+            "employee_id": "AI调用异常：系统未获取销售代表。",
+            "customer_id": "AI调用异常：系统未获取当前客户标识，不能确认下一步行动对象。",
         }
-        return [
+        issues = [
             Issue(
                 code=f"PRECHECK_{field.upper()}_MISSING",
                 dimension="SYSTEM",
                 severity=Severity.ERROR,
                 field_paths=[field],
                 message=messages[field],
-                suggestion=f"请补充“{display_field_name(field)}”后重新检测。",
+                suggestion=f"请管理员核对“{display_field_name(field)}”的字段绑定与传递配置后重新检测。",
                 source="system",
             )
             for field in defaulted
             if field in messages
         ]
+        if not request.visit.customer_id and "customer_id" not in defaulted:
+            issues.append(
+                Issue(
+                    code="PRECHECK_CUSTOMER_ID_MISSING",
+                    dimension="SYSTEM",
+                    severity=Severity.ERROR,
+                    field_paths=["customer_id"],
+                    message=messages["customer_id"],
+                    suggestion="请管理员核对当前客户字段的绑定与传递配置后重新检测。",
+                    source="system",
+                )
+            )
+        if request.visit.metadata.get("purpose_mapping_status") == "unavailable":
+            issues.append(
+                Issue(
+                    code="TAORAN_T03_PURPOSE_MAPPING_UNAVAILABLE",
+                    dimension="SYSTEM",
+                    severity=Severity.INFO,
+                    field_paths=["purpose_policy"],
+                    message=(
+                        "AI调用异常："
+                        + _purpose_mapping_failure_message(
+                            request.visit.metadata.get("purpose_mapping_failure_reason")
+                        )
+                    ),
+                    suggestion="请稍后重新点击检测；持续失败请联系管理员检查知识库中的拜访目的与关键结果标准。",
+                    source="system",
+                )
+            )
+        return issues
+
+    @staticmethod
+    def _apply_t03_status(
+        sections: list[TaoranSectionCheck],
+        issues: list[Issue],
+        metadata: dict,
+    ) -> list[TaoranSectionCheck]:
+        mismatch = any(issue.code == "TAORAN_T03_PURPOSE_POLICY_MISMATCH" for issue in issues)
+        unavailable = metadata.get("purpose_mapping_status") == "unavailable"
+        if not mismatch and not unavailable:
+            return sections
+        updated: list[TaoranSectionCheck] = []
+        for section in sections:
+            if section.code != "T":
+                updated.append(section)
+                continue
+            knowledge_ids = list(section.knowledge_ids)
+            if metadata.get("purpose_mapping_knowledge_id"):
+                knowledge_ids.append(metadata["purpose_mapping_knowledge_id"])
+            updated.append(
+                section.model_copy(
+                    update={
+                        "status": (
+                            "needs_revision"
+                            if mismatch or section.status == "needs_revision"
+                            else "partial_input"
+                        ),
+                        "score": 0.0 if mismatch else section.score,
+                        "knowledge_ids": list(dict.fromkeys(knowledge_ids)),
+                    }
+                )
+            )
+        return updated
 
     def evaluate(self, request: PostEvaluationRequest, job_id: str) -> EvaluationResponse:
         """提交后深度评价：Q33与Q34各50分，总分100分。"""

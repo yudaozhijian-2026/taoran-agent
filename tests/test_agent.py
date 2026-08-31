@@ -116,7 +116,8 @@ def test_missing_core_fields_returns_advice_without_blocking() -> None:
     assert result.submission_blocked is False
     assert result.status == "needs_revision"
     assert result.blocking_issues == []
-    assert "CUSTOMER_ID_MISSING" in codes
+    assert "PRECHECK_CUSTOMER_ID_MISSING" in codes
+    assert "AI调用异常。异常原因：系统未获取当前客户标识" in result.feedback_text
     assert "TAORAN_KR_MISSING" in codes
     assert "O/KR｜拜访目的与关键结果：未达标。\n检查标准：" in result.feedback_text
     assert "N｜下一步客户行动：未达标。\n检查标准：" in result.feedback_text
@@ -131,9 +132,16 @@ def test_purpose_policy_mismatch_is_explainable() -> None:
 
     result = TaoranAgent().precheck(PrecheckRequest.model_validate(payload))
 
-    issue = next(issue for issue in result.issues if issue.code == "PURPOSE_POLICY_MISMATCH")
+    issue = next(
+        issue
+        for issue in result.issues
+        if issue.code == "TAORAN_T03_PURPOSE_POLICY_MISMATCH"
+    )
     assert issue.field_paths == ["purpose_code", "purpose_policy"]
-    assert result.record_quality_score == 100
+    assert result.record_quality_score == 85
+    assert next(section for section in result.taoran_sections if section.code == "T").status == (
+        "needs_revision"
+    )
     assert result.can_submit is True
 
 

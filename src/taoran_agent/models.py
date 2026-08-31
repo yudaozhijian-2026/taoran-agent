@@ -80,6 +80,11 @@ class PurposePolicyInput(BaseModel):
     allowed_purposes: list[str] = Field(default_factory=list)
     effective_from: date
     effective_to: date | None = None
+    source_knowledge_id: str | None = None
+    source_content_hash: str | None = None
+    customer_type: CustomerTypeII | None = None
+    opportunity_stages: list[str] = Field(default_factory=list)
+    excluded_purposes: list[str] = Field(default_factory=list)
 
     def is_effective_on(self, visit_date: date) -> bool:
         return (

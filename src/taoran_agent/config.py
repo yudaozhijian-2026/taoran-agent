@@ -90,20 +90,24 @@ class Settings(BaseSettings):
     semantic_endpoint: str | None = None
     semantic_api_key: str | None = None
     semantic_timeout_seconds: float = Field(default=6.0, gt=0, le=10)
-    precheck_budget_seconds: float = Field(default=12.0, gt=0, le=14)
+    precheck_budget_seconds: float = Field(default=25.0, gt=0, le=28)
     llm_enabled: bool = False
     llm_api_url: str | None = None
     llm_api_key: SecretStr | None = None
     llm_model: str | None = None
-    llm_precheck_timeout_seconds: float = Field(default=6.0, gt=0, le=10)
+    llm_precheck_timeout_seconds: float = Field(default=20.0, gt=0, le=20)
     llm_evaluation_timeout_seconds: float = Field(default=45.0, gt=0, le=90)
-    llm_max_concurrency: int = Field(default=2, ge=1, le=8)
+    llm_max_concurrency: int = Field(default=4, ge=1, le=8)
+    llm_button_queue_capacity: int = Field(default=8, ge=0, le=50)
+    llm_button_queue_wait_seconds: float = Field(default=12.0, gt=0, le=30)
     llm_max_input_chars: int = Field(default=24000, ge=1000, le=60000)
+    llm_precheck_max_output_tokens: int = Field(default=2200, ge=1000, le=3000)
     llm_max_output_tokens: int = Field(default=3000, ge=500, le=6000)
     llm_format_retries: int = Field(default=1, ge=0, le=1)
     knowledge_api_base_url: str = "https://knowledge.api.yudaozhijian.top"
     knowledge_api_key: SecretStr | None = None
     knowledge_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
+    knowledge_snapshot_cache_seconds: float = Field(default=30.0, ge=0, le=300)
     knowledge_snapshot_path: str | None = None
     jiandaoyun_mapping_path: str | None = None
     enable_q40_integration: bool = False

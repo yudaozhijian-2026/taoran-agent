@@ -22,3 +22,12 @@ def test_knowledge_api_key_is_redacted_from_settings_output() -> None:
     assert settings.knowledge_api_key.get_secret_value() == "synthetic-knowledge-secret"
     assert "synthetic-knowledge-secret" not in repr(settings)
     assert "synthetic-knowledge-secret" not in settings.model_dump_json()
+
+
+def test_precheck_model_has_20_second_and_compact_output_defaults() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.llm_precheck_timeout_seconds == 20
+    assert settings.llm_precheck_max_output_tokens == 2200
+    assert settings.llm_max_output_tokens == 3000
+    assert settings.knowledge_snapshot_cache_seconds == 30
