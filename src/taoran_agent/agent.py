@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from time import monotonic
 from uuid import uuid4
 
+from .evidence_standard import load_quality_evidence_standard
 from .feedback import (
     build_evaluation_feedback,
     build_model_precheck_feedback,
@@ -12,6 +13,7 @@ from .feedback import (
 from .field_labels import display_field_name
 from .llm import section_issues
 from .models import (
+    ClassifiedEvidence,
     DimensionScore,
     EvaluationResponse,
     FeedbackMode,
@@ -20,6 +22,7 @@ from .models import (
     PrecheckRequest,
     PrecheckResponse,
     Severity,
+    StandardAudit,
     TaoranSectionCheck,
     WritebackResult,
 )
@@ -184,6 +187,12 @@ class TaoranAgent:
         else:
             status = "passed"
         suggestions = list(dict.fromkeys(issue.suggestion for issue in issues))
+        standard_audit = self._standard_audit(
+            request.visit.metadata,
+            knowledge_snapshot_hash,
+            engine_version,
+            semantic_review.prompt_version,
+        )
         return PrecheckResponse(
             check_id=(
                 "chk_"
@@ -254,6 +263,7 @@ class TaoranAgent:
             engine_version=engine_version,
             knowledge_snapshot_hash=knowledge_snapshot_hash,
             knowledge_references=knowledge_references,
+            standard_audit=standard_audit,
             agent_version=self.catalog["agent_version"],
             checked_at=datetime.now(UTC),
             latency_ms=int((monotonic() - started) * 1000),
@@ -285,6 +295,18 @@ class TaoranAgent:
                         "status": status,
                         "score": section.max_score if status == "met" else 0.0,
                         "knowledge_ids": section.knowledge_ids if include_knowledge else [],
+                        "classified_evidence": [
+                            *section.classified_evidence,
+                            *[
+                                ClassifiedEvidence(
+                                    field_path=item.field,
+                                    quote=item.quote,
+                                    category=item.category,
+                                    source="model",
+                                )
+                                for item in (analysis.evidence if analysis else [])
+                            ],
+                        ],
                     }
                 )
             )
@@ -443,8 +465,34 @@ class TaoranAgent:
             writeback=WritebackResult(status="skipped"),
             input_snapshot_hash=snapshot_hash,
             rule_version=TOTAL_RULE_VERSION,
+            standard_audit=self._standard_audit(
+                visit.metadata,
+                self.precheck_engine.snapshot.snapshot_hash,
+                "TAORAN-EVALUATION-Q33-Q34-V2",
+                semantic_facts.prompt_version,
+            ),
             agent_version=self.catalog["agent_version"],
             completed_at=datetime.now(UTC),
+        )
+
+    @staticmethod
+    def _standard_audit(
+        metadata: dict,
+        knowledge_snapshot_hash: str,
+        engine_version: str,
+        model_prompt_version: str | None,
+    ) -> StandardAudit:
+        standard = load_quality_evidence_standard()
+        return StandardAudit(
+            standard_id=standard.standard_id,
+            standard_version=standard.standard_version,
+            standard_source=standard.source_file,
+            standard_content_hash=canonical_hash(standard.model_dump(mode="json")),
+            knowledge_snapshot_hash=knowledge_snapshot_hash,
+            rule_version=TOTAL_RULE_VERSION,
+            engine_version=engine_version,
+            field_mapping_version=metadata.get("field_mapping_version"),
+            model_prompt_version=model_prompt_version,
         )
 
     @staticmethod

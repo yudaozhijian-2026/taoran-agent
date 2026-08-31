@@ -1,6 +1,6 @@
 product_code: dsm-taoran-visit-agent
 product_name: DSM TAORAN 拜访智能体
-version: 0.13.1
+version: 0.14.0
 status: knowledge_driven_precheck_q33_q34_integrated
 deployment_modes:
   - standalone
@@ -36,7 +36,7 @@ rule_status: integrated_baseline
 knowledge:
   rule_runtime_mode: reviewed_local_snapshot
   button_knowledge_runtime_mode: live_knowledge_api_no_local_fallback
-  precheck_engine: TAORAN-PRECHECK-KB-V1
+  precheck_engine: TAORAN-PRECHECK-KB-V2
   sources:
     - DSM-BS-000
     - DSM-BS-01-07
@@ -52,7 +52,7 @@ analysis:
     - pure_ai_without_knowledge
     - ai_with_live_knowledge_api_content
   post_submit: rules_and_glm_5_2
-  prompt_version: TAORAN-LLM-FACTS-V2.2
+  prompt_version: TAORAN-LLM-FACTS-V2.5
 q40_integration:
   enabled_by_default: false
   activation: explicit_opt_in

@@ -204,9 +204,9 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
 
 def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[QuestionScore, list[Issue]]:
     issues: list[Issue] = []
-    if visit.customer_type_ii in {CustomerTypeII.OPPORTUNITY, CustomerTypeII.TARGET}:
-        # 单条记录投影：两类客户均要求本次为预约拜访。40题周期汇总时，
-        # 目标客户改为按周期预约率是否达到50%判断。
+    if visit.customer_type_ii == CustomerTypeII.OPPORTUNITY:
+        # 单条记录只对商机客户执行预约门槛。目标客户单次未预约不扣分，
+        # 仅在40题周期汇总中按预约率是否达到50%判断。
         appointment_standard_met = visit.is_appointment is True
     else:
         appointment_standard_met = True
@@ -293,10 +293,8 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                     details={
                         "appointment_standard_met": appointment_standard_met,
                         "appointment_projection_note": (
-                            "目标客户在40题周期汇总中按预约率≥50%判断；"
-                            "本次单记录评分采用是否预约作为代理。"
-                            if visit.customer_type_ii == CustomerTypeII.TARGET
-                            else None
+                            "目标客户单次未预约不扣分；在40题周期汇总中按预约率≥50%判断。"
+                            if visit.customer_type_ii == CustomerTypeII.TARGET else None
                         ),
                         "key_result_quality_ok": facts.key_result_quality_ok,
                         "process_fact_based": facts.process_fact_based,

@@ -283,16 +283,18 @@ def _precheck_standard(name: str) -> str:
     standards = {
         "客户类型": (
             f"“{field('customer_type_ii')}”应明确；商机客户应有可核验的"
-            f"“{field('opportunity_stage')}”，拜访目的应与客户类型及商机阶段匹配。"
+            f"“{field('opportunity_stage')}”（仅限P1-P6）及可追溯字段来源，"
+            "拜访目的应与客户类型及商机阶段匹配。"
         ),
         "预约与拜访方式": (
             f"如实填写“{field('is_appointment')}”和“{field('visit_method')}”；"
-            "目标客户和商机客户应优先预约，未预约应说明原因，拜访方式应支持本次目的。"
+            "视频拜访必须预约，商机客户应优先预约；目标客户单次未预约不判错，"
+            "只在周期统计中检查预约率。拜访方式应支持本次目的。"
         ),
         "拜访目的与关键结果": (
             f"“{field('purpose_code')}”应明确，选择其他时填写“{field('other_purpose')}”；"
-            f"“{field('expected_key_result')}”应具体、可验证，写明客户确认、条件、承诺、"
-            "时间或交付物，不能只写“了解一下”“沟通一下”等空泛表述。"
+            f"“{field('expected_key_result')}”应具体、可验证，并做到可衡量、相关且有时限，写明客户确认、"
+            "条件、承诺、时间或交付物，并与目的对应；不能只写“了解一下”“沟通一下”等空泛表述。"
         ),
         "过程事实与结果": (
             f"“{field('process_description')}”应记录客户角色及可核验的确认事项、"
@@ -301,7 +303,7 @@ def _precheck_standard(name: str) -> str:
         "达成评价": (
             f"“{field('self_assessment')}”应围绕“{field('expected_key_result')}”，"
             f"并与“{field('process_description')}”中的客户事实一致；"
-            "缺少达成证据时不能评价为“达到目的”。"
+            "应能说明哪些达成、哪些未达成；缺少达成证据时不能评价为“达到目的”。"
         ),
         "下一步客户行动": (
             f"“{field('next_contact_at')}”应晚于“{field('visit_date')}”"

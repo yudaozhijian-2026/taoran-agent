@@ -74,6 +74,13 @@ def test_new_copy_field_names_and_subforms_are_adapted() -> None:
     assert result.visit.participants[0].contact_id == "CONTACT001"
     assert result.visit.opportunities[0].opportunity_id == "OPP001"
     assert result.visit.opportunities[0].current_stage == "P3"
+    assert result.visit.metadata["field_provenance"]["customer_type_ii"] == (
+        "jiandaoyun_form_field"
+    )
+    assert result.visit.metadata["field_provenance"]["opportunities"] == (
+        "jiandaoyun_subform"
+    )
+    assert result.visit.metadata["field_mapping_version"] == mapping["mapping_version"]
 
 
 def test_actual_jiandaoyun_date_and_user_shapes_are_adapted() -> None:

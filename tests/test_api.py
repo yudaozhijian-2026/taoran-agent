@@ -472,7 +472,7 @@ def test_jiandaoyun_button_accepts_flat_front_event_payload() -> None:
     assert "/100" not in body["feedback_text"]
     assert "不阻断" not in body["feedback_text"]
     assert "提交成功后，系统将自动进行深度评价并回写正式评分与反馈意见" in body["feedback_text"]
-    assert body["engine_version"] == "TAORAN-PRECHECK-KB-V1"
+    assert body["engine_version"] == "TAORAN-PRECHECK-KB-V2"
     assert body["knowledge_references"][1]["id"] == "DSM-BS-01-07"
 
     repeated = TestClient(api.app).post(

@@ -92,7 +92,7 @@ def test_complete_precheck_passes_with_100() -> None:
     assert "记录完整度" not in result.feedback_text
     assert "/100" not in result.feedback_text
     assert "提交成功后，系统将自动进行深度评价并回写正式评分与反馈意见" in result.feedback_text
-    assert result.engine_version == "TAORAN-PRECHECK-KB-V1"
+    assert result.engine_version == "TAORAN-PRECHECK-KB-V2"
     assert {item.id for item in result.knowledge_references} == {
         "DSM-BS-000",
         "DSM-BS-01-07",
@@ -246,7 +246,7 @@ def test_post_evaluation_flags_missing_opportunity_update() -> None:
     assert result.count_as_effective_visit_recommendation == "manager_review"
 
 
-def test_target_customer_single_record_requires_appointment_proxy() -> None:
+def test_target_customer_single_unappointed_is_only_checked_in_period_aggregate() -> None:
     payload = complete_precheck_payload("eval-target-001")
     payload["visit"].update(
         {
@@ -268,8 +268,38 @@ def test_target_customer_single_record_requires_appointment_proxy() -> None:
 
     result = TaoranAgent().evaluate(request, "job-target")
 
-    assert result.q34_score == 15
-    assert "Q34_APPOINTMENT_STANDARD_NOT_MET" in {issue.code for issue in result.issues}
+    assert result.q34_score == 50
+    assert "Q34_APPOINTMENT_STANDARD_NOT_MET" not in {issue.code for issue in result.issues}
+    consistency = next(
+        item for item in result.question_scores[1].components
+        if item.code == "self_evaluation_consistency"
+    )
+    assert "目标客户单次未预约不扣分" in consistency.details["appointment_projection_note"]
+
+
+def test_standard_audit_is_saved_without_changing_score_contract() -> None:
+    payload = complete_precheck_payload("eval-audit-001")
+    payload["visit"].update({
+        "actual_start_at": "2026-08-18T09:00:00+08:00",
+        "actual_end_at": "2026-08-18T10:00:00+08:00",
+        "submitted_at": "2026-08-18T11:00:00+08:00",
+        "metadata": {"field_mapping_version": "mapping-test-v1"},
+    })
+    request = PostEvaluationRequest.model_validate({
+        "context": payload["context"],
+        "visit_record_code": "BFJL-AUDIT-001",
+        "visit": payload["visit"],
+    })
+
+    result = TaoranAgent().evaluate(request, "job-audit")
+
+    assert result.total_max_score == 100
+    assert result.rule_version == "TAORAN-Q33-Q34-100-V2"
+    assert result.standard_audit is not None
+    assert result.standard_audit.standard_id == "DSM-BS-01-07"
+    assert result.standard_audit.standard_version == "TAORAN-EVIDENCE-V1.0"
+    assert result.standard_audit.field_mapping_version == "mapping-test-v1"
+    assert len(result.standard_audit.standard_content_hash) == 64
 
 
 def test_q34_ai_cannot_bypass_key_result_quality_gate() -> None:

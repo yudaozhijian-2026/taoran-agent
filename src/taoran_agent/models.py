@@ -185,6 +185,27 @@ class KnowledgeReference(BaseModel):
     content_hash: str
 
 
+EvidenceCategory = Literal[
+    "system_fact",
+    "customer_fact",
+    "customer_commitment",
+    "customer_objection_or_condition",
+    "sales_judgment",
+    "assumption",
+    "planned_action",
+    "other",
+]
+
+
+class ClassifiedEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    field_path: str = Field(min_length=1, max_length=100)
+    quote: str = Field(min_length=1, max_length=300)
+    category: EvidenceCategory
+    source: Literal["input", "rule", "model"]
+
+
 class TaoranSectionCheck(BaseModel):
     code: Literal["T", "A1", "O_KR", "R", "A2", "N"]
     display_code: str
@@ -195,6 +216,7 @@ class TaoranSectionCheck(BaseModel):
     evaluated_fields: list[str] = Field(default_factory=list)
     unreceived_fields: list[str] = Field(default_factory=list)
     knowledge_ids: list[str] = Field(default_factory=list)
+    classified_evidence: list[ClassifiedEvidence] = Field(default_factory=list)
 
 
 class ModelEvidence(BaseModel):
@@ -202,6 +224,21 @@ class ModelEvidence(BaseModel):
 
     field: str = Field(min_length=1, max_length=100)
     quote: str = Field(min_length=1, max_length=300)
+    category: EvidenceCategory = "other"
+
+
+class StandardAudit(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    standard_id: str
+    standard_version: str
+    standard_source: str
+    standard_content_hash: str
+    knowledge_snapshot_hash: str
+    rule_version: str
+    engine_version: str
+    field_mapping_version: str | None = None
+    model_prompt_version: str | None = None
 
 
 class ModelSectionAnalysis(BaseModel):
@@ -251,6 +288,7 @@ class PrecheckResponse(BaseModel):
     engine_version: str
     knowledge_snapshot_hash: str
     knowledge_references: list[KnowledgeReference]
+    standard_audit: StandardAudit | None = None
     agent_version: str
     checked_at: datetime
     latency_ms: int
@@ -459,6 +497,7 @@ class EvaluationResponse(BaseModel):
     writeback: WritebackResult
     input_snapshot_hash: str
     rule_version: str
+    standard_audit: StandardAudit | None = None
     agent_version: str
     completed_at: datetime
 

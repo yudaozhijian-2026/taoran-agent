@@ -163,7 +163,24 @@ def test_direct_precheck_sends_minimal_fields_and_approved_knowledge():
     assert not {"employee_id", "customer_id", "metadata", "evidence_ids"} & data.keys()
     assert "never-send-secret" not in request.content.decode()
     assert "contact_id" not in json.dumps(data.get("participants"))
+    assert data["participants"] == [{"对象": "联系人1", "角色": None}]
     assert "opportunity_id" not in json.dumps(data.get("opportunities"))
+    assert "TAORAN-EVIDENCE-V1.0" in body["messages"][0]["content"]
+
+
+def test_model_evidence_category_is_preserved() -> None:
+    def categorized_payload(data):
+        payload = section_payload(data)
+        result = next(item for item in payload["sections"] if item["code"] == "R")
+        result["evidence"][0]["category"] = "customer_commitment"
+        return payload
+
+    reviewer, _ = reviewer_for(categorized_payload)
+    result = reviewer.review(visit())
+    reviewer.close()
+
+    section = next(item for item in result.sections if item.code == "R")
+    assert section.evidence[0].category == "customer_commitment"
 
 
 def test_precheck_accepts_schema_bound_function_arguments():
@@ -194,7 +211,7 @@ def test_pure_ai_precheck_explicitly_excludes_knowledge_snapshot():
     reviewer.close()
 
     assert result.status == "completed"
-    assert result.prompt_version == "TAORAN-LLM-PURE-FEEDBACK-V2.2"
+    assert result.prompt_version == "TAORAN-LLM-PURE-FEEDBACK-V2.3"
     prompt = calls[0][1]["messages"][0]["content"]
     assert "本次为纯AI反馈" in prompt
     assert "DSM-BS-000" not in prompt
@@ -483,7 +500,7 @@ def test_schema_prompt_uses_actual_types_and_constraints():
     assert schema["$defs"]["ModelSectionAnalysis"]["properties"]["reason"]["maxLength"] == 500
     assert "不能是字符串" in system
     assert calls[0][1]["max_tokens"] == 3000
-    assert result.prompt_version == "TAORAN-LLM-FACTS-V2.4"
+    assert result.prompt_version == "TAORAN-LLM-FACTS-V2.5"
     assert "禁止为它们创建evidence元素" in system
 
 

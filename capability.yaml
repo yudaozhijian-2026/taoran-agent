@@ -1,5 +1,5 @@
 agent_code: DSM-TAORAN-SCORING-AGENT
-version: 0.13.1
+version: 0.14.0
 capabilities:
   - code: configure_tenant_connections
     mode: administrative
@@ -23,7 +23,7 @@ capabilities:
     button_behavior: one_click_three_feedbacks
     feedback_outputs:
       rule:
-        engine: TAORAN-PRECHECK-KB-V1
+        engine: TAORAN-PRECHECK-KB-V2
         model_calls: false
       model:
         engine: TAORAN-PRECHECK-PURE-AI-V1

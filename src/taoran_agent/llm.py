@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, 
 
 from .button_scheduler import ButtonFeedbackScheduler
 from .config import Settings
+from .evidence_standard import load_quality_evidence_standard, model_guidance
 from .field_labels import display_field_name
 from .knowledge import TaoranKnowledgeSnapshot
 from .models import (
@@ -28,14 +29,14 @@ from .models import (
 )
 from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 
-PROMPT_VERSION = "TAORAN-LLM-FACTS-V2.4"
-PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.2"
+PROMPT_VERSION = "TAORAN-LLM-FACTS-V2.5"
+PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.3"
 PRECHECK_TOOL_NAME = "submit_taoran_precheck"
 SECTION_FIELDS = {
     "T": {"customer_type_ii", "opportunity_stage", "opportunities", "purpose_code"},
     "A1": {"is_appointment", "visit_method", "customer_type_ii", "purpose_code"},
     "O_KR": {"purpose_code", "other_purpose", "expected_key_result"},
-    "R": {"process_description", "customer_feedback"},
+    "R": {"process_description", "customer_feedback", "participants"},
     "A2": {"self_assessment", "expected_key_result", "process_description", "deviation_reason"},
     "N": {
         "customer_type_ii",
@@ -252,6 +253,7 @@ class ChatModelReviewer(SemanticReviewer):
         knowledge_snapshot: TaoranKnowledgeSnapshot | None = None,
     ) -> list[dict[str, str]]:
         selected_snapshot = knowledge_snapshot or self.snapshot
+        evidence_standard = load_quality_evidence_standard()
         knowledge = (
             "\n".join(
                 f"{item.id} {item.version}：{item.content}"
@@ -314,6 +316,9 @@ class ChatModelReviewer(SemanticReviewer):
             "每项reason建议不超过100字，suggestion不超过100字。"
             "证据只取必要短片段，每段不超过80字；布尔值原文须引用字符串true或false，"
             "不要将预约布尔值改写为‘是’或‘已预约’作为quote。"
+            "每条evidence必须按原文性质填写category：system_fact、customer_fact、"
+            "customer_commitment、customer_objection_or_condition、sales_judgment、assumption、"
+            "planned_action或other；不得把销售判断、计划或假设标成客户事实。"
             "T检查客户分类与商机阶段背景；A1检查预约及方式；O_KR检查目的和可验证KR；"
             "R检查客户事实而非主观感受；A2回到KR比较实际达成，不照抄销售自评；"
             "N按N-01至N-06检查：行动对象统一默认为当前客户，不要求具体联系人，也不得因未填写联系人而判错；"
@@ -343,6 +348,8 @@ class ChatModelReviewer(SemanticReviewer):
             "针对纯空值缺失可只列空字段。不得将元数据或别的字段当作证据。"
             f"{post_only_instruction}"
             f"任务：{'提交前规范分析，只给建议' if precheck else '提交后六项深度分析和Q34事实'}\n"
+            f"TAORAN六项证据标准（{evidence_standard.standard_version}，仅增强判断依据、不改变评分）："
+            f"{model_guidance(evidence_standard)}\n"
             f"{knowledge_block}"
             f"各项允许字段：{json.dumps({k: sorted(v) for k, v in SECTION_FIELDS.items()})}\n"
             f"本条可引用证据的非空字段：{json.dumps(evidence_fields)}。其他字段禁止生成evidence。\n"

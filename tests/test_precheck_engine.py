@@ -64,6 +64,73 @@ def test_result_rejects_unverifiable_feeling_only_record() -> None:
     assert result.score < 100
 
 
+def test_video_visit_requires_appointment_for_every_customer_type() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"].update({
+        "customer_type_ii": "potential",
+        "opportunity_id": None,
+        "opportunity_stage": None,
+        "visit_method": "video",
+        "is_appointment": False,
+    })
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert "TAORAN_VIDEO_APPOINTMENT_REQUIRED" in {
+        issue.code for issue in result.issues
+    }
+
+
+def test_target_single_unappointed_is_not_a_precheck_failure() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"].update({
+        "customer_type_ii": "target",
+        "opportunity_id": None,
+        "opportunity_stage": None,
+        "is_appointment": False,
+    })
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert "TAORAN_APPOINTMENT_NOT_ALIGNED" not in {
+        issue.code for issue in result.issues
+    }
+
+
+@pytest.mark.parametrize("stage", ["P0", "P7", "阶段三", "P3-推进"])
+def test_opportunity_stage_must_be_exact_p1_to_p6(stage) -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["opportunity_stage"] = stage
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+
+    assert "TAORAN_OPPORTUNITY_STAGE_INVALID" in {
+        issue.code for issue in result.issues
+    }
+
+
+def test_process_evidence_is_classified_for_audit() -> None:
+    payload = complete_precheck_payload()
+    payload["visit"]["process_description"] = (
+        "信息中心主任确认8月25日验证。客户提出预算审批是前提。"
+        "我认为项目可以推进。可能月底完成审批。"
+    )
+    request = PrecheckRequest.model_validate(payload)
+
+    result = _engine().check(request.visit, None, _vague_phrases())
+    section = next(item for item in result.sections if item.code == "R")
+
+    assert {item.category for item in section.classified_evidence} >= {
+        "customer_commitment",
+        "customer_objection_or_condition",
+        "sales_judgment",
+        "assumption",
+    }
+
+
 def test_connector_omitted_process_is_not_reported_as_user_missing() -> None:
     payload = deepcopy(complete_precheck_payload())
     payload["visit"].pop("process_description")

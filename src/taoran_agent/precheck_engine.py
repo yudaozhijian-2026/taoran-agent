@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from .evidence_standard import classify_visit_evidence
 from .field_labels import display_field_name
 from .knowledge import TaoranKnowledgeSnapshot, load_taoran_knowledge_snapshot
 from .models import (
@@ -18,7 +19,7 @@ from .models import (
 )
 from .rules import is_meaningful, normalized_text
 
-ENGINE_VERSION = "TAORAN-PRECHECK-KB-V1"
+ENGINE_VERSION = "TAORAN-PRECHECK-KB-V2"
 CORE_KNOWLEDGE_ID = "DSM-BS-01-07"
 GENERAL_KNOWLEDGE_ID = "DSM-BS-000"
 
@@ -224,6 +225,7 @@ class TaoranPrecheckEngine:
                         and not self._path_supplied(path, supplied_fields)
                     ],
                     knowledge_ids=[CORE_KNOWLEDGE_ID, GENERAL_KNOWLEDGE_ID],
+                    classified_evidence=classify_visit_evidence(visit, code),
                 )
             )
 
@@ -270,6 +272,11 @@ class TaoranPrecheckEngine:
             )
         ]
         if visit.customer_type_ii == CustomerTypeII.OPPORTUNITY:
+            stage_values = [
+                item.current_stage for item in visit.opportunities if item.current_stage
+            ]
+            if not stage_values and visit.opportunity_stage:
+                stage_values = [visit.opportunity_stage]
             stage_ok = bool(
                 all(item.current_stage for item in visit.opportunities)
                 if visit.opportunities
@@ -284,6 +291,52 @@ class TaoranPrecheckEngine:
                     "建议补充“最新商机阶段”，并确认其与本次拜访目的匹配。",
                 )
             )
+            if stage_values:
+                stage_format_ok = all(
+                    re.fullmatch(r"P[1-6]", value.strip().upper())
+                    for value in stage_values
+                )
+                checks.append(
+                    _RuleCheck(
+                        ("opportunities[].current_stage", "opportunity_stage"),
+                        stage_format_ok,
+                        "TAORAN_OPPORTUNITY_STAGE_INVALID",
+                        "商机阶段不属于P1-P6标准范围。",
+                        "请从商机信息中同步P1、P2、P3、P4、P5或P6当前阶段，不要填写自由文本。",
+                    )
+                )
+            if visit.opportunities and visit.opportunity_stage:
+                subform_stages = {
+                    item.current_stage.strip().upper()
+                    for item in visit.opportunities
+                    if item.current_stage
+                }
+                scalar_stage = visit.opportunity_stage.strip().upper()
+                checks.append(
+                    _RuleCheck(
+                        ("opportunities[].current_stage", "opportunity_stage"),
+                        not subform_stages or scalar_stage in subform_stages,
+                        "TAORAN_OPPORTUNITY_STAGE_SOURCE_CONFLICT",
+                        "商机子表阶段与表单阶段存在冲突。",
+                        "请以商机信息表中的最新阶段为准，并重新同步后检测。",
+                    )
+                )
+            provenance = visit.metadata.get("field_provenance", {})
+            if visit.metadata.get("connector_source") == "jiandaoyun":
+                source_field = "opportunities" if visit.opportunities else "opportunity_stage"
+                source_ok = isinstance(provenance, dict) and provenance.get(source_field) in {
+                    "jiandaoyun_subform", "jiandaoyun_form_field"
+                }
+                checks.append(
+                    _RuleCheck(
+                        (source_field,),
+                        source_ok,
+                        "TAORAN_OPPORTUNITY_STAGE_SOURCE_UNVERIFIED",
+                        "最新商机阶段缺少可追溯的简道云字段来源。",
+                        "请管理员重新同步字段映射，确保阶段来自商机字段或商机子表。",
+                        Severity.WARNING,
+                    )
+                )
         return checks
 
     @staticmethod
@@ -304,15 +357,27 @@ class TaoranPrecheckEngine:
                 f"建议补充“{display_field_name('visit_method')}”。",
             ),
         ]
-        if visit.customer_type_ii in {CustomerTypeII.OPPORTUNITY, CustomerTypeII.TARGET}:
+        if visit.customer_type_ii == CustomerTypeII.OPPORTUNITY:
             checks.append(
                 _RuleCheck(
                     ("is_appointment",),
                     visit.is_appointment is True,
                     "TAORAN_APPOINTMENT_NOT_ALIGNED",
                     "当前客户类型的本次拜访未体现预约。",
-                    "关键客户拜访应优先预约；如确属未预约，请保留真实事实并说明原因。",
+                    "商机客户原则上应预约；如确属未预约，请保留真实事实并说明原因。",
                     Severity.WARNING,
+                )
+            )
+        if visit.visit_method is not None and visit.visit_method.value == "video":
+            checks.append(
+                _RuleCheck(
+                    ("visit_method", "is_appointment"),
+                    visit.is_appointment is True,
+                    "TAORAN_VIDEO_APPOINTMENT_REQUIRED",
+                    "视频拜访未体现已预约，不符合视频拜访预约标准。",
+                    "请如实核对是否已预约；视频拜访须在预约后开展并记录预约状态。",
+                    Severity.WARNING,
+                    requires_all_supplied=True,
                 )
             )
         return checks

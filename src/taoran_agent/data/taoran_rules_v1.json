@@ -1,10 +1,10 @@
 {
   "agent_code": "DSM-TAORAN-SCORING-AGENT",
-  "agent_version": "0.13.1",
+  "agent_version": "0.14.0",
   "rule_code": "TAORAN-Q33-Q34-100",
   "rule_version": "TAORAN-Q33-Q34-100-V2",
   "rule_status": "knowledge_aligned_baseline",
-  "precheck_engine_version": "TAORAN-PRECHECK-KB-V1",
+  "precheck_engine_version": "TAORAN-PRECHECK-KB-V2",
   "knowledge_basis": ["DSM-BS-000", "DSM-BS-01-06", "DSM-BS-01-07"],
   "data_model_code": "DSM-BEHAVIOR-DATA-MODEL",
   "data_model_version": "V1.5",

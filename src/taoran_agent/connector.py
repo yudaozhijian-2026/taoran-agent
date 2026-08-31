@@ -112,10 +112,23 @@ def adapt_jiandaoyun_request(
         if not values.get("employee_id"):
             values["employee_id"] = request.context.user_id or "jiandaoyun-user"
             defaulted_fields.append("employee_id")
+    field_provenance = {
+        field: (
+            "jiandaoyun_subform"
+            if field in mapping.get("subforms", {})
+            else "jiandaoyun_system_field"
+            if field in mapping.get("system_fields", {})
+            else "jiandaoyun_form_field"
+        )
+        for field in supplied_fields
+    }
     values["metadata"] = {
         "connector_source": "jiandaoyun",
         "source_supplied_fields": sorted(supplied_fields),
         "precheck_defaulted_fields": defaulted_fields,
+        "field_provenance": field_provenance,
+        "field_mapping_version": mapping.get("mapping_version"),
+        "field_mapping_status": mapping.get("status"),
     }
     return PrecheckRequest(
         context=request.context,
