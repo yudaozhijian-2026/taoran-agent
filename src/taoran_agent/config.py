@@ -103,6 +103,7 @@ class Settings(BaseSettings):
     knowledge_semantic_cache_seconds: float = Field(default=300.0, ge=0, le=3600)
     knowledge_semantic_max_output_tokens: int = Field(default=1200, ge=400, le=1600)
     llm_evaluation_timeout_seconds: float = Field(default=45.0, gt=0, le=90)
+    llm_evaluation_unlimited_generation: bool = True
     llm_evaluation_retry_timeout_seconds: float = Field(default=35.0, gt=0, le=60)
     # Submitted evaluations are asynchronous. Their wait for a protected backend
     # model slot must not consume the model generation deadline.

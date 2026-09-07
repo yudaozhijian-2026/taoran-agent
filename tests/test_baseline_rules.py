@@ -1,8 +1,8 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 import pytest
-from test_post_policy import visit
 
+from test_post_policy import visit
 from taoran_agent.models import CustomerTypeII, SelfAssessment
 from taoran_agent.scoring import score_q33, score_q34
 from taoran_agent.semantic import HeuristicSemanticReviewer
@@ -23,7 +23,7 @@ def test_target_appointment_does_not_change_score():
 
 def test_p6_retires_purpose_matching():
     from taoran_agent.knowledge import load_taoran_knowledge_snapshot
-    from taoran_agent.purpose_mapping import purpose_policy_for_visit, structure_purpose_mapping
+    from taoran_agent.purpose_mapping import structure_purpose_mapping, purpose_policy_for_visit
     record = next(r for r in load_taoran_knowledge_snapshot().records if r.id == "DSM-BS-01-06")
     v = visit(customer_type_ii="opportunity", opportunity_stage="P6")
     policy = purpose_policy_for_visit(structure_purpose_mapping(record), v)
@@ -42,8 +42,7 @@ def test_fixed_timeliness(hours, passed):
 
 def test_refetch_is_authorized_and_uses_original_target(monkeypatch):
     from fastapi import BackgroundTasks
-
-    from taoran_agent import api
+    import taoran_agent.api as api
     calls = []
     monkeypatch.setattr(api, "authorize", lambda *args: calls.append("authorized"))
     raw = {"context":{"tenant_id":"t","user_id":"u","request_id":"r","source":"test"},

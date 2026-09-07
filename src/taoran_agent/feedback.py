@@ -677,7 +677,7 @@ def build_evaluation_feedback(
     result = "\n".join(lines)
     context = semantic_facts.quality_audit.get("authoritative_checks")
     if context:
-        from .post_quality import PostFeedbackConflict, quality_hits
+        from .post_quality import quality_hits, PostFeedbackConflict
         hits = quality_hits(result, "facts.reason", context)
         semantic_facts.quality_audit["final_review"] = {"status":"failed" if hits else "passed", "hits":hits}
         if hits:

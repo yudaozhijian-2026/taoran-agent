@@ -5,6 +5,7 @@ from time import monotonic
 from uuid import uuid4
 
 from .evidence_standard import load_quality_evidence_standard
+from .post_review_policy import knowledge_manifest, require_evaluation_input
 from .feedback import (
     build_evaluation_feedback,
     build_precheck_feedback,
@@ -24,7 +25,6 @@ from .models import (
     TaoranSectionCheck,
     WritebackResult,
 )
-from .post_review_policy import knowledge_manifest, require_evaluation_input
 from .precheck_engine import TaoranPrecheckEngine
 from .rules import canonical_hash, load_rule_catalog, normalized_text
 from .scoring import (

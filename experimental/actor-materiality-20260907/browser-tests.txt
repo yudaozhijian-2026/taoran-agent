@@ -1,0 +1,31 @@
+✔ Final first does not close the stream or block later Preview (1.516959ms)
+✔ snapshot replay replaces the snapshot instead of duplicating text (0.304417ms)
+✔ polling continues after Final until Preview is complete (2.367375ms)
+✔ Final failure still receives independently completed Preview (0.348875ms)
+✔ polling continues beyond the previous three-attempt limit (0.634208ms)
+✔ temporary errors recover without substituting preview for Final (0.455958ms)
+✔ expired access ends polling with a traceable state (0.477459ms)
+✔ Final failure cannot enable return (0.383459ms)
+✔ late Preview cannot overwrite Final (0.257791ms)
+✔ return uses an exact allowed parent origin and authoritative ack text (0.372541ms)
+✔ unknown parent cannot receive customer feedback (0.228708ms)
+✔ hung ack body times out, preserves Final and allows safe retry (0.558459ms)
+✔ hung result body times out and recovery continues to Final (0.378792ms)
+✔ Preview failure still permits a successful Final (0.229875ms)
+✔ ack for another task never returns or discards current Final (0.209875ms)
+✔ pagehide during an in-flight result request cannot restart polling (0.425208ms)
+✔ pagehide during acknowledgement cannot send feedback to a closed page (0.259917ms)
+✔ prolonged simulated offline preserves Preview and recovers exact Final (1.429875ms)
+✔ restored page ignores an acknowledgement from the prior page lifecycle (0.308875ms)
+✔ restored pending page resumes result recovery after an aborted request (0.426834ms)
+✔ completed Preview remains unchanged after Final and return (0.235375ms)
+✔ poll recovery preserves generated Preview separately from Final (0.310625ms)
+✔ failed Final keeps Preview visible without allowing it to be returned (0.280541ms)
+ℹ tests 23
+ℹ suites 0
+ℹ pass 23
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 41.580833

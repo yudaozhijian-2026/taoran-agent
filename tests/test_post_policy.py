@@ -27,18 +27,13 @@ from taoran_agent.knowledge import load_taoran_knowledge_snapshot
 from taoran_agent.llm import ChatModelReviewer
 from taoran_agent.models import PostEvaluationRequest, VisitDraftInput
 from taoran_agent.post_review_policy import (
-    POLICY,
-    PostInputNotReceived,
-    compare_snapshots,
-    input_boundary,
-    knowledge_manifest,
-    require_evaluation_input,
+    POLICY, PostInputNotReceived, compare_snapshots, knowledge_manifest,
+    input_boundary, require_evaluation_input,
 )
 
 
 def visit(**changes):
-    data = dict(  # noqa: C408 - compact fixture supports keyword-style overrides
-                visit_date="2026-09-03", employee_id="E1", customer_id="C1",
+    data = dict(visit_date="2026-09-03", employee_id="E1", customer_id="C1",
                 customer_type_ii="potential", visit_method="face_to_face",
                 is_appointment=False, purpose_code="收集信息",
                 expected_key_result="确认客户设备数量",
@@ -160,7 +155,7 @@ def test_confirmed_contact_policy_is_in_post_prompt_and_retry_source():
 
 
 def test_unapproved_requirement_has_bounded_regeneration():
-    from taoran_agent.llm import ModelCallError, _format_retry_allowed
+    from taoran_agent.llm import _format_retry_allowed, ModelCallError
     assert _format_retry_allowed(ModelCallError("unsupported_company_requirement"))
 
 

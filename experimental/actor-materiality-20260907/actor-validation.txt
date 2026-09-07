@@ -1,0 +1,6 @@
+budget_clear 20.84 achieved met met
+budget_unrelated 12.18 achieved met met
+receipt_unclear 20.17 not_achieved needs_revision met
+owner_missing 11.59 not_achieved met met
+approval_unclear 30.86 not_achieved needs_revision needs_revision
+owner_clear 20.37 achieved met met

@@ -147,10 +147,7 @@ window.addEventListener('pageshow', event => {
   disposed = false;
   returning = false;
   if (finalDone && !ack.hidden) ack.disabled = false;
-  // A restored page that already holds the authoritative Final only needs to
-  // re-enable acknowledgement. Polling again can consume the acknowledgement
-  // response slot and must not replace or delay the saved Final.
-  if (!done && !finalDone) recover();
+  if (!done) recover();
 });
 ack.addEventListener('click', async () => {
   if (disposed || returning || ack.disabled) return;

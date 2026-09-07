@@ -67,6 +67,7 @@ def test_customer_actor_and_process_state(source, output, blocked):
     ("核实本次原定具体目标，保留原目标及补充说明", "O_KR", False),
     ("在想取得的关键结果中补充本次具体收集事项", "A2", True),
     ("在关键结果中补充本次原定要了解的事项并保留原记录", "O_KR", False),
+    ("请在想取得的关键结果中补充本次计划收集的具体信息项", "O_KR", False),
     ("下次拜访可将关键结果写明为核对发票", "O_KR", False),
     ("不得将本次关键结果改为已取得的结果", "A2", False),
     ("期望结果争取合作与本次过程无衔接", "N", True),
@@ -94,9 +95,9 @@ def test_factual_error_stops_before_local_repair_and_preserves_audit(tmp_path, m
     try:
         with pytest.raises(ModelCallError, match="post_fact_grounding_conflict"):
             r._analyze(v, False, attempts)
-        assert len(calls) == 1
+        assert len(calls) == 2
         assert attempts[0].diagnostic_evidence_id
-        assert not _format_retry_allowed(ModelCallError("post_fact_grounding_conflict"))
+        assert _format_retry_allowed(ModelCallError("post_fact_grounding_conflict"))
     finally:
         r.close()
 

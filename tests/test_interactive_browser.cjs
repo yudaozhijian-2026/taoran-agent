@@ -45,6 +45,45 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   };
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
+test('Final first does not close the stream or block later Preview', () => {
+  const h = harness();
+  h.source.emit('preview_snapshot', {check_id: 'qc_test', text: '', status: 'processing'});
+  h.source.emit('final_completed', {check_id: 'qc_test', feedback_text: '正式反馈'});
+  assert.notEqual(h.source.closed, true);
+  assert.equal(h.nodes.ack.disabled, false);
+  h.source.emit('preview_snapshot', {check_id: 'qc_test', text: '后来生成的建议', status: 'completed'});
+  assert.equal(h.nodes.content.textContent, '后来生成的建议');
+  assert.equal(h.nodes.finalContent.textContent, '正式反馈');
+  assert.equal(h.source.closed, true);
+});
+test('snapshot replay replaces the snapshot instead of duplicating text', () => {
+  const h = harness();
+  for (let i = 0; i < 3; i++) h.source.emit('preview_snapshot', {check_id: 'qc_test', text: '客户确认', status: 'processing'});
+  h.source.emit('preview_snapshot', {check_id: 'qc_test', text: '客户确认采购计划', status: 'completed'});
+  assert.equal(h.nodes.content.textContent, '客户确认采购计划');
+});
+test('polling continues after Final until Preview is complete', async () => {
+  const h = harness([
+    {...completed(), preview_status: 'processing', preview_feedback_text: '建议'},
+    {...completed(), preview_status: 'completed', preview_feedback_text: '建议完整原文'},
+  ]);
+  h.source.emit('error');
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.nodes.finalContent.textContent, '真实Final');
+  assert.equal(h.nodes.content.textContent, '建议');
+  await h.tick();
+  assert.equal(h.nodes.content.textContent, '建议完整原文');
+  assert.equal(h.timers.size, 0);
+});
+test('Final failure still receives independently completed Preview', () => {
+  const h = harness();
+  h.source.emit('final_failed', {check_id: 'qc_test', code: 'model_failed'});
+  assert.notEqual(h.source.closed, true);
+  h.source.emit('preview_snapshot', {check_id: 'qc_test', text: '仍可阅读的建议', status: 'completed'});
+  assert.equal(h.nodes.content.textContent, '仍可阅读的建议');
+  assert.equal(h.nodes.ack.hidden, true);
+  assert.equal(h.source.closed, true);
+});
 const completed = () => ({check_id: 'qc_test', status: 'completed', final_feedback_text: '真实Final'});
 test('polling continues beyond the previous three-attempt limit', async () => {
   const h = harness([pending(), pending(), pending(), pending(), completed()]);
@@ -184,6 +223,7 @@ test('prolonged simulated offline preserves Preview and recovers exact Final', a
 test('restored page ignores an acknowledgement from the prior page lifecycle', async () => {
   let release;
   const h = harness([() => new Promise(resolve => { release = resolve; }), completed()]);
+  h.source.emit('preview_complete', {status: 'completed'});
   h.source.emit('final_completed', {check_id: 'qc_test', feedback_text: '真实Final'});
   const oldReturn = h.nodes.ack.click();
   h.handlers.pagehide();
