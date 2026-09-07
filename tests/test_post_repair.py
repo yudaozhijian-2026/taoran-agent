@@ -1,19 +1,23 @@
-from copy import deepcopy
 import json
-from pathlib import Path
+from copy import deepcopy
 from threading import Event
 
 import httpx
 import pytest
-
 from test_post_policy import visit
+
 from taoran_agent.config import Settings
 from taoran_agent.knowledge import load_taoran_knowledge_snapshot
-from taoran_agent.llm import ChatModelReviewer, ModelCallError, _evidence_catalog, _read_chat_response
-from taoran_agent.post_repair import merge_repair
-from taoran_agent.post_trace import PostStreamTrace
-from taoran_agent.post_review_policy import requirement_hits
+from taoran_agent.llm import (
+    ChatModelReviewer,
+    ModelCallError,
+    _evidence_catalog,
+    _read_chat_response,
+)
 from taoran_agent.model_failure_evidence import save_failure_evidence
+from taoran_agent.post_repair import merge_repair
+from taoran_agent.post_review_policy import requirement_hits
+from taoran_agent.post_trace import PostStreamTrace
 
 
 def reviewer(tmp_path, **kwargs):
@@ -123,7 +127,7 @@ def test_sse_timeout_retains_first_character_id_and_original_text(tmp_path):
     s = Settings(_env_file=None, database_path=str(tmp_path / "nested/db.sqlite"))
     trace = PostStreamTrace(s)
     class Response:
-        headers = {"content-type":"text/event-stream"}
+        headers = {"content-type":"text/event-stream"}  # noqa: RUF012 - immutable test fixture
         def iter_lines(self):
             yield 'data: {"id":"test-id","choices":[{"delta":{"content":"原始片段"}}]}'
             raise httpx.ReadTimeout("test")
@@ -184,7 +188,7 @@ def test_diagnostic_write_failure_is_visible(tmp_path, monkeypatch):
 def test_invalid_json_keeps_partial_raw_text_private(tmp_path):
     trace = PostStreamTrace(Settings(_env_file=None, database_path=str(tmp_path / "db.sqlite")))
     class Response:
-        headers = {"content-type": "text/event-stream"}
+        headers = {"content-type": "text/event-stream"}  # noqa: RUF012 - immutable test fixture
         def iter_lines(self):
             yield 'data: {"id":"raw-id","choices":[{"delta":{"content":"{坏JSON"}}]}'
             yield 'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}'

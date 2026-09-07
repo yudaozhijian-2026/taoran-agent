@@ -1,8 +1,9 @@
 """Bounded, section-scoped repair. Unaffected model facts cannot be replaced."""
-from copy import deepcopy
 import json
-from .post_review_policy import POLICY
+from copy import deepcopy
+
 from .post_quality import POST_EVIDENCE_GUIDANCE
+from .post_review_policy import POLICY
 
 
 def targets_for_error(code, details):
@@ -26,7 +27,7 @@ def merge_repair(original, patch, targets):
     if len(codes) != len(expected) or set(codes) != expected:
         raise ValueError("invalid_repair_scope")
     if not isinstance(patch["facts_reason"], str):
-        raise ValueError("invalid_repair_patch")
+        raise ValueError("invalid_repair_patch")  # noqa: TRY004 - stable public error contract
     if "facts.reason" not in targets and patch["facts_reason"]:
         raise ValueError("invalid_repair_scope")
     result = deepcopy(original)

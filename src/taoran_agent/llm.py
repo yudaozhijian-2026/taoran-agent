@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import codecs
 import json
 import re
-import codecs
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from time import monotonic
@@ -14,14 +14,8 @@ import httpx
 from pydantic import BaseModel, ConfigDict, Field, StrictBool, ValidationError, model_validator
 
 from . import experimental_semantic_audit
-from .post_review_policy import POLICY, requirement_hits
-from .post_repair import targets_for_error, merge_repair, repair_messages
 from .button_scheduler import ButtonFeedbackScheduler
 from .config import Settings
-from .model_failure_evidence import save_failure_evidence
-from .post_trace import PostStreamTrace
-from .post_quality import quality_context, quality_hits, assessment_summary_hits, POST_EVIDENCE_GUIDANCE
-from .numeric_evidence import missing_numeric_tokens
 from .evidence_standard import load_quality_evidence_standard, model_guidance
 from .experimental_assessment import (
     ASSESSMENT_GUIDANCE,
@@ -60,6 +54,7 @@ from .experimental_semantic_invariants import validate_invariants
 from .field_labels import display_field_name
 from .knowledge import TaoranKnowledgeSnapshot
 from .model_capacity import ModelCapacityController, ModelCapacityLease
+from .model_failure_evidence import save_failure_evidence
 from .models import (
     FrontVisitAnalysisEvidence,
     FrontVisitAnalysisSection,
@@ -74,6 +69,16 @@ from .models import (
     Severity,
     VisitDraftInput,
 )
+from .numeric_evidence import missing_numeric_tokens
+from .post_quality import (
+    POST_EVIDENCE_GUIDANCE,
+    assessment_summary_hits,
+    quality_context,
+    quality_hits,
+)
+from .post_repair import merge_repair, repair_messages, targets_for_error
+from .post_review_policy import POLICY, requirement_hits
+from .post_trace import PostStreamTrace
 from .rules import normalized_text
 from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 

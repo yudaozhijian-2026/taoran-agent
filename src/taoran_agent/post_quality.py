@@ -1,7 +1,12 @@
 """Post-only authoritative context and auditable output conflict checks."""
 import re
+
 from .post_claim_guards import advice_hits
-from .purpose_mapping import purpose_mapping_record, structure_purpose_mapping, purpose_policy_for_visit
+from .purpose_mapping import (
+    purpose_mapping_record,
+    purpose_policy_for_visit,
+    structure_purpose_mapping,
+)
 from .rules import normalized_text
 
 
@@ -64,7 +69,7 @@ def quality_hits(text, target, context):
         rule = None
         if context.get("purpose", {}).get("matches") is True and target in {"T", "O_KR", "facts.reason"}:
             stage_scope = re.search(r"(?:P[1-6]|商机阶段|当前阶段|客户类型|阶段目的|允许目的)", clause)
-            if stage_scope and (re.search(r"(?:拜访目的|本次目的|目的与|目的和).{0,22}(?:不匹配|不符合|错位|不一致)", clause) or re.search(r"将拜访目的.{0,12}(?:改为|调整为|校准为)", clause)):
+            if stage_scope and (re.search(r"(?:拜访目的|本次目的|目的与|目的和).{0,22}(?:不匹配|不符合|错位|不一致)", clause) or re.search(r"将拜访目的.{0,12}(?:改为|调整为|校准为)", clause)):  # noqa: SIM102
                 if not re.search(r"(?:并非|不能认为|不存在|不属于).{0,12}(?:不匹配|错位)", clause):
                     rule = "purpose_contradicts_authoritative_mapping"
         if re.search(r"(?:拜访目的|收集信息|强化关系).{0,10}(?:[一二三四五六七八九十0-9]+个?字|字数)", clause):
