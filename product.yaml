@@ -1,6 +1,6 @@
 product_code: dsm-taoran-visit-agent
 product_name: DSM TAORAN 拜访智能体
-version: 0.15.0
+version: 0.27.2rc2
 status: knowledge_driven_precheck_q33_q34_integrated
 deployment_modes:
   - standalone
@@ -15,16 +15,7 @@ tenant_configuration:
   per_tenant_jiandaoyun_credentials: true
   per_tenant_field_mapping: true
   web_onboarding_console: true
-  authorized_app_form_discovery: true
-  automatic_tenant_id: true
   automatic_field_mapping: true
-  manual_field_confirmation: true
-  field_recheck_after_form_change: true
-  existing_tenant_form_reselection: true
-  unique_form_tenant_binding: true
-  post_onboarding_deployment_guide: true
-  step_by_step_jiandaoyun_tutorial: true
-  runtime_deployment_status_dashboard: true
 scenarios:
   - visit_precheck
   - visit_effectiveness_evaluation
@@ -36,7 +27,7 @@ rule_status: integrated_baseline
 knowledge:
   rule_runtime_mode: reviewed_local_snapshot
   button_knowledge_runtime_mode: live_knowledge_api_no_local_fallback
-  precheck_engine: TAORAN-PRECHECK-KB-V2
+  precheck_engine: TAORAN-PRECHECK-KB-V1
   sources:
     - DSM-BS-000
     - DSM-BS-01-07
@@ -50,13 +41,10 @@ analysis:
   pre_submit_button:
     - local_rules_unchanged
     - pure_ai_without_knowledge
-    - structured_live_knowledge_with_ai_wording_for_unmet_only
+    - ai_with_live_knowledge_api_content
   post_submit: rules_and_glm_5_2
-  prompt_version: TAORAN-LLM-FACTS-V2.6
-  knowledge_wording_prompt_version: TAORAN-KNOWLEDGE-WORDING-V1
-  front_end_budget_seconds: 8
-  knowledge_wording_timeout_seconds: 6
-  digest_cache_seconds: 300
+  prompt_version: TAORAN-LLM-FACTS-V2.9
+  post_review_policy: TAORAN-POST-REVIEW-20260907-V4.2
 q40_integration:
   enabled_by_default: false
   activation: explicit_opt_in

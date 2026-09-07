@@ -35,7 +35,7 @@ class SemanticReviewer(ABC):
         return self.review(visit)
 
     def review_with_knowledge(self, visit: VisitDraftInput) -> SemanticReview:
-        """知识库反馈入口；实现方应对知识来源负责。"""
+        """实时知识增强入口；实现方应对知识来源负责。"""
         return self.review(visit)
 
     def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:

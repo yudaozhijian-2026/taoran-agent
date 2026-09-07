@@ -1,0 +1,53 @@
+.................FF.F....F.................                              [100%]
+=================================== FAILURES ===================================
+_____________ test_acknowledge_returns_final_without_any_writeback _____________
+../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py:90: in test_acknowledge_returns_final_without_any_writeback
+    result = api.acknowledge_interactive_quick_check_task("qc_ack", "x" * 32)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/taoran_agent/api.py:2674: in acknowledge_interactive_quick_check_task
+    result = _quick_check_task_response(task)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/taoran_agent/api.py:2436: in _quick_check_task_response
+    preview_snapshot = _quick_check_preview_snapshot(task)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/taoran_agent/api.py:2359: in _quick_check_preview_snapshot
+    event = task["events"].get_nowait()
+            ^^^^^^^^^^^^^^
+E   KeyError: 'events'
+___________ test_preview_failure_still_emits_the_authoritative_final ___________
+../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py:125: in test_preview_failure_still_emits_the_authoritative_final
+    assert any(message.startswith("event: preview_complete") for message in messages)
+E   assert False
+E    +  where False = any(<generator object test_preview_failure_still_emits_the_authoritative_final.<locals>.<genexpr> at 0x107e77440>)
+____________________ test_slow_preview_does_not_delay_final ____________________
+../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py:166: in test_slow_preview_does_not_delay_final
+    assert result["preview"]["status"] == "superseded"
+E   AssertionError: assert 'processing' == 'superseded'
+E     
+E     - superseded
+E     + processing
+____________________ test_final_failure_blocks_acknowledge _____________________
+../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py:208: in test_final_failure_blocks_acknowledge
+    api.acknowledge_interactive_quick_check_task("qc_failed", "x" * 32)
+src/taoran_agent/api.py:2674: in acknowledge_interactive_quick_check_task
+    result = _quick_check_task_response(task)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/taoran_agent/api.py:2436: in _quick_check_task_response
+    preview_snapshot = _quick_check_preview_snapshot(task)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src/taoran_agent/api.py:2359: in _quick_check_preview_snapshot
+    event = task["events"].get_nowait()
+            ^^^^^^^^^^^^^^
+E   KeyError: 'events'
+=============================== warnings summary ===============================
+../../../.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/ydzj/Documents/DSM智能销售管理/TAORAN智能体/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED ../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py::test_acknowledge_returns_final_without_any_writeback
+FAILED ../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py::test_preview_failure_still_emits_the_authoritative_final
+FAILED ../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py::test_slow_preview_does_not_delay_final
+FAILED ../../../releases/0.27.0-20260904/tests/test_interactive_quick_check.py::test_final_failure_blocks_acknowledge
+4 failed, 39 passed, 1 warning in 0.33s

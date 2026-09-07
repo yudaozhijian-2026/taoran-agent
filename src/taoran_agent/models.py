@@ -6,7 +6,7 @@ from math import isclose
 from typing import Any, Literal
 from zoneinfo import ZoneInfo
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, PrivateAttr, model_validator
 
 from .scoring_contract import LEGACY_TOTAL_RULE_VERSION, TOTAL_RULE_VERSION
 
@@ -38,11 +38,9 @@ class Severity(str, Enum):
 
 
 class FeedbackMode(str, Enum):
-    """提交前反馈的生成路径。"""
+    """提交前唯一综合反馈路径。"""
 
     RULE = "rule"
-    AI = "ai"
-    KNOWLEDGE = "knowledge"
 
 
 class RequestContext(BaseModel):
@@ -224,6 +222,7 @@ class ModelEvidence(BaseModel):
 
     field: str = Field(min_length=1, max_length=100)
     quote: str = Field(min_length=1, max_length=300)
+    evidence_id: str | None = Field(default=None, min_length=1, max_length=120)
     category: EvidenceCategory = "other"
 
 
@@ -259,27 +258,141 @@ class SemanticReview(BaseModel):
     latency_ms: int = 0
     model: str | None = None
     prompt_version: str | None = None
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(default=0, ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    cache_hit: bool = False
+    model_queue_ms: int = Field(default=0, ge=0)
+    model_first_byte_ms: int | None = Field(default=None, ge=0)
+    model_complete_ms: int | None = Field(default=None, ge=0)
+    model_request_id: str | None = Field(default=None, max_length=200)
     sections: list[ModelSectionAnalysis] = Field(default_factory=list)
     failure_reason: str | None = None
+    attempt_count: int = Field(default=0, ge=0, le=2)
+    recovered_after_retry: bool = False
+    validation_errors: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    model_attempts: list[dict[str, Any]] = Field(default_factory=list, max_length=2)
+
+
+class FrontSpecificityFeatures(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    customer_actor: bool
+    observable_action: bool
+    concrete_object: bool
+    verifiable_result: bool
+    time_quantity_condition_or_deliverable: bool
+    customer_fact: bool
+    fact_judgment_separated: bool
+    linked_to_context: bool
+    customer_relationship_detail: bool = False
+    customer_information_detail: bool = False
+    opportunity_blocker_detail: bool = False
+    customer_expression_or_action_fact: bool = False
+    opinion_supported_by_customer_fact: bool = False
+
+
+class FrontSpecificityEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    feature: Literal[
+        "customer_actor",
+        "observable_action",
+        "concrete_object",
+        "verifiable_result",
+        "time_quantity_condition_or_deliverable",
+        "customer_fact",
+        "linked_to_context",
+        "customer_relationship_detail",
+        "customer_information_detail",
+        "opportunity_blocker_detail",
+        "customer_expression_or_action_fact",
+        "opinion_supported_by_customer_fact",
+    ]
+    field: Literal[
+        "expected_key_result",
+        "process_description",
+        "next_action_purpose",
+        "next_action_expected_result",
+    ]
+    quote: str = Field(min_length=1, max_length=120)
 
 
 class KnowledgeWordingItem(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    code: Literal["T", "A1", "O_KR", "R", "A2", "N"]
-    reason: str = Field(min_length=1, max_length=220)
-    suggestion: str = Field(min_length=1, max_length=220)
+    code: Literal["C", "T", "A1", "O_KR", "R", "A2", "N"]
+    suggestion: str = Field(default="", max_length=160)
+    features: FrontSpecificityFeatures | None = None
+    evidence: list[FrontSpecificityEvidence] = Field(default_factory=list, max_length=16)
+    specific: bool | None = None
+
+
+class FrontVisitAnalysisEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    field: Literal[
+        "customer_type_ii",
+        "visit_method",
+        "is_appointment",
+        "opportunity_stage",
+        "opportunity_stages",
+        "purpose_code",
+        "other_purpose",
+        "expected_key_result",
+        "process_description",
+        "customer_feedback",
+        "self_assessment",
+        "deviation_reason",
+        "next_action_purpose",
+        "next_action_other_purpose",
+        "next_action_expected_result",
+        "next_contact_at",
+        "confirmed_findings",
+    ]
+    quote: str = Field(min_length=1, max_length=120)
+
+
+class FrontVisitAnalysisSection(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    kind: Literal["visit_context", "objective_result", "assessment", "next_step"]
+    text: str = Field(min_length=1, max_length=240)
 
 
 class KnowledgeWordingResult(BaseModel):
+    # Request-local retry evidence, excluded from JSON/schema/persistence.
+    _experimental_repair_context: dict[str, Any] = PrivateAttr(default_factory=dict)
     status: Literal["completed", "unavailable", "timeout"]
-    items: list[KnowledgeWordingItem] = Field(default_factory=list, max_length=6)
+    items: list[KnowledgeWordingItem] = Field(default_factory=list, max_length=4)
+    visit_analysis: str = Field(default="", max_length=300)
+    visit_analysis_sections: list[FrontVisitAnalysisSection] = Field(
+        default_factory=list,
+        max_length=4,
+    )
+    visit_analysis_evidence: list[FrontVisitAnalysisEvidence] = Field(
+        default_factory=list,
+        max_length=14,
+    )
     provider: str = "structured-knowledge"
     model: str | None = None
     prompt_version: str | None = None
     latency_ms: int = 0
     cache_hit: bool = False
+    input_tokens: int = Field(default=0, ge=0)
+    output_tokens: int = Field(default=0, ge=0)
+    total_tokens: int = Field(default=0, ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    model_queue_ms: int = Field(default=0, ge=0)
+    model_first_byte_ms: int | None = Field(default=None, ge=0)
+    model_complete_ms: int | None = Field(default=None, ge=0)
+    model_request_id: str | None = Field(default=None, max_length=200)
     failure_reason: str | None = None
+    attempt_count: int = Field(default=0, ge=0, le=2)
+    recovered_after_retry: bool = False
+    validation_errors: list[dict[str, str]] = Field(default_factory=list, max_length=20)
+    model_attempts: list[dict[str, Any]] = Field(default_factory=list, max_length=2)
 
 
 class PrecheckResponse(BaseModel):
@@ -288,6 +401,9 @@ class PrecheckResponse(BaseModel):
     request_id: str
     tenant_id: str
     feedback_mode: FeedbackMode = FeedbackMode.RULE
+    stage: Literal["pre_submit_advice"] = "pre_submit_advice"
+    official_score_generated: Literal[False] = False
+    phase_latency_ms: dict[str, int] = Field(default_factory=dict)
     status: Literal["passed", "needs_revision", "review"]
     can_submit: bool
     submission_policy: Literal["advisory_only"] = "advisory_only"
@@ -300,7 +416,9 @@ class PrecheckResponse(BaseModel):
     issues: list[Issue]
     questions: list[str]
     suggestions: list[str]
+    field_completion: dict[str, bool] = Field(default_factory=dict)
     feedback_text: str
+    rule_feedback_text: str = ""
     semantic_review: SemanticReview
     input_snapshot_hash: str
     rule_version: str
@@ -313,16 +431,17 @@ class PrecheckResponse(BaseModel):
     latency_ms: int
 
 
-class ButtonPrecheckResponse(BaseModel):
-    """单次按钮同时返回三份反馈，不提供任何正式评分字段。"""
+class UnifiedButtonPrecheckResponse(BaseModel):
+    """前端按钮的唯一非评分反馈契约。"""
 
     check_id: str
     trace_id: str
     request_id: str
     tenant_id: str
-    feedback_mode: FeedbackMode = FeedbackMode.RULE
+    feedback_mode: Literal[FeedbackMode.RULE] = FeedbackMode.RULE
     stage: Literal["pre_submit_advice"] = "pre_submit_advice"
     official_score_generated: Literal[False] = False
+    phase_latency_ms: dict[str, int] = Field(default_factory=dict)
     status: Literal["passed", "needs_revision", "review"]
     can_submit: bool
     submission_policy: Literal["advisory_only"] = "advisory_only"
@@ -330,61 +449,32 @@ class ButtonPrecheckResponse(BaseModel):
     issues: list[Issue]
     questions: list[str]
     suggestions: list[str]
-    # feedback_text保留为规则反馈别名，确保旧按钮输出映射不失效。
+    field_completion: dict[str, bool] = Field(default_factory=dict)
     feedback_text: str
-    rule_feedback_text: str = ""
-    knowledge_feedback_text: str = ""
-    model_feedback_text: str = ""
-    rule_status: Literal["passed", "needs_revision", "review"] = "review"
-    knowledge_status: Literal["passed", "needs_revision", "review"] = "review"
-    model_status: Literal["passed", "needs_revision", "review"] = "review"
-    knowledge_check_id: str | None = None
-    model_check_id: str | None = None
-    live_knowledge_snapshot_hash: str = ""
-    live_knowledge_references: list[KnowledgeReference] = Field(default_factory=list)
+    rule_feedback_text: str
+    semantic_review: SemanticReview
     input_snapshot_hash: str
     rule_version: str
     engine_version: str
     knowledge_snapshot_hash: str
     knowledge_references: list[KnowledgeReference]
+    standard_audit: StandardAudit | None = None
     agent_version: str
     checked_at: datetime
     latency_ms: int
 
     @classmethod
-    def from_precheck(cls, response: PrecheckResponse) -> ButtonPrecheckResponse:
+    def from_precheck(
+        cls,
+        response: PrecheckResponse,
+        *,
+        latency_ms: int,
+    ) -> UnifiedButtonPrecheckResponse:
         return cls.model_validate(
             {
                 **response.model_dump(mode="python"),
-                "rule_feedback_text": response.feedback_text,
-                "rule_status": response.status,
-            }
-        )
-
-    @classmethod
-    def from_three_prechecks(
-        cls,
-        rule: PrecheckResponse,
-        knowledge: PrecheckResponse,
-        model: PrecheckResponse,
-        *,
-        latency_ms: int,
-    ) -> ButtonPrecheckResponse:
-        return cls.model_validate(
-            {
-                **rule.model_dump(mode="python"),
                 "feedback_mode": FeedbackMode.RULE,
-                "feedback_text": rule.feedback_text,
-                "rule_feedback_text": rule.feedback_text,
-                "knowledge_feedback_text": knowledge.feedback_text,
-                "model_feedback_text": model.feedback_text,
-                "rule_status": rule.status,
-                "knowledge_status": knowledge.status,
-                "model_status": model.status,
-                "knowledge_check_id": knowledge.check_id,
-                "model_check_id": model.check_id,
-                "live_knowledge_snapshot_hash": knowledge.knowledge_snapshot_hash,
-                "live_knowledge_references": knowledge.knowledge_references,
+                "rule_feedback_text": response.feedback_text,
                 "latency_ms": latency_ms,
             }
         )
@@ -419,11 +509,22 @@ class ModelValidationIssue(BaseModel):
 class ModelAttemptAudit(BaseModel):
     attempt: int
     latency_ms: int
+    model_queue_ms: int = Field(default=0, ge=0)
+    cached_input_tokens: int = Field(default=0, ge=0)
+    model_first_byte_ms: int | None = Field(default=None, ge=0)
+    model_complete_ms: int | None = Field(default=None, ge=0)
+    model_request_id: str | None = Field(default=None, max_length=200)
     failure_reason: str | None = None
     validation_errors: list[ModelValidationIssue] = Field(default_factory=list)
+    diagnostic_evidence_id: str | None = None
+    stream_evidence_id: str | None = None
+    diagnostic_save_failed: bool = False
+    timeout_phase: str | None = None
+    repair_targets: list[str] = Field(default_factory=list)
 
 
 class Q34SemanticFacts(BaseModel):
+    quality_audit: dict = Field(default_factory=dict)
     status: Literal["completed", "fallback", "unavailable", "timeout"] = "completed"
     provider: str
     key_result_quality_ok: bool
@@ -436,6 +537,9 @@ class Q34SemanticFacts(BaseModel):
     latency_ms: int = 0
     model: str | None = None
     prompt_version: str | None = None
+    model_first_byte_ms: int | None = Field(default=None, ge=0)
+    model_complete_ms: int | None = Field(default=None, ge=0)
+    model_request_id: str | None = Field(default=None, max_length=200)
     sections: list[ModelSectionAnalysis] = Field(default_factory=list)
     failure_reason: str | None = None
     model_attempts: list[ModelAttemptAudit] = Field(default_factory=list)
@@ -489,6 +593,8 @@ class WritebackResult(BaseModel):
 
 
 class EvaluationResponse(BaseModel):
+    knowledge_version_audit: dict[str, Any] = Field(default_factory=dict)
+    input_boundary_audit: dict[str, str] = Field(default_factory=dict)
     evaluation_id: str
     job_id: str
     trace_id: str
@@ -509,10 +615,8 @@ class EvaluationResponse(BaseModel):
     manager_coaching_suggestions: list[str]
     recommended_training_projects: list[str]
     ai_opinion: str
-    # 提交后保留两条独立的填写检查反馈，供简道云新增字段回写。
-    knowledge_feedback_text: str = ""
-    model_feedback_text: str = ""
     semantic_facts: Q34SemanticFacts
+    phase_latency_ms: dict[str, int] = Field(default_factory=dict)
     writeback: WritebackResult
     input_snapshot_hash: str
     rule_version: str

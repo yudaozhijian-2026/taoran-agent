@@ -15,6 +15,7 @@ from .models import (
     Q40BatchEvaluationRequest,
     Q40BatchResult,
 )
+from .source_revision import source_lock
 
 
 class IdempotencyConflictError(ValueError):
@@ -24,7 +25,7 @@ class IdempotencyConflictError(ValueError):
 class AgentStore:
     def __init__(self, database_path: str | Path) -> None:
         self.database_path = str(database_path)
-        # 三反馈会在多个工作线程中共享同一个存储实例。SQLite 的单连接即使
+        # 前端检查和后台评价会在多个工作线程中共享同一个存储实例。SQLite 的单连接即使
         # 设置 check_same_thread=False，也不能让无锁读取与事务写入并发交错。
         # 使用可重入锁统一保护读写，并允许周期查询在锁内执行索引回填。
         self._lock = RLock()
@@ -51,6 +52,15 @@ class AgentStore:
                 CREATE INDEX IF NOT EXISTS ix_precheck_tenant_check
                     ON precheck_runs (tenant_id, check_id);
 
+                CREATE TABLE IF NOT EXISTS feedback_artifacts (
+                    tenant_id TEXT NOT NULL,
+                    artifact_type TEXT NOT NULL,
+                    cache_key TEXT NOT NULL,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    PRIMARY KEY (tenant_id, artifact_type, cache_key)
+                );
+
                 CREATE TABLE IF NOT EXISTS evaluation_jobs (
                     job_id TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL,
@@ -71,6 +81,11 @@ class AgentStore:
                 );
                 CREATE INDEX IF NOT EXISTS ix_evaluation_tenant_job
                     ON evaluation_jobs (tenant_id, job_id);
+                CREATE INDEX IF NOT EXISTS ix_evaluation_source
+                    ON evaluation_jobs (tenant_id,
+                        json_extract(request_json, '$.writeback_target.app_id'),
+                        json_extract(request_json, '$.writeback_target.entry_id'),
+                        json_extract(request_json, '$.writeback_target.data_id'));
                 CREATE TABLE IF NOT EXISTS q40_batch_jobs (
                     batch_job_id TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL,
@@ -174,11 +189,79 @@ class AgentStore:
                 ),
             )
 
+    def delete_prechecks_by_request_ids(
+        self,
+        tenant_id: str,
+        request_ids: list[str],
+    ) -> None:
+        """Remove transient Quick Check drafts after their task has finished.
+
+        The normal synchronous button retains its audit records.  Interactive
+        0.27.0 tasks deliberately use unique request IDs and call this method
+        so an unsaved browser snapshot is never retained in ``precheck_runs``.
+        """
+        ids = [item for item in request_ids if item]
+        if not ids:
+            return
+        placeholders = ", ".join("?" for _ in ids)
+        with self._lock, self._connection:
+            self._connection.execute(
+                f"DELETE FROM precheck_runs WHERE tenant_id = ? AND request_id IN ({placeholders})",
+                (tenant_id, *ids),
+            )
+
+    def get_feedback_artifact(
+        self,
+        tenant_id: str,
+        artifact_type: str,
+        cache_key: str,
+    ) -> dict[str, Any] | None:
+        """Return a durable, version-keyed feedback artifact when it exists."""
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT payload_json FROM feedback_artifacts
+                WHERE tenant_id = ? AND artifact_type = ? AND cache_key = ?
+                """,
+                (tenant_id, artifact_type, cache_key),
+            ).fetchone()
+        return json.loads(row["payload_json"]) if row else None
+
+    def save_feedback_artifact(
+        self,
+        tenant_id: str,
+        artifact_type: str,
+        cache_key: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist the first successful wording and return that canonical copy."""
+        now = datetime.now(UTC).isoformat()
+        serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                INSERT OR IGNORE INTO feedback_artifacts (
+                    tenant_id, artifact_type, cache_key, payload_json, created_at
+                ) VALUES (?, ?, ?, ?, ?)
+                """,
+                (tenant_id, artifact_type, cache_key, serialized, now),
+            )
+            row = self._connection.execute(
+                """
+                SELECT payload_json FROM feedback_artifacts
+                WHERE tenant_id = ? AND artifact_type = ? AND cache_key = ?
+                """,
+                (tenant_id, artifact_type, cache_key),
+            ).fetchone()
+        if row is None:  # pragma: no cover - transaction ensures the row exists
+            raise RuntimeError("feedback artifact was not persisted")
+        return json.loads(row["payload_json"])
+
     def create_evaluation_job(
         self, job_id: str, request: PostEvaluationRequest, input_snapshot_hash: str
     ) -> tuple[dict[str, Any], bool]:
         now = datetime.now(UTC).isoformat()
-        with self._lock, self._connection:
+        with source_lock(request.context.tenant_id, request.writeback_target), self._lock, self._connection:
             row = self._connection.execute(
                 "SELECT * FROM evaluation_jobs WHERE tenant_id = ? AND request_id = ?",
                 (request.context.tenant_id, request.context.request_id),
@@ -215,6 +298,21 @@ class AgentStore:
             ).fetchone()
             return self._evaluation_record(row), True
 
+    def is_latest_source_job(self, request, job_id: str) -> bool:
+        target = request.writeback_target
+        if target is None:
+            return False
+        with self._lock:
+            row = self._connection.execute(
+                """SELECT job_id FROM evaluation_jobs WHERE tenant_id = ?
+                AND json_extract(request_json, '$.writeback_target.app_id') = ?
+                AND json_extract(request_json, '$.writeback_target.entry_id') = ?
+                AND json_extract(request_json, '$.writeback_target.data_id') = ?
+                ORDER BY rowid DESC LIMIT 1""",
+                (request.context.tenant_id, target.app_id, target.entry_id, target.data_id),
+            ).fetchone()
+        return row is not None and row["job_id"] == job_id
+
     def complete_evaluation(self, response: EvaluationResponse) -> None:
         with self._lock, self._connection:
             self._connection.execute(
@@ -233,6 +331,29 @@ class AgentStore:
                     response.job_id,
                 ),
             )
+
+    def mark_evaluation_running(self, tenant_id: str, job_id: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                UPDATE evaluation_jobs
+                SET status = 'running', error_message = NULL, updated_at = ?
+                WHERE tenant_id = ? AND job_id = ? AND status IN ('queued', 'running')
+                """,
+                (datetime.now(UTC).isoformat(), tenant_id, job_id),
+            )
+
+    def recoverable_evaluations(self) -> list[dict[str, Any]]:
+        """Return durable jobs that were queued or interrupted by a process restart."""
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM evaluation_jobs
+                WHERE status IN ('queued', 'running')
+                ORDER BY created_at
+                """
+            ).fetchall()
+            return [self._evaluation_record(row) for row in rows]
 
     def fail_evaluation(self, tenant_id: str, job_id: str, message: str) -> None:
         with self._lock, self._connection:
@@ -290,6 +411,9 @@ class AgentStore:
                 "semantic_status": semantic.get("status"),
                 "semantic_model": semantic.get("model"),
                 "failure_reason": semantic.get("failure_reason"),
+                "model_first_byte_ms": semantic.get("model_first_byte_ms"),
+                "model_complete_ms": semantic.get("model_complete_ms"),
+                "model_request_id": semantic.get("model_request_id"),
             }
 
         latest_evaluation = None
@@ -312,9 +436,13 @@ class AgentStore:
                     "semantic_model": semantic.get("model"),
                     "semantic_provider": semantic.get("provider"),
                     "failure_reason": semantic.get("failure_reason"),
+                    "model_first_byte_ms": semantic.get("model_first_byte_ms"),
+                    "model_complete_ms": semantic.get("model_complete_ms"),
+                    "model_request_id": semantic.get("model_request_id"),
                     "writeback_status": writeback.get("status"),
                     "writeback_error": writeback.get("error_message"),
                     "job_error": row["error_message"],
+                    "phase_latency_ms": response.get("phase_latency_ms") or {},
                 }
 
         return {
@@ -459,6 +587,28 @@ class AgentStore:
                 """,
                 (message, datetime.now(UTC).isoformat(), tenant_id, batch_job_id),
             )
+
+    def mark_q40_batch_running(self, tenant_id: str, batch_job_id: str) -> None:
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                UPDATE q40_batch_jobs
+                SET status = 'running', error_message = NULL, updated_at = ?
+                WHERE tenant_id = ? AND batch_job_id = ? AND status IN ('queued', 'running')
+                """,
+                (datetime.now(UTC).isoformat(), tenant_id, batch_job_id),
+            )
+
+    def recoverable_q40_batches(self) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = self._connection.execute(
+                """
+                SELECT * FROM q40_batch_jobs
+                WHERE status IN ('queued', 'running')
+                ORDER BY created_at
+                """
+            ).fetchall()
+            return [self._q40_batch_record(row) for row in rows]
 
     def get_q40_batch(self, tenant_id: str, batch_job_id: str) -> dict[str, Any] | None:
         with self._lock:

@@ -46,6 +46,20 @@ def display_field_name(field_path: str) -> str:
     return _BUSINESS_LABEL_OVERRIDES.get(field_path, "相关字段")
 
 
+def display_form_field_name(field_path: str) -> str | None:
+    """Return only a real input-field label from the active Jiandaoyun form."""
+    active_mapping = _ACTIVE_MAPPING_PATH.get()
+    mapping_path = (
+        get_settings().jiandaoyun_mapping_path
+        if active_mapping is _DEFAULT_MAPPING
+        else active_mapping
+    )
+    labels = _form_field_labels(mapping_path)
+    if field_path in labels:
+        return labels[field_path]
+    return labels.get(field_path.replace("[]", ""))
+
+
 @contextmanager
 def use_field_mapping(mapping_path: str | None) -> Iterator[None]:
     """Use one tenant's labels while building user-visible feedback for this request."""
@@ -83,6 +97,33 @@ def _field_labels(mapping_path: str | None) -> dict[str, str]:
                 labels[f"{canonical_name}[].{child_name}"] = f"{parent_label}.{child_label}"
                 labels[f"{canonical_name}.{child_name}"] = f"{parent_label}.{child_label}"
     labels["submitted_at"] = "提交时间"
+    return labels
+
+
+@lru_cache(maxsize=8)
+def _form_field_labels(mapping_path: str | None) -> dict[str, str]:
+    mapping = load_jiandaoyun_mapping(mapping_path)
+    labels: dict[str, str] = {}
+    fields = mapping.get("fields", {})
+    if isinstance(fields, dict):
+        for canonical_name, spec in fields.items():
+            label = _field_name(spec)
+            if label:
+                labels[canonical_name] = label
+    for canonical_name, subform in mapping.get("subforms", {}).items():
+        if not isinstance(subform, dict):
+            continue
+        parent_label = _field_name(subform.get("field"))
+        if parent_label:
+            labels[canonical_name] = parent_label
+        children = subform.get("children", {})
+        if not isinstance(children, dict):
+            continue
+        for child_name, child_spec in children.items():
+            child_label = _field_name(child_spec)
+            if child_label:
+                labels[f"{canonical_name}[].{child_name}"] = child_label
+                labels[f"{canonical_name}.{child_name}"] = child_label
     return labels
 
 

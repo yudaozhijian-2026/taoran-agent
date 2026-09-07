@@ -5,9 +5,9 @@ from time import monotonic
 from uuid import uuid4
 
 from .evidence_standard import load_quality_evidence_standard
+from .post_review_policy import knowledge_manifest, require_evaluation_input
 from .feedback import (
     build_evaluation_feedback,
-    build_model_precheck_feedback,
     build_precheck_feedback,
 )
 from .field_labels import display_field_name
@@ -16,7 +16,6 @@ from .models import (
     ClassifiedEvidence,
     DimensionScore,
     EvaluationResponse,
-    FeedbackMode,
     Issue,
     PostEvaluationRequest,
     PrecheckRequest,
@@ -52,13 +51,10 @@ class TaoranAgent:
         self,
         semantic_reviewer: SemanticReviewer | None = None,
         precheck_engine: TaoranPrecheckEngine | None = None,
-        *,
-        direct_knowledge_feedback: bool = False,
     ) -> None:
         self.catalog = load_rule_catalog()
         self.semantic_reviewer = semantic_reviewer or HeuristicSemanticReviewer()
         self.precheck_engine = precheck_engine or TaoranPrecheckEngine()
-        self.direct_knowledge_feedback = direct_knowledge_feedback
         self.vague_phrases = {
             normalized_text(value) for value in self.catalog["vague_exact_phrases"]
         }
@@ -72,9 +68,6 @@ class TaoranAgent:
             "source_record_id": request.context.source_record_id,
             "visit": request.visit.model_dump(mode="json"),
         }
-        # 保留默认rule模式的旧幂等哈希；只为新增模式扩展快照。
-        if request.feedback_mode != FeedbackMode.RULE:
-            snapshot_payload["feedback_mode"] = request.feedback_mode.value
         snapshot_hash = canonical_hash(snapshot_payload)
         supplied_field_values = request.visit.metadata.get("source_supplied_fields")
         supplied_fields = (
@@ -100,55 +93,17 @@ class TaoranAgent:
                     source="system",
                 )
             )
-        direct_feedback = request.feedback_mode == FeedbackMode.RULE or (
-            request.feedback_mode == FeedbackMode.KNOWLEDGE
-            and self.direct_knowledge_feedback
-        )
-        if direct_feedback:
-            # 规则反馈使用原本地规则；知识库反馈直接使用实时知识快照中的受控标准。
-            # 两条路径都不调用远程大模型。
-            semantic_review = HeuristicSemanticReviewer().review(request.visit)
-            sections = engine_result.sections
-            issues = [
-                *precheck_context_issues(request.visit, supplied_fields),
-                *system_issues,
-                *engine_result.issues,
-            ]
-            sections = self._apply_t03_status(sections, issues, request.visit.metadata)
-            knowledge_snapshot_hash = engine_result.knowledge_snapshot_hash
-            knowledge_references = engine_result.knowledge_references
-            engine_version = (
-                engine_result.engine_version
-                if request.feedback_mode == FeedbackMode.RULE
-                else "TAORAN-PRECHECK-KNOWLEDGE-DIRECT-V1"
-            )
-        else:
-            semantic_review = (
-                self.semantic_reviewer.review_without_knowledge(request.visit)
-                if request.feedback_mode == FeedbackMode.AI
-                else self.semantic_reviewer.review_with_knowledge(request.visit)
-            )
-            sections = self._model_precheck_sections(
-                engine_result.sections,
-                semantic_review,
-                include_knowledge=request.feedback_mode == FeedbackMode.KNOWLEDGE,
-            )
-            issues = list(system_issues)
-            knowledge_snapshot_hash = (
-                engine_result.knowledge_snapshot_hash
-                if request.feedback_mode == FeedbackMode.KNOWLEDGE
-                else ""
-            )
-            knowledge_references = (
-                engine_result.knowledge_references
-                if request.feedback_mode == FeedbackMode.KNOWLEDGE
-                else []
-            )
-            engine_version = (
-                "TAORAN-PRECHECK-PURE-AI-V1"
-                if request.feedback_mode == FeedbackMode.AI
-                else "TAORAN-PRECHECK-KNOWLEDGE-AI-V1"
-            )
+        semantic_review = HeuristicSemanticReviewer().review(request.visit)
+        sections = engine_result.sections
+        issues = [
+            *precheck_context_issues(request.visit, supplied_fields),
+            *system_issues,
+            *engine_result.issues,
+        ]
+        sections = self._apply_t03_status(sections, issues, request.visit.metadata)
+        knowledge_snapshot_hash = engine_result.knowledge_snapshot_hash
+        knowledge_references = engine_result.knowledge_references
+        engine_version = engine_result.engine_version
         semantic_issues = self._normalize_semantic_issues(semantic_review.issues)
         semantic_review.issues = semantic_issues
         issues.extend(semantic_issues)
@@ -228,34 +183,16 @@ class TaoranAgent:
             issues=issues,
             questions=self._questions(issues),
             suggestions=suggestions,
-            feedback_text=(
-                build_precheck_feedback(
-                    request.visit,
-                    quality_score,
-                    status,
-                    issues,
-                    supplied_fields,
-                    knowledge_references,
-                    semantic_review,
-                    taoran_sections=sections,
-                    title=(
-                        "知识库反馈"
-                        if request.feedback_mode == FeedbackMode.KNOWLEDGE
-                        else "AI反馈意见"
-                    ),
-                    review_status_text=(
-                        "已按知识库标准完成检查，部分内容需要补充或完善"
-                        if request.feedback_mode == FeedbackMode.KNOWLEDGE
-                        else "AI调用异常，请根据异常原因处理后重新检测"
-                    ),
-                )
-                if direct_feedback
-                else build_model_precheck_feedback(
-                    request.feedback_mode,
-                    status,
-                    issues,
-                    semantic_review,
-                )
+            field_completion=self._field_completion(request.visit),
+            feedback_text=build_precheck_feedback(
+                request.visit,
+                quality_score,
+                status,
+                issues,
+                supplied_fields,
+                knowledge_references,
+                semantic_review,
+                taoran_sections=sections,
             ),
             semantic_review=semantic_review,
             input_snapshot_hash=snapshot_hash,
@@ -268,6 +205,49 @@ class TaoranAgent:
             checked_at=datetime.now(UTC),
             latency_ms=int((monotonic() - started) * 1000),
         )
+
+    @staticmethod
+    def _field_completion(visit) -> dict[str, bool]:
+        """Record physical completion separately from semantic specificity."""
+        purpose = normalized_text(visit.purpose_code)
+        next_purpose = normalized_text(visit.next_action_purpose)
+        purpose_is_other = "other" in purpose or "其他" in purpose
+        next_purpose_is_other = "other" in next_purpose or "其他" in next_purpose
+        opportunity_required = (
+            visit.customer_type_ii is not None
+            and visit.customer_type_ii.value == "opportunity"
+        )
+        opportunity_complete = (
+            all(normalized_text(item.current_stage) for item in visit.opportunities)
+            if visit.opportunities
+            else bool(normalized_text(visit.opportunity_stage))
+        )
+        return {
+            "customer_id": bool(normalized_text(visit.customer_id)),
+            "customer_type_ii": visit.customer_type_ii is not None,
+            "opportunities[].current_stage": (
+                opportunity_complete if opportunity_required else True
+            ),
+            "visit_method": visit.visit_method is not None,
+            "is_appointment": visit.is_appointment is not None,
+            "purpose_code": bool(purpose),
+            "other_purpose": (
+                bool(normalized_text(visit.other_purpose)) if purpose_is_other else True
+            ),
+            "expected_key_result": bool(normalized_text(visit.expected_key_result)),
+            "process_description": bool(normalized_text(visit.process_description)),
+            "self_assessment": visit.self_assessment is not None,
+            "next_action_purpose": bool(next_purpose),
+            "next_action_other_purpose": (
+                bool(normalized_text(visit.next_action_other_purpose))
+                if next_purpose_is_other
+                else True
+            ),
+            "next_action_expected_result": bool(
+                normalized_text(visit.next_action_expected_result)
+            ),
+            "next_contact_at": visit.next_contact_at is not None,
+        }
 
     @staticmethod
     def _model_precheck_sections(
@@ -401,6 +381,7 @@ class TaoranAgent:
 
     def evaluate(self, request: PostEvaluationRequest, job_id: str) -> EvaluationResponse:
         """提交后深度评价：Q33与Q34各50分，总分100分。"""
+        boundary = require_evaluation_input(request.visit)
         trace_id = f"tr_{uuid4().hex}"
         snapshot_hash = canonical_hash(request)
         visit = request.visit.model_copy(
@@ -434,6 +415,10 @@ class TaoranAgent:
             semantic_facts,
         )
         return EvaluationResponse(
+            knowledge_version_audit=knowledge_manifest(
+                getattr(self.semantic_reviewer, "snapshot", self.precheck_engine.snapshot)
+            ),
+            input_boundary_audit=boundary,
             evaluation_id=f"eval_{snapshot_hash[:20]}",
             job_id=job_id,
             trace_id=trace_id,

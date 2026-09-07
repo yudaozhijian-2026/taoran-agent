@@ -126,6 +126,17 @@
         <div id="runtimeMessage" class="message hidden" role="alert"></div>
         <div id="systemRuntimeCards" class="runtime-system-grid"></div>
         <div id="tenantRuntimeList" class="runtime-tenant-list"></div>
+        <section id="evaluationJobsPanel" class="card hidden" aria-label="评价任务处理">
+          <h3 id="evaluationJobsTitle">评价任务处理</h3>
+          <p class="hint">重新分析会读取最新拜访并创建后续任务；仅重试回写使用已保存报告，不再次调用模型。</p>
+          <div class="tenant-actions">
+            <select id="evaluationJobsScope" aria-label="任务范围"><option value="attention">需要处理</option><option value="all">全部任务</option></select>
+            <button id="refreshEvaluationJobs" type="button" class="ghost">刷新任务</button>
+          </div>
+          <p id="evaluationJobsMessage" role="status" aria-live="polite"></p>
+          <div id="evaluationJobsList"></div>
+          <div class="tenant-actions"><button id="previousEvaluationJobs" type="button" class="ghost">上一页</button><span id="evaluationJobsPage"></span><button id="nextEvaluationJobs" type="button" class="ghost">下一页</button></div>
+        </section>
       </section>
     </section>
   </main>

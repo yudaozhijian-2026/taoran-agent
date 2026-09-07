@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 
-from .field_labels import display_field_name
+from .field_labels import display_field_name, display_form_field_name
 from .models import (
-    FeedbackMode,
+    FrontVisitAnalysisSection,
     Issue,
     KnowledgeReference,
     KnowledgeWordingResult,
+    ModelSectionAnalysis,
     PrecheckResponse,
     Q34SemanticFacts,
     SemanticReview,
@@ -47,6 +49,43 @@ _SECTIONS = (
     ),
 )
 
+# 提交后用六项结构归类、去重建议；展示时不输出维度、字段编号或固定占位项。
+_POST_ADVICE_SECTIONS = (
+    (
+        "客户类型",
+        ("客户分类II", "最新商机阶段"),
+    ),
+    (
+        "预约与拜访方式",
+        ("是否预约", "拜访方式"),
+    ),
+    (
+        "拜访目的与关键结果",
+        ("拜访目的", "具体其他目的", "想取得的关键结果"),
+    ),
+    (
+        "过程事实与结果",
+        ("过程详细描述", "客户反馈"),
+    ),
+    (
+        "达成评价",
+        ("评价", "偏差原因"),
+    ),
+    (
+        "下一步客户行动",
+        ("下一次行动目的", "下一次具体其他目的", "下次拜访期望的关键结果", "下一次联系客户时间安排"),
+    ),
+)
+
+_POST_ADVICE_KEYWORDS = {
+    "客户类型": ("客户分类", "商机", "阶段"),
+    "预约与拜访方式": ("预约", "拜访方式", "视频"),
+    "拜访目的与关键结果": ("拜访目的", "关键结果", "交付物", "目的映射"),
+    "过程事实与结果": ("过程", "客户事实", "客户角色", "异议", "条件", "承诺"),
+    "达成评价": ("评价", "达成", "偏差"),
+    "下一步客户行动": ("下一次", "下次", "联系", "行动", "跟进"),
+}
+
 _FAILURE_REASON_LABELS = {
     "timeout": "大模型调用超时",
     "authentication_failed": "大模型鉴权失败",
@@ -70,6 +109,70 @@ _FAILURE_REASON_LABELS = {
     "incomplete_or_refused": "大模型未返回完整分析结果",
     "invalid_content": "大模型返回内容格式异常",
 }
+
+_FRONT_HIDDEN_FIELDS = {
+    "metadata",
+    "purpose_policy",
+    "source_record_id",
+    "submitted_at",
+    "next_action_target_id",
+}
+
+_FRONT_MISSING_FIELDS = {
+    "TAORAN_TYPE_MISSING": ("customer_type_ii",),
+    "TAORAN_OPPORTUNITY_STAGE_MISSING": ("opportunities[].current_stage",),
+    "TAORAN_APPOINTMENT_MISSING": ("is_appointment",),
+    "TAORAN_VISIT_METHOD_MISSING": ("visit_method",),
+    "TAORAN_OBJECTIVE_MISSING": ("purpose_code",),
+    "TAORAN_KR_MISSING": ("expected_key_result",),
+    "TAORAN_RESULT_MISSING": ("process_description",),
+    "TAORAN_ASSESSMENT_MISSING": ("self_assessment",),
+    "TAORAN_NSA_CUSTOMER_MISSING": ("customer_id",),
+    "TAORAN_NSA_TIME_MISSING": ("next_contact_at",),
+    "TAORAN_NSA_PURPOSE_MISSING": ("next_action_purpose",),
+    "TAORAN_NSA_OTHER_PURPOSE_MISSING": ("next_action_other_purpose",),
+    "TAORAN_NSA_RESULT_MISSING": ("next_action_expected_result",),
+}
+
+_FRONT_SPECIFICITY_CHECKS = (
+    (
+        "O_KR",
+        "想取得的关键结果不具体",
+        "拜访目的与关键结果",
+        "expected_key_result",
+        {
+            "TAORAN_KR_MISSING",
+            "TAORAN_KR_NOT_VERIFIABLE",
+            "KR_SEMANTICALLY_VAGUE",
+        },
+        {"TAORAN_KR_MISSING"},
+    ),
+    (
+        "R",
+        "过程详细描述不具体",
+        "过程事实与结果",
+        "process_description",
+        {
+            "TAORAN_RESULT_MISSING",
+            "TAORAN_RESULT_NOT_FACT_BASED",
+            "TAORAN_FACT_JUDGMENT_MIXED",
+            "RESULT_LACKS_CUSTOMER_FACTS",
+        },
+        {"TAORAN_RESULT_MISSING"},
+    ),
+    (
+        "N",
+        "下次拜访期望的关键结果不具体",
+        "下一步客户行动",
+        "next_action_expected_result",
+        {
+            "TAORAN_NSA_RESULT_MISSING",
+            "TAORAN_NSA_RESULT_NOT_ACTIONABLE",
+            "NEXT_ACTION_NOT_QUALIFIED",
+        },
+        {"TAORAN_NSA_RESULT_MISSING"},
+    ),
+)
 
 
 def _failure_reason_text(reason: str | None, fallback: str) -> str:
@@ -167,84 +270,23 @@ def build_precheck_feedback(
     return "\n".join(lines)
 
 
-def build_model_precheck_feedback(
-    mode: FeedbackMode,
-    status: str,
-    issues: list[Issue],
-    semantic_review: SemanticReview,
-) -> str:
-    """将纯AI或知识库模型结果单独呈现，不混入规则结论。"""
-    if mode not in {FeedbackMode.AI, FeedbackMode.KNOWLEDGE}:
-        raise ValueError("模型反馈生成器仅支持ai和knowledge模式")
-    title = "纯AI反馈" if mode == FeedbackMode.AI else "知识库反馈"
-    failure_reason = _failure_reason_text(
-        semantic_review.failure_reason,
-        "大模型未返回完整的六项分析",
-    )
-    status_text = {
-        "passed": "六项分析已完成，未发现明显规范问题",
-        "needs_revision": "六项分析已完成，存在需要优先完善的内容",
-        "review": f"AI调用异常。异常原因：{failure_reason}",
-    }[status]
-    lines = [
-        f"【提交前TAORAN检查｜{title}】",
-        f"检查结论：{status_text}",
-        "",
-        "TAORAN六项分析：",
-    ]
-    analyses = {section.code: section for section in semantic_review.sections}
-    for index, (display_code, name, _) in enumerate(_SECTIONS):
-        if index:
-            lines.append("")
-        model_code = {
-            "客户类型": "T",
-            "预约与拜访方式": "A1",
-            "拜访目的与关键结果": "O_KR",
-            "过程事实与结果": "R",
-            "达成评价": "A2",
-            "下一步客户行动": "N",
-        }[name]
-        analysis = analyses.get(model_code)
-        if semantic_review.status != "completed" or analysis is None:
-            lines.append(
-                f"{display_code}｜{name}："
-                + _ai_exception(failure_reason, "请稍后重试；持续失败请联系管理员核对模型服务配置")
-            )
-            continue
-        verdict = {
-            "met": "达标。",
-            "needs_revision": "待改进。",
-            "not_evaluated": "需要修改。",
-        }[analysis.verdict]
-        lines.append(f"{display_code}｜{name}：{verdict}")
-        lines.append("分析：" + analysis.reason)
-        if analysis.evidence:
-            evidence = "；".join(
-                f"“{display_field_name(item.field)}”：{item.quote}"
-                for item in analysis.evidence
-            )
-            lines.append("输入依据：" + evidence)
-        if analysis.suggestion:
-            lines.append("修改建议：" + analysis.suggestion)
-    suggestions = _unique(issue.suggestion for issue in issues)
-    if suggestions:
-        lines.extend(["", "优先修改建议："])
-        lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(suggestions, 1))
-    elif semantic_review.status == "completed":
-        lines.extend(["", "优先修改建议：当前未发现需要优先补充的内容。"])
-    lines.append("本次只提供提交前建议，不阻断提交，不生成正式分数。")
-    return "\n".join(lines)
-
-
-def build_knowledge_ai_feedback(
+def build_front_ai_suggestions_with_model(
     structured: PrecheckResponse,
     wording: KnowledgeWordingResult,
+    *,
+    experimental: bool = False,
 ) -> str:
-    """Keep deterministic verdicts/standards and naturalize only unmet items."""
+    """Build salesperson-facing suggestions from structured checks and model wording."""
     if wording.status != "completed":
-        return structured.feedback_text
+        return _front_ai_suggestions(
+            structured,
+            # Model wording is optional. The deterministic checks already hold
+            # field-specific findings from this exact record, so return those
+            # instead of a fixed "analysis not completed" sentence.
+            ai_only=False,
+            analysis_completed=False,
+        )
     natural = {item.code: item for item in wording.items}
-    section_by_name = {section.name: section for section in structured.taoran_sections}
     model_code_by_name = {
         "客户类型": "T",
         "预约与拜访方式": "A1",
@@ -253,50 +295,323 @@ def build_knowledge_ai_feedback(
         "达成评价": "A2",
         "下一步客户行动": "N",
     }
-    lines = [
-        "【提交前TAORAN检查｜知识库反馈（AI自然表达）】",
-        "检查结论：" + (
-            "存在需要优先完善的内容"
-            if natural else "已检查字段未发现明显规范问题"
-        ),
-        "",
-        "TAORAN六项检查：",
-    ]
-    suggestions: list[str] = []
-    met_names: list[str] = []
-    for index, (display_code, name, _) in enumerate(_SECTIONS):
-        if index:
-            lines.append("")
-        section = section_by_name.get(name)
-        code = model_code_by_name[name]
-        item = natural.get(code)
-        if item is not None:
-            lines.append(f"{display_code}｜{name}：待改进。")
-            lines.append("分析：" + item.reason)
-            lines.append("修改建议：" + item.suggestion)
-            lines.append("检查标准：" + _precheck_standard(name))
-            suggestions.append(item.suggestion)
-        elif section is not None and section.status == "met":
-            lines.append(f"{display_code}｜{name}：达标。")
-            lines.append("检查标准：" + _precheck_standard(name))
-            met_names.append(name)
-        else:
-            lines.append(
-                f"{display_code}｜{name}："
-                + _section_standard_and_status(name, section.status if section else None)
-            )
-    if met_names:
-        lines.extend(["", "达标项说明：以上达标项不展开AI长篇分析。"])
-    if suggestions:
-        lines.extend(["", "优先修改建议："])
-        lines.extend(
-            f"{index}. {suggestion}"
-            for index, suggestion in enumerate(_unique(suggestions), 1)
+    natural_by_section = {
+        name: natural[code].suggestion
+        for name, code in model_code_by_name.items()
+        if code in natural and natural[code].specific is False
+    }
+    specificity_by_section = {
+        name: natural[code].specific
+        for name, code in model_code_by_name.items()
+        if code in natural and natural[code].specific is not None
+    }
+    return _front_ai_suggestions(
+        structured,
+        natural_by_section=natural_by_section,
+        specificity_by_section=specificity_by_section,
+        natural_completion=(natural.get("C").suggestion if natural.get("C") else ""),
+        visit_analysis=wording.visit_analysis,
+        visit_analysis_sections=[] if experimental else wording.visit_analysis_sections,
+        ai_only=True,
+        experimental=experimental,
+    )
+
+
+def build_front_ai_suggestions(
+    structured: PrecheckResponse,
+    *,
+    system_notice: str | None = None,
+) -> str:
+    """Format a unified button fallback using business labels only."""
+    return _front_ai_suggestions(structured, system_notice=system_notice)
+
+
+def _front_ai_suggestions(
+    structured: PrecheckResponse,
+    *,
+    natural_by_section: dict[str, str] | None = None,
+    specificity_by_section: dict[str, bool] | None = None,
+    system_notice: str | None = None,
+    natural_completion: str = "",
+    visit_analysis: str = "",
+    visit_analysis_sections: list[FrontVisitAnalysisSection] | None = None,
+    ai_only: bool = False,
+    analysis_completed: bool = True,
+    experimental: bool = False,
+) -> str:
+    # Local selection: concurrent official requests retain their original cleaner.
+    _clean_front_text = _clean_experimental_front_text if experimental else globals()["_clean_front_text"]
+    natural_by_section = natural_by_section or {}
+    specificity_by_section = specificity_by_section or {}
+    system_advice = []
+    for issue in structured.issues:
+        if issue.source != "system" or issue.severity == Severity.INFO:
+            continue
+        labels = _unique(
+            display_form_field_name(path)
+            for path in issue.field_paths
+            if path not in _FRONT_HIDDEN_FIELDS
+            and display_form_field_name(path)
         )
+        label_text = "、".join(f"“{label}”" for label in labels)
+        suggestion = _clean_front_text(issue.suggestion)
+        text = (
+            f"系统未正确获取{label_text}，{suggestion}"
+            if label_text
+            else suggestion
+        )
+        if text and text not in system_advice:
+            system_advice.append(text)
+    for section in structured.taoran_sections:
+        labels = _unique(
+            display_form_field_name(path)
+            for path in section.unreceived_fields
+            if display_form_field_name(path)
+        )
+        if labels:
+            system_advice.append(
+                "系统未正确获取"
+                + "、".join(f"“{label}”" for label in labels)
+                + "，请管理员检查字段绑定后重新检测。"
+            )
+
+    unreceived = {
+        path
+        for section in structured.taoran_sections
+        for path in section.unreceived_fields
+    }
+    if structured.field_completion:
+        missing_paths = [
+            path
+            for path, completed in structured.field_completion.items()
+            if not completed
+            and path not in unreceived
+            and path.split("[].", 1)[0] not in unreceived
+        ]
     else:
-        lines.extend(["", "优先修改建议：当前未发现需要优先补充的内容。"])
-    lines.append("本次只提供提交前建议，不阻断提交，不生成正式分数。")
+        missing_paths = [
+            path
+            for issue in structured.issues
+            if issue.source != "system" and issue.severity != Severity.INFO
+            for path in _FRONT_MISSING_FIELDS.get(issue.code, ())
+        ]
+    missing_labels = _unique(
+        display_form_field_name(path)
+        for path in missing_paths
+        if display_form_field_name(path)
+    )
+    advice: list[str] = []
+    natural_completion = _clean_front_text(natural_completion)
+    if ai_only and natural_completion:
+        advice.append(natural_completion)
+    elif missing_labels and not ai_only:
+        advice.append(
+            "相关字段未填写：“"
+            + "”、“".join(missing_labels)
+            + "”。请根据实际拜访情况补充。"
+        )
+
+    for _, label, section_name, field, issue_codes, missing_codes in _FRONT_SPECIFICITY_CHECKS:
+        field_unreceived = (
+            field in unreceived or field.split("[].", 1)[0] in unreceived
+        )
+        relevant = [
+            issue for issue in structured.issues
+            if issue.source != "system"
+            and issue.severity != Severity.INFO
+            and issue.code in issue_codes
+            and field in issue.field_paths
+        ]
+        physically_completed = structured.field_completion.get(field)
+        # 接口漏传由系统提示处理；空值已在“字段未填写”合并提示。
+        # 只对“已填写但不具体”的内容输出单独改善意见。
+        semantic_specific = specificity_by_section.get(section_name)
+        if ai_only:
+            natural = _clean_front_text(natural_by_section.get(section_name, ""))
+            if semantic_specific is False and natural:
+                advice.append(f"{label}：{natural}")
+            continue
+        if (
+            field_unreceived
+            or physically_completed is False
+            or semantic_specific is True
+            or (semantic_specific is None and not relevant)
+        ):
+            continue
+        natural = _clean_front_text(natural_by_section.get(section_name, ""))
+        if not natural:
+            visible_problems = [
+                issue.message
+                for issue in relevant
+                if not (
+                    physically_completed is True
+                    and issue.code in missing_codes
+                )
+            ]
+            problem = _clean_front_text(_join_sentences(_unique(visible_problems)))
+            if not problem:
+                problem = "已填写，但内容较空泛，尚未形成可核验的具体信息。"
+            suggestion = _clean_front_text(
+                next((i.suggestion for i in relevant if i.suggestion), "")
+            )
+            natural = problem + suggestion
+        advice.append(f"{label}：{natural}")
+    lines = ["【AI反馈意见】"]
+    rendered_sections = []
+    section_labels = {
+        "visit_context": "拜访概况",
+        "objective_result": "本次结果",
+        "assessment": "达成判断",
+        "next_step": "下一步安排",
+    }
+    for section in visit_analysis_sections or []:
+        section_text = _clean_front_text(section.text)
+        if section_text:
+            rendered_sections.append(f"{section_labels[section.kind]}：{section_text}")
+    visit_analysis = _clean_front_text(visit_analysis)
+    if rendered_sections or visit_analysis:
+        lines.extend(["", "本次拜访分析："])
+        lines.extend(rendered_sections or [visit_analysis])
+        lines.extend(["", "智能填写建议："])
+    if advice:
+        lines.extend(f"{index}、{item}" for index, item in enumerate(advice, 1))
+    elif not analysis_completed:
+        lines.append("本次智能分析未完成，请重新点击检测按钮。")
+    elif ai_only and experimental:
+        lines.append("本次未生成逐项填写建议；目标达成判断请见上方分析。")
+    elif ai_only:
+        lines.append("AI结合本次填写内容分析后，未发现需要改善的内容。")
+    else:
+        lines.append("当前填写内容在字段完整性及三个具体性维度中未发现需要改善的内容。")
+    if system_notice:
+        system_advice.insert(0, _clean_front_text(system_notice))
+    if system_advice:
+        lines.append("")
+        notice = "；".join(_unique(system_advice)).rstrip("，。；： ")
+        lines.append("系统提示：" + notice + "。")
+    lines.append("提交后，系统将自动生成正式评分和反馈意见。")
     return "\n".join(lines)
+
+
+def _clean_experimental_front_text(value: str) -> str:
+    """Experimental: preserve business tokens; translate only known field paths."""
+    text = value or ""
+    def replace_field(match: re.Match[str]) -> str:
+        field = match.group(0)
+        return display_form_field_name(field) or field
+    text = re.sub(r"[a-z][a-z0-9_]*(?:\[\]\.[a-z][a-z0-9_]*)?", replace_field, text)
+    text = re.sub(r"\bQ(?:33|34)_[A-Z0-9_]+\b", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _clean_front_text(value: str) -> str:
+    """Remove internal identifiers while preserving Chinese business wording."""
+    text = _normalize_opportunity_stage_wording(value or "")
+    text = re.sub(r"'([^'\n]{1,100})'", r"“\1”", text)
+    text = re.sub(
+        r"(?:原文|填写内容(?:为|是)?)\s*(“[^”\n]{1,120}”)",
+        r"\1",
+        text,
+    )
+    # Model-created examples may look helpful but are not visit facts. Remove
+    # them so salesperson-facing advice remains grounded only in submitted data.
+    text = re.sub(r"[，,；;]\s*(?:例如|如)“[^”\n]{1,100}”", "", text)
+    canonical_fields = set(
+        re.findall(r"[a-z][a-z0-9_]*(?:\[\]\.[a-z][a-z0-9_]*)?", text)
+    )
+    for field in sorted(canonical_fields, key=len, reverse=True):
+        label = display_form_field_name(field)
+        text = text.replace(
+            field,
+            label
+            if field not in _FRONT_HIDDEN_FIELDS and label
+            else "",
+        )
+    replacements = {
+        "partially_achieved": "部分达到目的",
+        "not_achieved": "未达到目的",
+        "achieved": "达到目的",
+        "TAORAN": "拜访有效性",
+        "SMART": "具体、可衡量、相关且有时限",
+        "AI": "智能",
+        "O/KR": "拜访目的与关键结果",
+    }
+    for source, target in replacements.items():
+        text = text.replace(source, target)
+    # P1-P6 are official business codes and must survive the generic English
+    # identifier scrub below. Protect them with Chinese-only placeholders first.
+    stage_placeholders = {
+        "1": "商机阶段代号壹",
+        "2": "商机阶段代号贰",
+        "3": "商机阶段代号叁",
+        "4": "商机阶段代号肆",
+        "5": "商机阶段代号伍",
+        "6": "商机阶段代号陆",
+    }
+    text = re.sub(
+        r"P([1-6])(?:阶段)?",
+        lambda match: stage_placeholders[match.group(1)],
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?:对应商机阶段商机阶段|商机阶段对应商机阶段|对应商机阶段阶段)",
+        "商机阶段待确认",
+        text,
+    )
+    text = re.sub(r"[A-Za-z_][A-Za-z0-9_/-]*", "", text)
+    for digit, placeholder in stage_placeholders.items():
+        text = text.replace(placeholder, f"P{digit}阶段")
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"([，。；：])\1+", r"\1", text)
+    return text.strip("，。；： ") + ("。" if text.strip("，。；： ") else "")
+
+
+def _normalize_opportunity_stage_wording(value: str) -> str:
+    """Keep official P1-P6 stage codes instead of Chinese ordinal wording."""
+    chinese_digits = {
+        "一": "1",
+        "二": "2",
+        "三": "3",
+        "四": "4",
+        "五": "5",
+        "六": "6",
+    }
+    return re.sub(
+        r"商机第([一二三四五六])阶段",
+        lambda match: f"商机P{chinese_digits[match.group(1)]}阶段",
+        value or "",
+    )
+
+
+def merge_evaluation_with_knowledge(
+    visit: VisitDraftInput,
+    q33_score: float,
+    q34_score: float,
+    total_score: float,
+    issues: list[Issue],
+    semantic_facts: Q34SemanticFacts,
+    knowledge_check: PrecheckResponse,
+) -> str:
+    """将知识库补充建议合并进提交后唯一的AI改善建议。"""
+    knowledge_suggestions = [
+        suggestion.strip()
+        for suggestion in knowledge_check.suggestions
+        if suggestion.strip()
+        and suggestion.strip() not in {
+            issue.suggestion.strip() for issue in knowledge_check.issues if issue.suggestion.strip()
+        }
+    ]
+    return build_evaluation_feedback(
+        visit,
+        q33_score,
+        q34_score,
+        total_score,
+        issues,
+        semantic_facts,
+        knowledge_suggestions=knowledge_suggestions,
+        knowledge_issues=knowledge_check.issues,
+    )
 
 
 def build_evaluation_feedback(
@@ -306,40 +621,270 @@ def build_evaluation_feedback(
     total_score: float,
     issues: list[Issue],
     semantic_facts: Q34SemanticFacts,
+    *,
+    knowledge_suggestions: list[str] | None = None,
+    knowledge_issues: list[Issue] | None = None,
 ) -> str:
-    lines = [
-        "【提交后TAORAN深度评价｜AI反馈意见】",
-        f"综合得分：{total_score:.2f}/100（Q33 {q33_score:.2f}/50；Q34 {q34_score:.2f}/50）",
-        f"综合结论：{_evaluation_conclusion(total_score)}",
-        "",
-        "TAORAN六项判断：",
-    ]
-    if semantic_facts.provider.startswith("llm-") and semantic_facts.status != "completed":
-        reason = _failure_reason_text(semantic_facts.failure_reason, "大模型未返回完整分析")
-        lines.insert(1, _ai_exception(reason, "请稍后重试；持续失败请联系管理员核对模型服务配置"))
-        lines.insert(2, "以下分数仅为本地参考结果，暂停正式评分回写。")
-    for code, name, fields in _SECTIONS:
-        section_issues = _issues_for_fields(issues, fields)
-        lines.append(
-            f"{code}｜{name}："
-            + _evaluation_section_text(visit, name, section_issues, semantic_facts)
+    # 分数、六项规则明细继续作为结构化字段保存并回写评分；这里仅保留供销售
+    # 代表阅读的本次分析和可执行改善建议。
+    del visit, q33_score, q34_score, total_score
+    lines = ["【AI反馈意见】"]
+    required_model_sections = {"T", "A1", "O_KR", "R", "A2", "N"}
+    completed_sections = {
+        section.code
+        for section in semantic_facts.sections
+        if section.verdict != "not_evaluated"
+    }
+    model_completed = (
+        semantic_facts.provider.startswith("llm-")
+        and semantic_facts.status == "completed"
+        and required_model_sections <= completed_sections
+    )
+    if semantic_facts.provider.startswith("llm-") and not model_completed:
+        reason = (
+            "模型对动作主体或完成状态的解释超出原文证据，已暂停正式评分回写"
+            if semantic_facts.failure_reason == "post_fact_grounding_conflict"
+            else
+            "反馈与确定性规则或记录证据不一致，未通过校验"
+            if semantic_facts.failure_reason == "post_feedback_conflict"
+            else
+            "模型意见额外增加了公司未要求的填写条件，未通过校验"
+            if semantic_facts.failure_reason == "unsupported_company_requirement"
+            else _failure_reason_text(semantic_facts.failure_reason, "大模型未完成完整分析")
         )
-        model_code = {
-            "客户类型": "T", "预约与拜访方式": "A1", "拜访目的与关键结果": "O_KR",
-            "过程事实与结果": "R", "达成评价": "A2", "下一步客户行动": "N",
-        }[name]
-        analysis = next((s for s in semantic_facts.sections if s.code == model_code), None)
-        if analysis:
-            lines.append("  模型分析：" + analysis.reason)
-    if semantic_facts.provider == "llm-chat":
-        lines.extend(["", "模型事实依据：" + semantic_facts.reason])
-    suggestions = _unique(issue.suggestion for issue in issues)
-    if suggestions:
-        lines.extend(["", "优先改进建议："])
-        lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(suggestions, 1))
+        analysis_text = _ai_exception(
+            reason,
+            "请稍后重试；持续失败请联系管理员核对模型服务配置",
+        )
     else:
-        lines.extend(["", "优先改进建议：当前记录未发现明显的TAORAN规范问题。"])
-    return "\n".join(lines)
+        analysis_text = _normalize_opportunity_stage_wording(
+            semantic_facts.reason.strip() or "本次拜访未形成可展示的分析结论。"
+        )
+    lines.extend(["", "本次拜访分析：" + analysis_text])
+    if semantic_facts.provider.startswith("llm-") and not model_completed:
+        # Do not present heuristic fallback advice as completed AI analysis.
+        return "\n".join(lines)
+    advice_items = _build_post_advice(
+        issues,
+        semantic_facts,
+        model_completed=model_completed,
+        knowledge_issues=knowledge_issues or [],
+        knowledge_suggestions=knowledge_suggestions or [],
+    )
+    if advice_items:
+        lines.extend(["", "AI改善建议："])
+        lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(advice_items, 1))
+    result = "\n".join(lines)
+    context = semantic_facts.quality_audit.get("authoritative_checks")
+    if context:
+        from .post_quality import quality_hits, PostFeedbackConflict
+        hits = quality_hits(result, "facts.reason", context)
+        semantic_facts.quality_audit["final_review"] = {"status":"failed" if hits else "passed", "hits":hits}
+        if hits:
+            raise PostFeedbackConflict(hits, result)
+    return result
+
+
+def _build_post_advice(
+    issues: list[Issue],
+    semantic_facts: Q34SemanticFacts,
+    *,
+    model_completed: bool,
+    knowledge_issues: list[Issue],
+    knowledge_suggestions: list[str],
+) -> list[str]:
+    """按TAORAN六项归类去重，只返回实际需要改善的建议。"""
+    if model_completed and semantic_facts.quality_audit.get("authoritative_checks"):
+        # V4: no generic rule/knowledge fallback for a successful model section.
+        # Rules still determine scoring and remain in structured audit records.
+        validated = semantic_facts.quality_audit.get("advice_basis", {})
+        return _unique([_clean_post_text(s.suggestion) for s in semantic_facts.sections
+                        if s.verdict == "needs_revision" and s.code in validated and s.suggestion.strip()])
+    model_by_section = {section.code: section for section in semantic_facts.sections}
+    model_codes = {
+        "客户类型": "T",
+        "预约与拜访方式": "A1",
+        "拜访目的与关键结果": "O_KR",
+        "过程事实与结果": "R",
+        "达成评价": "A2",
+        "下一步客户行动": "N",
+    }
+    unassigned_knowledge = list(knowledge_suggestions)
+    results: list[str] = []
+    for name, _ in _POST_ADVICE_SECTIONS:
+        evaluation_section_issues = _post_issues_for_section(name, issues)
+        knowledge_section_issues = _post_issues_for_section(name, knowledge_issues)
+        model_section = model_by_section.get(model_codes[name])
+        model_suggestion = (
+            model_section.suggestion
+            if model_completed and model_section and model_section.verdict == "needs_revision"
+            else ""
+        )
+        # 模型已针对当前记录形成具体建议时，直接采用这条具体建议；规则和知识库
+        # 继续参与判断与审计，但不再把同一行动拆成多句重复展示。模型未给出本项
+        # 建议时，才用规则和知识库补足。
+        source_issues = (
+            []
+            if model_suggestion
+            else [*evaluation_section_issues, *knowledge_section_issues]
+        )
+        candidates = [
+            issue.suggestion
+            for issue in source_issues
+            if issue.source != "system" and not issue.code.startswith("LLM_") and issue.suggestion
+        ]
+        if model_suggestion:
+            candidates.insert(0, model_suggestion)
+        matched_knowledge = [
+            suggestion
+            for suggestion in unassigned_knowledge
+            if _knowledge_suggestion_matches_section(suggestion, name)
+        ]
+        if matched_knowledge and not model_suggestion:
+            candidates.extend(matched_knowledge)
+        if matched_knowledge:
+            unassigned_knowledge = [
+                suggestion for suggestion in unassigned_knowledge if suggestion not in matched_knowledge
+            ]
+        advice = _merge_similar_advice(candidates)
+        if advice:
+            results.append(advice)
+
+    # 无字段归属的知识文本不随机拼入某一维度；它仍保留在结构化审计中，避免误导销售。
+    return results
+
+
+def _post_issues_for_section(section_name: str, issues: list[Issue]) -> list[Issue]:
+    """按规则维度归类，避免共用字段使建议落入多个维度。"""
+    dimensions = {
+        "客户类型": {"T"},
+        "预约与拜访方式": {"A1"},
+        "拜访目的与关键结果": {"O", "O_KR"},
+        "过程事实与结果": {"R"},
+        "达成评价": {"A2"},
+        "下一步客户行动": {"N"},
+    }[section_name]
+    q34_codes = {
+        "拜访目的与关键结果": {"Q34_KEY_RESULT_QUALITY_NOT_MET"},
+        "达成评价": {"Q34_SELF_EVALUATION_INCONSISTENT"},
+        "下一步客户行动": {
+            "Q33_REQUIRED_FIELD_MISSING",
+            "Q34_NEXT_ACTION_NOT_QUALIFIED",
+        },
+    }.get(section_name, set())
+    fields = next(fields for _, name, fields in _SECTIONS if name == section_name)
+    return [
+        issue
+        for issue in issues
+        if issue.dimension in dimensions
+        or issue.code in q34_codes
+        or (
+            issue.code.startswith(("TAORAN_", "KR_", "RESULT_", "NEXT_ACTION_"))
+            and issue in _precheck_issues_for_section(section_name, set(fields), [issue])
+        )
+    ]
+
+
+def _knowledge_suggestion_matches_section(suggestion: str, section_name: str) -> bool:
+    return any(keyword in suggestion for keyword in _POST_ADVICE_KEYWORDS[section_name])
+
+
+def _merge_similar_advice(candidates: list[str]) -> str:
+    cleaned = [_clean_post_text(item) for item in candidates if _clean_post_text(item)]
+    merged: list[str] = []
+    for suggestion in cleaned:
+        if any(_advice_is_similar(suggestion, kept) for kept in merged):
+            continue
+        merged.append(suggestion)
+    return "；".join(merged).rstrip("；。") + ("。" if merged else "")
+
+
+def _clean_post_text(value: str) -> str:
+    """Post-only rendering: preserve product names/units, translate known keys."""
+    text = _normalize_opportunity_stage_wording(value or "")
+    def translate(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if token.lower() in {"true", "false"}:
+            return {"true": "是", "false": "否"}[token.lower()]
+        return display_form_field_name(token) or token
+    text = re.sub(r"[A-Za-z_][A-Za-z0-9_]*(?:\[\]\.[A-Za-z_][A-Za-z0-9_]*)?", translate, text)
+    text = re.sub(r"\bQ(?:33|34)_[A-Z0-9_]+\b", "", text)
+    text = re.sub(r"\s+", " ", text).strip().rstrip("；。")
+    return text + ("。" if text else "")
+
+
+def _advice_is_similar(left: str, right: str) -> bool:
+    left_normalized = re.sub(r"[，。；：、\s]", "", left)
+    right_normalized = re.sub(r"[，。；：、\s]", "", right)
+    if left_normalized in right_normalized or right_normalized in left_normalized:
+        return True
+    focus_terms = (
+        "客户分类", "商机阶段", "预约", "拜访方式", "拜访目的", "关键结果",
+        "过程详细描述", "客户反馈", "客户事实", "评价", "偏差原因",
+        "下一次行动目的", "下次拜访期望", "下一次联系客户时间安排",
+    )
+    left_focus = {term for term in focus_terms if term in left_normalized}
+    right_focus = {term for term in focus_terms if term in right_normalized}
+    if left_focus & right_focus:
+        return True
+    left_pairs = {left_normalized[index:index + 2] for index in range(len(left_normalized) - 1)}
+    right_pairs = {right_normalized[index:index + 2] for index in range(len(right_normalized) - 1)}
+    if not left_pairs or not right_pairs:
+        return left_normalized == right_normalized
+    return len(left_pairs & right_pairs) / min(len(left_pairs), len(right_pairs)) >= 0.45
+
+
+def _evaluation_section_lines(
+    visit: VisitDraftInput,
+    display_code: str,
+    name: str,
+    issues: list[Issue],
+    semantic_facts: Q34SemanticFacts,
+    analysis: ModelSectionAnalysis | None,
+) -> list[str]:
+    """Merge the locked rule result with grounded, record-specific model wording."""
+    if semantic_facts.provider.startswith("llm-") and (
+        semantic_facts.status != "completed"
+        or analysis is None
+        or analysis.verdict == "not_evaluated"
+    ):
+        reason = _failure_reason_text(semantic_facts.failure_reason, "大模型未完成本项分析")
+        return [
+            f"{display_code}｜{name}："
+            + _ai_exception(reason, "请稍后重试；持续失败请联系管理员核对模型服务配置")
+        ]
+
+    # LLM_* issues are projections of the same model section. Excluding them here
+    # prevents the final opinion from repeating the model's reason as a rule result.
+    rule_issues = [issue for issue in issues if not issue.code.startswith("LLM_")]
+    failed = bool(rule_issues) or (analysis is not None and analysis.verdict == "needs_revision")
+    status_label = "未达标" if failed else "达标"
+    lines = [f"{display_code}｜{name}：{status_label}。"]
+
+    if analysis is not None:
+        lines.append("实际数据分析：" + analysis.reason)
+        if analysis.evidence:
+            evidence = "；".join(
+                f"“{display_field_name(item.field)}”：{item.quote}"
+                for item in analysis.evidence
+            )
+            lines.append("本条记录依据：" + evidence)
+    else:
+        # Offline/local fallback keeps the old deterministic explanation. It is
+        # never presented as an AI analysis.
+        lines.append(
+            "规则分析："
+            + _evaluation_section_text(visit, name, rule_issues, semantic_facts)
+        )
+
+    if failed:
+        suggestions = _unique([
+            analysis.suggestion if analysis is not None else "",
+            *(issue.suggestion for issue in rule_issues),
+        ])
+        if suggestions:
+            lines.append("针对本条记录的改进建议：" + _join_sentences(suggestions))
+    return lines
 
 
 def _precheck_standard(name: str) -> str:

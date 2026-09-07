@@ -101,7 +101,7 @@
       const deploy = document.createElement("button");
       deploy.type = "button";
       deploy.className = "primary compact-button";
-      deploy.textContent = "查看下一步部署";
+      deploy.textContent = "完整部署指引";
       deploy.addEventListener("click", () => showDeploymentGuide(tenant));
       actions.append(deploy);
       if (!tenant.enabled && tenant.jiandaoyun.mapping_configured) {
@@ -127,8 +127,138 @@
         actions.append(changeForm);
       }
       row.append(actions);
+      row.append(buildTenantDeploymentCard(tenant));
       return row;
     }));
+  }
+
+  function buildTenantDeploymentCard(tenant) {
+    const activity = tenant.activity || { precheck: {}, evaluation: {} };
+    const precheck = activity.precheck || {};
+    const evaluation = activity.evaluation || {};
+    const latestCheck = precheck.latest;
+    const latestEvaluation = evaluation.latest;
+    const state = runtimeState(tenant.deployment_state);
+    const panel = document.createElement("details");
+    panel.className = "tenant-deployment";
+    panel.open = tenant.deployment_state !== "operational";
+
+    const summary = document.createElement("summary");
+    const heading = document.createElement("strong");
+    heading.textContent = "简道云部署参数";
+    const status = document.createElement("span");
+    status.className = `runtime-state ${state.kind}`;
+    status.textContent = state.label;
+    summary.append(heading, status);
+    panel.append(summary);
+
+    const body = document.createElement("div");
+    body.className = "tenant-deployment-body";
+    const values = document.createElement("div");
+    values.className = "tenant-deployment-values";
+    const origin = window.location.origin;
+    addTenantDeploymentValue(
+      values,
+      "TAORAN服务地址",
+      `${origin}/api/v1/connectors/jiandaoyun/visit/button-check`,
+    );
+    addTenantDeploymentValue(values, "租户编号", tenant.tenant_id);
+    addTenantDeploymentValue(
+      values,
+      "提交后推送地址",
+      `${origin}/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=${encodeURIComponent(tenant.tenant_id)}`,
+    );
+    body.append(values);
+
+    const credentials = document.createElement("div");
+    credentials.className = "tenant-credential-grid";
+    addTenantCredential(
+      credentials,
+      "TAORAN服务密钥",
+      tenant.access_key_count > 0 ? "已配置" : "未生成",
+      "生成新的TAORAN服务密钥",
+      (button) => rotateTenantAccessKey(tenant, button),
+    );
+    addTenantCredential(
+      credentials,
+      "推送签名密钥",
+      tenant.jiandaoyun.webhook_secret_configured ? "已配置" : "未生成",
+      "生成新的推送签名密钥",
+      (button) => rotateTenantWebhookSecret(tenant, button),
+    );
+    body.append(credentials);
+
+    const runtime = document.createElement("div");
+    runtime.className = "tenant-runtime-grid";
+    addTenantRuntime(
+      runtime,
+      "前端检测",
+      precheck.total_count
+        ? `已检测 ${precheck.total_count} 次；最近 ${formatRuntimeTime(latestCheck?.created_at)}`
+        : "尚未收到AI检测",
+      precheck.total_count > 0,
+    );
+    addTenantRuntime(
+      runtime,
+      "提交后评分",
+      evaluation.total_count
+        ? `最近：${evaluationStatusText(latestEvaluation?.status)}`
+        : "尚未收到提交事件",
+      latestEvaluation?.status === "completed",
+    );
+    addTenantRuntime(
+      runtime,
+      "简道云回写",
+      latestEvaluation ? `最近：${writebackStatusText(latestEvaluation.writeback_status)}` : "尚无回写记录",
+      latestEvaluation?.writeback_status === "succeeded",
+    );
+    body.append(runtime);
+
+    const next = document.createElement("p");
+    next.className = `tenant-deployment-next ${state.kind}`;
+    next.textContent = `下一步：${state.next}`;
+    body.append(next);
+    panel.append(body);
+    return panel;
+  }
+
+  function addTenantDeploymentValue(parent, labelText, valueText) {
+    const item = document.createElement("div");
+    item.className = "tenant-deployment-value";
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const value = document.createElement("code");
+    value.textContent = valueText;
+    item.append(label, value);
+    parent.append(item);
+  }
+
+  function addTenantCredential(parent, labelText, statusText, buttonText, handler) {
+    const item = document.createElement("div");
+    item.className = "tenant-credential";
+    const label = document.createElement("span");
+    label.textContent = labelText;
+    const status = document.createElement("strong");
+    status.className = statusText === "已配置" ? "runtime-ok" : "runtime-warn";
+    status.textContent = statusText;
+    const action = document.createElement("button");
+    action.type = "button";
+    action.className = "ghost compact-button";
+    action.textContent = buttonText;
+    action.addEventListener("click", () => handler(action));
+    item.append(label, status, action);
+    parent.append(item);
+  }
+
+  function addTenantRuntime(parent, labelText, detailText, completed) {
+    const item = document.createElement("div");
+    item.className = `tenant-runtime ${completed ? "completed" : "pending"}`;
+    const label = document.createElement("strong");
+    label.textContent = labelText;
+    const detail = document.createElement("span");
+    detail.textContent = detailText;
+    item.append(label, detail);
+    parent.append(item);
   }
 
   async function showView(view, focusTenantId = null) {
@@ -283,6 +413,12 @@
       warning.textContent = `最近异常：${problem}`;
       card.append(warning);
     }
+    const jobsButton = document.createElement("button");
+    jobsButton.type = "button";
+    jobsButton.className = "ghost";
+    jobsButton.textContent = "查看和处理评价任务";
+    jobsButton.addEventListener("click", () => openEvaluationJobs(tenant));
+    card.append(jobsButton);
     return card;
   }
 
@@ -445,6 +581,12 @@
 
   $("#logoutButton").addEventListener("click", () => {
     adminKey = "";
+    jobsGeneration += 1;
+    clearTimeout(jobsTimer);
+    jobsTenant = null;
+    actionKeys.clear();
+    $("#evaluationJobsList").replaceChildren();
+    $("#evaluationJobsPanel").classList.add("hidden");
     oneTimeCredentials = null;
     resetAuthorization();
     apiKeyInput.value = "";
@@ -653,7 +795,7 @@
     );
   }
 
-  function showDeploymentGuide(tenant) {
+  function showDeploymentGuide(tenant, credentials = null) {
     $("#emptyResult").classList.add("hidden");
     const target = $("#resultContent");
     target.classList.remove("hidden");
@@ -665,8 +807,50 @@
     identifier.className = "generated-id";
     identifier.textContent = `${tenant.display_name} · 系统客户编号：${tenant.tenant_id}`;
     target.append(badge, identifier);
-    renderDeploymentGuide(target, tenant, tenant.enabled, null, tenant.enabled ? 0 : null);
+    renderDeploymentGuide(target, tenant, tenant.enabled, credentials, tenant.enabled ? 0 : null);
     target.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  async function rotateTenantAccessKey(tenant, button) {
+    const accepted = window.confirm(
+      `将为“${tenant.display_name}”生成一把新的TAORAN服务密钥。新密钥只显示一次，请立即保存；旧密钥会短期保留，便于完成插件切换。是否继续？`,
+    );
+    if (!accepted) return;
+    button.disabled = true;
+    button.textContent = "正在生成…";
+    try {
+      const result = await request(
+        `/api/v1/admin/tenants/${encodeURIComponent(tenant.tenant_id)}/access-key/rotate`,
+        { method: "POST" },
+      );
+      oneTimeCredentials = { access_key: result.access_key, webhook_secret: null };
+      showDeploymentGuide(result.tenant, oneTimeCredentials);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "生成新的TAORAN服务密钥";
+      window.alert(`生成失败：${error.message}`);
+    }
+  }
+
+  async function rotateTenantWebhookSecret(tenant, button) {
+    const accepted = window.confirm(
+      `将为“${tenant.display_name}”生成新的推送签名密钥。请立即复制，并填入简道云数据推送的“Secret”字段。是否继续？`,
+    );
+    if (!accepted) return;
+    button.disabled = true;
+    button.textContent = "正在生成…";
+    try {
+      const result = await request(
+        `/api/v1/admin/tenants/${encodeURIComponent(tenant.tenant_id)}/webhook-secret/rotate`,
+        { method: "POST" },
+      );
+      oneTimeCredentials = { access_key: null, webhook_secret: result.webhook_secret };
+      showDeploymentGuide(result.tenant, oneTimeCredentials);
+    } catch (error) {
+      button.disabled = false;
+      button.textContent = "生成新的推送签名密钥";
+      window.alert(`生成失败：${error.message}`);
+    }
   }
 
   function renderDeploymentGuide(target, tenant, activated, credentials, unresolvedCount) {
@@ -688,10 +872,54 @@
           : `先处理 ${unresolvedCount} 个待确认字段，全部确认后客户会自动启用。`);
     const values = document.createElement("div");
     values.className = "deployment-values";
-    addDeploymentValue(values, "AI检测接口", `${window.location.origin}/api/v1/connectors/jiandaoyun/visit/button-check`);
-    addDeploymentValue(values, "系统客户编号", tenant.tenant_id);
+    addDeploymentValue(values, "TAORAN服务地址", `${window.location.origin}/api/v1/connectors/jiandaoyun/visit/button-check`);
+    addDeploymentValue(values, "租户编号", tenant.tenant_id);
     addDeploymentValue(values, "提交后推送地址", `${window.location.origin}/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=${encodeURIComponent(tenant.tenant_id)}`);
     panel.append(values);
+
+    const keyPanel = document.createElement("div");
+    keyPanel.className = "deployment-key";
+    const keyTitle = document.createElement("strong");
+    keyTitle.textContent = "TAORAN服务密钥";
+    keyPanel.append(keyTitle);
+    if (credentials?.access_key) {
+      const warning = document.createElement("p");
+      warning.textContent = "请立即复制并保存。为保护客户数据，该密钥关闭页面后不能再次查看。";
+      keyPanel.append(warning);
+      addDeploymentValue(keyPanel, "TAORAN服务密钥", credentials.access_key);
+    } else {
+      const hint = document.createElement("p");
+      hint.textContent = "服务密钥已由系统安全保存，不能明文找回。需要配置新插件时，可生成一把本客户独立的新密钥。";
+      const rotate = document.createElement("button");
+      rotate.type = "button";
+      rotate.className = "primary compact-button";
+      rotate.textContent = "生成新的TAORAN服务密钥";
+      rotate.addEventListener("click", () => rotateTenantAccessKey(tenant, rotate));
+      keyPanel.append(hint, rotate);
+    }
+    panel.append(keyPanel);
+
+    const webhookPanel = document.createElement("div");
+    webhookPanel.className = "deployment-key";
+    const webhookTitle = document.createElement("strong");
+    webhookTitle.textContent = "推送签名密钥";
+    webhookPanel.append(webhookTitle);
+    if (credentials?.webhook_secret) {
+      const warning = document.createElement("p");
+      warning.textContent = "请立即复制并填入简道云数据推送的“Secret”字段。关闭页面后不能再次查看。";
+      webhookPanel.append(warning);
+      addDeploymentValue(webhookPanel, "推送签名密钥", credentials.webhook_secret);
+    } else {
+      const hint = document.createElement("p");
+      hint.textContent = "数据推送必须使用本客户的推送签名密钥；不能填写TAORAN服务密钥。";
+      const rotate = document.createElement("button");
+      rotate.type = "button";
+      rotate.className = "primary compact-button";
+      rotate.textContent = "生成新的推送签名密钥";
+      rotate.addEventListener("click", () => rotateTenantWebhookSecret(tenant, rotate));
+      webhookPanel.append(hint, rotate);
+    }
+    panel.append(webhookPanel);
 
     const copyGuide = document.createElement("button");
     copyGuide.type = "button";
@@ -713,19 +941,19 @@
       "确认“待确认字段”为0，并看到“客户已启用”后再进入下一步。",
     ], activated ? "验收标准：客户状态为“已启用”，待确认字段为0。" : "当前未完成：插件和数据推送可以先查看，但不要进入正式测试。", true);
 
-    addTutorialStep(tutorial, 2, "保存并区分两类密钥", [
+    addTutorialStep(tutorial, 2, "生成并保存部署密钥", [
       credentials?.access_key || credentials?.webhook_secret
-        ? "立即复制配置结果上方的“TAORAN访问Key”和“推送签名密钥”，它们只显示一次。"
-        : "找到首次接入时保存的“TAORAN访问Key”和“推送签名密钥”；关闭首次结果后系统不会再次显示明文。",
+        ? "立即复制配置结果上方的“TAORAN服务密钥”和“推送签名密钥”，它们只显示一次。"
+        : "如需配置或更换插件，点击上方“生成新的TAORAN服务密钥”；生成后立即复制保存。",
       "把密钥保存到公司密码管理器，并在名称中注明客户名称和系统客户编号。",
-      "TAORAN访问Key只用于AI检测插件；推送签名密钥只用于提交后数据推送，不能互换。",
+      "TAORAN服务密钥只用于AI检测插件；推送签名密钥只用于提交后数据推送，不能互换。",
     ], "验收标准：实施人员可以分别找到两项密钥，但页面、群聊和文档中没有明文泄露。", false);
 
     addTutorialStep(tutorial, 3, "安装并配置TAORAN AI检测插件", [
       "进入简道云管理后台，打开“插件管理/插件中心”，安装或打开公司统一提供的“TAORAN拜访草稿检查”插件。",
       "如果需要新建自建插件：建立后端函数，运行环境选择Node.js 20，粘贴公司统一版本代码并启用；不要自行修改请求地址和认证逻辑。",
-      "在插件通用参数中创建 endpoint_url、tenant_id、api_key 三个文本参数。",
-      "endpoint_url填写上方“AI检测接口”；tenant_id填写“系统客户编号”；api_key填写“TAORAN访问Key”。",
+      "在插件通用参数中填写“TAORAN服务地址”“租户编号”“TAORAN服务密钥”。",
+      "服务地址、租户编号和服务密钥均从上方同名部署参数复制；不要填写简道云API Key。",
       "保存插件并运行一次函数调试，确认不是“服务地址或授权配置不正确”。",
     ], "验收标准：插件已启用，函数调试可以连接TAORAN服务并返回本次检查结果。", false);
 
@@ -733,16 +961,16 @@
       "进入已选择的拜访记录表单设计器，在“前端事件”中保留一个“AI检测”按钮，不要同时保留旧自定义请求和新插件两个动作。",
       "按钮动作选择“TAORAN拜访草稿检查”插件，将下表参数绑定到当前表单字段。多行文本必须直接绑定字段值，不能改成固定文本。",
       "联系人信息、关联商机阶段信息必须使用“按子表单赋值”，逐行绑定子字段，不能把整个子表当普通文本。",
-      "把三个插件返回值分别写入三个AI反馈字段；提交前按钮不要写入“AI评分”。",
+      "把插件返回的反馈意见写入“AI反馈意见（规则反馈）”；提交前按钮不要写入“AI评分”。",
       "保存表单后关闭设计器，再重新打开一次，确认按钮动作和所有字段绑定仍然存在。",
-    ], "验收标准：草稿页点击一次AI检测，规则、知识库、大模型三个反馈字段都有本次内容。", false);
+    ], "验收标准：草稿页点击一次AI检测，“AI反馈意见（规则反馈）”显示本次反馈内容。", false);
     addBindingTables(bindingStep);
 
     addTutorialStep(tutorial, 5, "配置提交后深度评价数据推送", [
       "进入该拜访记录表单的“数据推送”设置，新建推送，名称填写“TAORAN提交后深度评价”。",
       "触发事件同时勾选“数据新增”和“数据修改”，这样首次提交和后续修订都能重新评价。",
       "请求方式选择POST，推送地址复制上方“提交后推送地址”。",
-      "签名/密钥位置填写“推送签名密钥”，不要填写TAORAN访问Key。",
+      "签名/密钥位置填写“推送签名密钥”，不要填写TAORAN服务密钥。",
       "保存并启用数据推送；如果简道云提供连接测试，确认运行记录为成功。",
     ], "验收标准：数据推送处于启用状态，目标地址包含本客户系统编号，新增和修改均会触发。", false);
 
@@ -758,7 +986,7 @@
 
     const reminder = document.createElement("p");
     reminder.className = "deployment-reminder";
-    reminder.textContent = "注意：API Key使用TAORAN访问Key；数据推送签名使用推送签名密钥，两者不能混用。";
+    reminder.textContent = "注意：AI检测使用TAORAN服务密钥；数据推送使用推送签名密钥，两者不能混用。";
     panel.append(reminder);
     target.append(panel);
   }
@@ -811,10 +1039,8 @@
       ["opportunities.historical_stage", "关联商机阶段信息 / 历史商机阶段"],
       ["opportunities.current_stage", "关联商机阶段信息 / 最新商机阶段"],
     ]);
-    addMappingTable(parent, "插件返回值（分别写入三个反馈字段）", [
-      ["rule_feedback_text", "AI反馈意见（规则反馈）"],
-      ["knowledge_feedback_text", "AI反馈意见（知识库反馈）"],
-      ["model_feedback_text", "AI反馈意见（大模型反馈）"],
+    addMappingTable(parent, "插件返回值（写入一个反馈字段）", [
+      ["feedback_text", "AI反馈意见（规则反馈）"],
     ]);
   }
 
@@ -838,7 +1064,7 @@
 
   function addTroubleshooting(parent) {
     addMappingTable(parent, "常见问题检查顺序", [
-      ["AI检测无反应", "检查插件是否启用、云币余额、三个通用参数、按钮动作和12秒超时"],
+      ["AI检测无反应", "检查插件是否启用、三个通用参数、按钮动作和网络连接"],
       ["提示接口未获取", "检查过程详细描述、通讯录和两个子表是否按正确类型绑定"],
       ["提交后没有评分", "检查数据推送已启用、监听新增/修改、地址中的客户编号及推送签名密钥"],
       ["反馈有但评分为空", "查看深度评价是否仍在运行，稍后刷新；持续失败由管理员检查任务日志"],
@@ -850,13 +1076,13 @@
     const origin = window.location.origin;
     return [
       `TAORAN客户部署清单：${tenant.display_name}`,
-      `系统客户编号：${tenant.tenant_id}`,
-      `AI检测接口：${origin}/api/v1/connectors/jiandaoyun/visit/button-check`,
+      `租户编号：${tenant.tenant_id}`,
+      `TAORAN服务地址：${origin}/api/v1/connectors/jiandaoyun/visit/button-check`,
       `提交后推送地址：${origin}/api/v1/connectors/jiandaoyun/visit/webhook?tenant_id=${tenant.tenant_id}`,
       "1. 确认待确认字段为0，客户状态为已启用。",
-      "2. 分别保存TAORAN访问Key和推送签名密钥。",
+      "2. 生成并保存本客户独立的TAORAN服务密钥；推送签名密钥单独保存。",
       "3. 配置并启用TAORAN拜访草稿检查插件。",
-      "4. 为AI检测按钮绑定普通字段、联系人子表、商机子表和三个反馈输出。",
+      "4. 为AI检测按钮绑定普通字段、联系人子表、商机子表和一个反馈输出。",
       "5. 配置“TAORAN提交后深度评价”数据推送，监听数据新增和修改。",
       "6. 使用专用记录完成按钮、提交、回写和再次提交测试。",
       "安全提醒：本清单不包含密钥；密钥请从密码管理器获取。",
@@ -1009,4 +1235,98 @@
     });
     parent.append(caption, code, copy);
   }
+
+  let jobsTenant = null;
+  let jobsOffset = 0;
+  let jobsGeneration = 0;
+  let jobsTimer = null;
+  const actionKeys = new Map();
+  const operationLabels = { queued: "操作排队中", running: "正在处理", succeeded: "操作完成", failed: "操作失败" };
+  function jobText(tag, text, className = "") {
+    const element = document.createElement(tag);
+    element.textContent = text;
+    element.className = className;
+    return element;
+  }
+  async function openEvaluationJobs(tenant) {
+    jobsTenant = tenant;
+    jobsOffset = 0;
+    $("#evaluationJobsPanel").classList.remove("hidden");
+    $("#evaluationJobsTitle").textContent = `${tenant.display_name} · 评价任务`;
+    await loadEvaluationJobs();
+    $("#evaluationJobsPanel").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  async function loadEvaluationJobs() {
+    if (!jobsTenant || !adminKey) return;
+    clearTimeout(jobsTimer);
+    const generation = ++jobsGeneration;
+    const tenant = jobsTenant;
+    const path = `/api/v1/admin/tenants/${encodeURIComponent(tenant.tenant_id)}`;
+    $("#refreshEvaluationJobs").disabled = true;
+    try {
+      const data = await request(`${path}/evaluation-jobs?limit=20&offset=${jobsOffset}&scope=${$("#evaluationJobsScope").value}`);
+      if (generation !== jobsGeneration || !adminKey) return;
+      const rows = data.items.map((job) => {
+        const row = jobText("article", "", "evaluation-job-row");
+        row.append(jobText("strong", job.visit_record_code), jobText("p", job.job_id, "hint"));
+        row.append(jobText("p", `评价：${evaluationStatusText(job.status)} · 回写：${writebackStatusText(job.writeback_status)}`));
+        if (job.issue) row.append(jobText("p", job.issue));
+        if (job.phase_latency_ms?.total != null) row.append(jobText("p", `本次处理耗时：${(job.phase_latency_ms.total / 1000).toFixed(1)}秒`, "hint"));
+        const operations = job.operations || [];
+        const active = operations.some((op) => ["queued", "running"].includes(op.status));
+        for (const op of operations) {
+          let message = `${operationLabels[op.status] || op.status} · ${op.action === "reanalyze" ? "重新分析" : "仅重试回写"}`;
+          if (op.result?.job_id && op.result.job_id !== job.job_id) message += ` · 后续任务：${op.result.job_id}（在全部任务中查看）`;
+          if (op.error) message += ` · ${op.error}`;
+          row.append(jobText("p", message, "hint"));
+        }
+        const controls = jobText("div", "", "tenant-actions");
+        for (const action of job.actions) {
+          const button = jobText("button", action === "reanalyze" ? "补取最新记录重新分析" : "仅重试回写", "ghost");
+          button.type = "button";
+          button.disabled = active;
+          button.addEventListener("click", async () => {
+            const key = `${tenant.tenant_id}:${job.job_id}:${action}`;
+            if (!actionKeys.has(key)) actionKeys.set(key, crypto.randomUUID());
+            button.disabled = true;
+            $("#evaluationJobsMessage").textContent = "正在提交处理操作…";
+            try {
+              const op = await request(`${path}/evaluation-jobs/${encodeURIComponent(job.job_id)}/actions`, {
+                method: "POST", body: JSON.stringify({ action, idempotency_key: actionKeys.get(key) }),
+              });
+              actionKeys.delete(key);
+              $("#evaluationJobsScope").value = "all";
+              jobsOffset = 0;
+              $("#evaluationJobsMessage").textContent = `操作已受理：${op.operation_id}。请查看下方进度。`;
+              await loadEvaluationJobs();
+              await loadRuntimeStatus();
+            } catch (error) {
+              $("#evaluationJobsMessage").textContent = `${error.message}；再次点击会复用本次操作编号。`;
+              button.disabled = false;
+            }
+          });
+          controls.append(button);
+        }
+        row.append(controls);
+        return row;
+      });
+      $("#evaluationJobsList").replaceChildren(...(rows.length ? rows : [jobText("p", "当前范围没有任务。", "empty")]));
+      $("#evaluationJobsPage").textContent = `共 ${data.total} 条 · 第 ${Math.floor(jobsOffset / 20) + 1} 页`;
+      $("#previousEvaluationJobs").disabled = jobsOffset === 0;
+      $("#nextEvaluationJobs").disabled = jobsOffset + 20 >= data.total;
+      if (data.items.some((job) => ["queued", "running"].includes(job.status) || job.operations.some((op) => ["queued", "running"].includes(op.status)))) {
+        jobsTimer = setTimeout(() => {
+          if (!$("#runtimeView").classList.contains("hidden") && adminKey) loadEvaluationJobs();
+        }, 4000);
+      }
+    } catch (error) {
+      if (generation === jobsGeneration) $("#evaluationJobsMessage").textContent = error.message;
+    } finally {
+      if (generation === jobsGeneration) $("#refreshEvaluationJobs").disabled = false;
+    }
+  }
+  $("#refreshEvaluationJobs").addEventListener("click", loadEvaluationJobs);
+  $("#evaluationJobsScope").addEventListener("change", () => { jobsOffset = 0; loadEvaluationJobs(); });
+  $("#previousEvaluationJobs").addEventListener("click", () => { jobsOffset = Math.max(0, jobsOffset - 20); loadEvaluationJobs(); });
+  $("#nextEvaluationJobs").addEventListener("click", () => { jobsOffset += 20; loadEvaluationJobs(); });
 })();

@@ -1,30 +1,27 @@
 agent_code: DSM-TAORAN-SCORING-AGENT
-version: 0.15.0
+version: 0.27.2rc2
 capabilities:
   - code: configure_tenant_connections
     mode: administrative
     side_effect: runtime_configuration_only
     registry_version: 1
     web_console: /admin/tenants
-    authorized_app_form_discovery: true
-    automatic_tenant_id: true
-    manual_field_confirmation: true
-    field_recheck: true
-    existing_tenant_form_reselection: true
-    unique_form_tenant_binding: true
-    post_onboarding_deployment_guide: true
-    step_by_step_jiandaoyun_tutorial: true
-    runtime_deployment_status_dashboard: true
     secrets_returned_by_api: one_time_on_generation_only
   - code: precheck_visit_record
     mode: synchronous
-    target_latency_seconds: 8
+    target_latency_seconds: 12
     side_effect: advisory_only
     button_behavior: one_click_three_feedbacks
+    model_concurrency: 4
+    paired_model_calls_per_click: 2
+    active_click_limit: 2
+    waiting_click_capacity: 8
+    queue_wait_seconds: 12
     feedback_outputs:
       rule:
-        engine: TAORAN-PRECHECK-KB-V2
+        engine: TAORAN-PRECHECK-KB-V1
         model_calls: false
+        t03_knowledge_lookup: DSM-BS-01-06
       model:
         engine: TAORAN-PRECHECK-PURE-AI-V1
         knowledge_runtime: none

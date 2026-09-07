@@ -16,6 +16,7 @@ from .models import (
     PrecheckRequest,
     VisitDraftInput,
 )
+from .rules import canonical_hash
 
 
 class FieldTransferError(ValueError):
@@ -145,6 +146,7 @@ def adapt_jiandaoyun_evaluation_request(
         mapping,
         allow_precheck_defaults=False,
     )
+    precheck.visit.metadata["source_mapping_hash"] = canonical_hash(mapping)
     _, mapped_manager_comment = _mapped_value(
         request.form_data,
         mapping.get("record_fields", {}).get("manager_comment"),

@@ -96,28 +96,54 @@ class Settings(BaseSettings):
     llm_api_key: SecretStr | None = None
     llm_model: str | None = None
     llm_precheck_timeout_seconds: float = Field(default=20.0, gt=0, le=20)
-    knowledge_semantic_timeout_seconds: float = Field(default=6.0, gt=0, le=6)
-    button_total_budget_seconds: float = Field(default=8.0, gt=0, le=8)
+    # Legacy per-call protection. The button path below also applies a shorter
+    # shared end-to-end budget and silently falls back to structured feedback.
+    frontend_model_timeout_seconds: float = Field(default=60.0, gt=0, le=90)
+    knowledge_fetch_budget_seconds: float = Field(default=0.8, gt=0, le=2)
     knowledge_semantic_cache_seconds: float = Field(default=300.0, ge=0, le=3600)
-    knowledge_semantic_max_output_tokens: int = Field(default=700, ge=300, le=1200)
+    knowledge_semantic_max_output_tokens: int = Field(default=1200, ge=400, le=1600)
     llm_evaluation_timeout_seconds: float = Field(default=45.0, gt=0, le=90)
+    llm_evaluation_retry_timeout_seconds: float = Field(default=35.0, gt=0, le=60)
+    # Submitted evaluations are asynchronous. Their wait for a protected backend
+    # model slot must not consume the model generation deadline.
+    llm_evaluation_queue_timeout_seconds: float = Field(default=300.0, gt=0, le=600)
     llm_max_concurrency: int = Field(default=4, ge=1, le=8)
+    llm_frontend_reserved_concurrency: int = Field(default=2, ge=0, le=7)
     llm_button_queue_capacity: int = Field(default=8, ge=0, le=50)
     llm_button_queue_wait_seconds: float = Field(default=12.0, gt=0, le=30)
     llm_max_input_chars: int = Field(default=24000, ge=1000, le=60000)
     llm_precheck_max_output_tokens: int = Field(default=2200, ge=1000, le=3000)
     llm_max_output_tokens: int = Field(default=3000, ge=500, le=6000)
     llm_format_retries: int = Field(default=1, ge=0, le=1)
+    frontend_model_format_retries: int = Field(default=1, ge=0, le=1)
     knowledge_api_base_url: str = "https://knowledge.api.yudaozhijian.top"
     knowledge_api_key: SecretStr | None = None
     knowledge_timeout_seconds: float = Field(default=10.0, gt=0, le=30)
     knowledge_snapshot_cache_seconds: float = Field(default=30.0, ge=0, le=300)
+    knowledge_snapshot_stale_seconds: float = Field(default=600.0, ge=30, le=3600)
     knowledge_snapshot_path: str | None = None
+    startup_prewarm_enabled: bool = True
+    startup_prewarm_timeout_seconds: float = Field(default=8.0, gt=0, le=15)
     jiandaoyun_mapping_path: str | None = None
     enable_q40_integration: bool = False
     q40_service_id: str = "dsm-q40-agent"
     q40_service_keys_json: str = "{}"
     shared_store_url: str | None = None
+    # 0.27.0 interactive Quick Check is opt-in.  Deploying the candidate must
+    # not alter the established synchronous Jiandaoyun button until a tenant
+    # has explicitly been placed in the rollout cohort.
+    quick_check_interactive_enabled: bool = False
+    quick_check_task_ttl_seconds: int = Field(default=1800, ge=300, le=3600)
+    quick_check_stream_token_ttl_seconds: int = Field(default=120, ge=60, le=300)
+    # Optional reverse-proxy prefix for an isolated candidate, for example
+    # ``/taoran-027``.  Empty keeps the eventual formal deployment at root.
+    quick_check_public_path: str = ""
+    # Deliberately unavailable unless the service itself is isolated as
+    # experimental. This must never enable a production request path.
+    experimental_streaming_poc_enabled: bool = False
+    # Capability token for experimental iframe launchers only. It is set only
+    # on the isolated experimental service and is never a Jiandaoyun/API key.
+    experimental_streaming_poc_launch_token: SecretStr | None = None
     _tenant_registry_cache: TenantConfigRegistry = PrivateAttr(
         default_factory=TenantConfigRegistry
     )

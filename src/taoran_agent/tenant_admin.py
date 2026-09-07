@@ -100,6 +100,20 @@ class TenantOnboardingResult(BaseModel):
     one_time_credentials: OneTimeCredentials
 
 
+class TenantAccessKeyRotationResult(BaseModel):
+    """One-time result returned only when an administrator rotates a plugin key."""
+
+    tenant: dict[str, Any]
+    access_key: str
+
+
+class TenantWebhookSecretRotationResult(BaseModel):
+    """One-time result returned only when an administrator rotates a push secret."""
+
+    tenant: dict[str, Any]
+    webhook_secret: str
+
+
 def list_tenants(settings: Settings) -> list[dict[str, Any]]:
     registry = settings.reload_tenant_registry()
     visible: list[dict[str, Any]] = []
@@ -410,6 +424,87 @@ def confirm_tenant_fields(
         )
 
 
+def rotate_tenant_access_key(
+    settings: Settings,
+    tenant_id: str,
+) -> TenantAccessKeyRotationResult:
+    """Issue one new plugin access key while retaining one previous key for migration."""
+    if not settings.tenant_registry_path:
+        raise ValueError("未配置可写租户注册表路径")
+    if not _TENANT_ID_PATTERN.fullmatch(tenant_id):
+        raise ValueError("客户编号格式无效")
+    with _ADMIN_WRITE_LOCK:
+        registry = settings.reload_tenant_registry()
+        existing = registry.tenants.get(tenant_id)
+        if existing is None:
+            raise ValueError("客户不存在或尚未完成首次接入")
+
+        generated_access_key = "taor_" + secrets.token_urlsafe(32)
+        previous_keys = [key.get_secret_value() for key in existing.access_keys]
+        access_keys = [generated_access_key, *previous_keys[:1]]
+        now = datetime.now(UTC)
+        registry_document = _registry_document(registry)
+        tenant_document = registry_document["tenants"][tenant_id]
+        tenant_document["access_keys"] = access_keys
+        tenant_document["updated_at"] = now.isoformat()
+        validated = TenantConfigRegistry.model_validate(registry_document)
+        _atomic_write_json(Path(settings.tenant_registry_path), _registry_document(validated))
+        settings.reload_tenant_registry()
+        _append_audit(
+            Path(settings.admin_audit_path),
+            {
+                "timestamp": now.isoformat(),
+                "action": "rotate_access_key",
+                "tenant_id": tenant_id,
+                "enabled": existing.enabled,
+                "previous_key_retained": bool(previous_keys),
+            },
+        )
+        return TenantAccessKeyRotationResult(
+            tenant=_tenant_summary(settings, tenant_id),
+            access_key=generated_access_key,
+        )
+
+
+def rotate_tenant_webhook_secret(
+    settings: Settings,
+    tenant_id: str,
+) -> TenantWebhookSecretRotationResult:
+    """Issue a new Jiandaoyun push signing secret for one customer."""
+    if not settings.tenant_registry_path:
+        raise ValueError("未配置可写租户注册表路径")
+    if not _TENANT_ID_PATTERN.fullmatch(tenant_id):
+        raise ValueError("客户编号格式无效")
+    with _ADMIN_WRITE_LOCK:
+        registry = settings.reload_tenant_registry()
+        existing = registry.tenants.get(tenant_id)
+        if existing is None:
+            raise ValueError("客户不存在或尚未完成首次接入")
+
+        generated_webhook_secret = secrets.token_urlsafe(36)
+        now = datetime.now(UTC)
+        registry_document = _registry_document(registry)
+        tenant_document = registry_document["tenants"][tenant_id]
+        tenant_document["jiandaoyun"]["webhook_secret"] = generated_webhook_secret
+        tenant_document["updated_at"] = now.isoformat()
+        validated = TenantConfigRegistry.model_validate(registry_document)
+        _atomic_write_json(Path(settings.tenant_registry_path), _registry_document(validated))
+        settings.reload_tenant_registry()
+        _append_audit(
+            Path(settings.admin_audit_path),
+            {
+                "timestamp": now.isoformat(),
+                "action": "rotate_webhook_secret",
+                "tenant_id": tenant_id,
+                "enabled": existing.enabled,
+            },
+        )
+        return TenantWebhookSecretRotationResult(
+            tenant=_tenant_summary(settings, tenant_id),
+            webhook_secret=generated_webhook_secret,
+        )
+
+
 def _generate_tenant_id(registry: TenantConfigRegistry) -> str:
     for _ in range(20):
         tenant_id = f"tenant_{secrets.token_hex(6)}"
@@ -592,12 +687,16 @@ __all__ = [
     "JiandaoyunAuthorizationRequest",
     "JiandaoyunAuthorizationResponse",
     "JiandaoyunSchemaSyncError",
+    "TenantAccessKeyRotationResult",
     "TenantFieldConfirmationRequest",
     "TenantOnboardingRequest",
     "TenantOnboardingResult",
+    "TenantWebhookSecretRotationResult",
     "confirm_tenant_fields",
     "discover_authorized_forms",
     "discover_tenant_authorized_forms",
     "list_tenants",
     "onboard_tenant",
+    "rotate_tenant_access_key",
+    "rotate_tenant_webhook_secret",
 ]

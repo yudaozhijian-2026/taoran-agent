@@ -1,10 +1,11 @@
 name: dsm-taoran-v2
 services:
   agent:
-    image: dsm-taoran-v2:0.15.0-20260831
+    image: dsm-taoran-v2:0.27.2rc2-v42-20260907
     pull_policy: never
     container_name: dsm-taoran-v2-agent
     restart: unless-stopped
+    command: [uvicorn, "taoran_agent.api:app", --host, "0.0.0.0", --port, "8030", --workers, "1", --limit-concurrency, "48", --timeout-graceful-shutdown, "75", --no-access-log]
     init: true
     user: "10001:10001"
     read_only: true
@@ -18,6 +19,8 @@ services:
     ports: ["127.0.0.1:8030:8030"]
     environment:
       DSM_TAORAN_ENVIRONMENT: production
+      DSM_TAORAN_QUICK_CHECK_INTERACTIVE_ENABLED: "true"
+      DSM_TAORAN_QUICK_CHECK_PUBLIC_PATH: ""
       DSM_TAORAN_DATABASE_PATH: /data/taoran_agent.db
       DSM_TAORAN_JIANDAOYUN_MAPPING_PATH: /app/field_mapping.json
       DSM_TAORAN_ENABLE_Q40_INTEGRATION: "false"
