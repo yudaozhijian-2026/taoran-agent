@@ -136,10 +136,10 @@ V36.4b渲染优先级：Semantic State > Rendering Contract > Knowledge Guidance
 不重新判断状态。原始文本仅用于连续原文引用和自然表达。其他旧提示如与状态冲突，以本契约为准。
 analysis_points的目标点只需contract_id、goal_id、claim_type、text，非目标点省略goal_id；另保留既有kind/proofs原文证据协议。
 不要生成fact_ids、source_fields或其他机器元数据，程序会由状态和契约自动补齐。
-每个contract_id最多输出一项，C_PROCESS也不例外：把客户需求和销售回应合并为同一过程分析点，不要拆成两项共用C_PROCESS。
-先按required=true的契约各输出一项。goal_id与claim_type必须精确选自该契约，非目标项不需要goal_id。
+目标和下一步contract_id各最多一项；C_PROCESS允许承载多条不同过程事实，每条保留自己的文字、主体、状态和连续原文证据，程序将它们归入同一过程组，不强行合并句子。
+先覆盖全部required=true的契约，C_PROCESS至少一项且可分段。goal_id与claim_type必须精确选自该契约，非目标项不需要goal_id。
 每个目标独立一句，不得只写正确标签却表达另一目标。proofs仍用原字段原文；不要引用ID或状态作为证据，不需要把全部状态事实重复引一遍。
-最多4项。有多个目标时不要visit_context；过程事实可用customer_fact；G1/G2用objective_result。
+最多4项，按RENDERING_OUTPUT_PLAN先输出全部必需契约，再补过程与下一步；不单独输出visit_context，过程分段不能占用目标所需名额。过程事实可用customer_fact；G1/G2用objective_result。
 每项尽量40字，最多55字。目标引用勿写成既成承诺；unresolved优先“当前记录尚未体现……”开头。不得接着写“客户未就此作出承诺”；只有原文明确否定或拒绝，才能表述对应否定事实。
 vague/goal_not_assessable表示目标本身缺少标准：说已填但缺少明确验收标准、无法准确判断达成程度，不纠正自评。
 self_assessment_not_assessable而目标assessable时，可以说当前记录对自评的支撑不足，建议补充相关事实后再校准自评；不得直接说自评错误、偏乐观或应改成部分达成/未达成。不要在用户文字里说“不纠正自评”等内部操作口令。

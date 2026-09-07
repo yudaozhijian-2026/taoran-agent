@@ -312,6 +312,10 @@ def build_front_ai_suggestions_with_model(
         natural_completion=(natural.get("C").suggestion if natural.get("C") else ""),
         visit_analysis=wording.visit_analysis,
         visit_analysis_sections=[] if experimental else wording.visit_analysis_sections,
+        recommendation_labels={"过程事实与结果": "目标核对建议"} if experimental and any(
+            repair.get("kind")=="goal_reminder_relocated" and repair.get("code")=="R"
+            for attempt in wording.model_attempts for repair in attempt.get("recommendation_repairs", [])
+        ) else {},
         ai_only=True,
         experimental=experimental,
     )
@@ -330,6 +334,7 @@ def _front_ai_suggestions(
     structured: PrecheckResponse,
     *,
     natural_by_section: dict[str, str] | None = None,
+    recommendation_labels: dict[str, str] | None = None,
     specificity_by_section: dict[str, bool] | None = None,
     system_notice: str | None = None,
     natural_completion: str = "",
@@ -429,7 +434,7 @@ def _front_ai_suggestions(
         if ai_only:
             natural = _clean_front_text(natural_by_section.get(section_name, ""))
             if semantic_specific is False and natural:
-                advice.append(f"{label}：{natural}")
+                advice.append(f"{(recommendation_labels or {}).get(section_name, label)}：{natural}")
             continue
         if (
             field_unreceived

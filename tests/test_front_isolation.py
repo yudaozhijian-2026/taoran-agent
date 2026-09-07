@@ -1,4 +1,5 @@
 """The same front request must produce byte-identical model prompts to baseline."""
+import hashlib
 import os
 import subprocess
 import sys
@@ -22,11 +23,10 @@ try:
 finally:
  r.close()
 '''
-    results = []
-    for source in (root / "baseline/src", root / "src"):
-        results.append(subprocess.run(
-            [sys.executable, "-c", code], input=visit().model_dump_json(),
-            text=True, capture_output=True, check=True,
-            env={**os.environ, "PYTHONPATH": str(source), "PYTHONDONTWRITEBYTECODE": "1"},
-        ).stdout)
-    assert results[0] == results[1]
+    # Captured from clean origin/main 0e510b4, using the same synthetic visit.
+    result = subprocess.run(
+        [sys.executable, "-c", code], input=visit().model_dump_json(),
+        text=True, capture_output=True, check=True,
+        env={**os.environ, "PYTHONPATH": str(root / "src"), "PYTHONDONTWRITEBYTECODE": "1"},
+    ).stdout
+    assert hashlib.sha256(result.encode()).hexdigest() == "d04674d53fc42425bfa2aa732d57eda9966a763d42eb9ebb27620808f06d9604"

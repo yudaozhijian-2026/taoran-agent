@@ -143,7 +143,10 @@ def validate_bindings(points, state, *, retained_texts=None):
             fail('UNKNOWN_CONTRACT', point)
             continue
         cid = contract['contract_id']
-        if cid in seen:
+        # A process can contain several independent, separately grounded facts.
+        # Keep every fragment under the same structural group; do not rewrite
+        # their actors/states or combine their proof coverage.
+        if cid in seen and cid != 'C_PROCESS':
             fail('DUPLICATE_CONTRACT', point, contract)
         seen.add(cid)
         if point.get('goal_id', '') != contract['goal_id'] or point.get('claim_type') not in contract['allowed_claim_types']:

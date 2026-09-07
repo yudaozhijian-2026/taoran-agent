@@ -1673,7 +1673,7 @@ def _enhance_front_suggestions(
     )
     store = get_store(settings)
     if experimental:
-        cache_key = canonical_hash({"experimental_final_version": "semantic-rendering-v365-preview-observe", "key": cache_key})
+        cache_key = canonical_hash({"experimental_final_version": "semantic-rendering-advice-repair-20260907", "key": cache_key})
     persisted = store.get_feedback_artifact(
         response.tenant_id,
         _FRONT_WORDING_ARTIFACT_TYPE,

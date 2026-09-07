@@ -16,6 +16,7 @@ from .config import Settings
 from .experimental_assessment import goal_violation
 from .experimental_record_state import GUIDANCE, boundary_issues, build
 from .models import VisitDraftInput
+from .recommendation_repairs import PREVIEW_ADVICE_GUIDANCE, repair_preview_text
 
 _OPEN = "<USER_FEEDBACK>"
 _CLOSE = "</USER_FEEDBACK>"
@@ -140,6 +141,7 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
         "只有原始记录明确客户否定或拒绝时，才能如实表述该否定事实。"
         "目标缺完成标准时直接说明无法判断，不向用户复述‘不纠正自评’或‘自评保持原样’等操作指令。"
     )
+    messages[0]["content"] += PREVIEW_ADVICE_GUIDANCE
     return messages
 
 
@@ -277,6 +279,14 @@ def stream_semantic_preview_v22(
         body["thinking"] = {"type": "disabled"}
     raw = ""
     emitted = received_bytes = 0
+    displayed = []
+    recommendation_repairs = []
+    def emit_piece(piece):
+        if interactive:
+            piece, repairs = repair_preview_text(piece, snapshot)
+            recommendation_repairs.extend(repairs)
+        displayed.append(piece)
+        emit(piece)
     first_text_ms: int | None = None
     try:
         with httpx.Client(follow_redirects=False) as client, client.stream(
@@ -307,13 +317,16 @@ def stream_semantic_preview_v22(
                 preview = _feedback_body(raw)
                 boundary = _flushable_length(preview, emitted, final=_CLOSE in raw)
                 if boundary > emitted:
-                    emit(preview[emitted:boundary])
+                    emit_piece(preview[emitted:boundary])
                     emitted = boundary
         if not (_OPEN in raw and _CLOSE in raw):
             raise ValueError("output_truncated")
         feedback = _feedback_body(raw).strip()
         if not (20 <= len(feedback) <= 500) or "<" in feedback or ">" in feedback:
             raise ValueError("invalid_preview_format")
+        if emitted < len(feedback):
+            emit_piece(feedback[emitted:])
+        feedback = "".join(displayed).strip()
         safety = detect_unsupported_specific_facts(feedback, snapshot, interactive=interactive)
         if not interactive and safety["failure_category"]:
             return {"status": "failed", "first_real_ai_text_ms": first_text_ms, **safety}
@@ -328,13 +341,12 @@ def stream_semantic_preview_v22(
                 },
                 "failure_category": None,
             }
-        if emitted < len(feedback):
-            emit(feedback[emitted:])
         return {
             "status": "completed", "first_real_ai_text_ms": first_text_ms,
             "semantic_complete_ms": int((monotonic() - started) * 1000),
             "feedback_hash": hashlib.sha256(feedback.encode()).hexdigest(),
             "feedback_length": len(feedback),
+            **({"recommendation_repairs": recommendation_repairs} if interactive else {}),
             "evidence_builder_status": "observability_only", **safety,
         }
     except ValueError as exc:
