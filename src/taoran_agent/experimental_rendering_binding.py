@@ -17,8 +17,8 @@ def text_invariants(text, state):
                 fail('PLACEHOLDER_AS_MISSING', fragment, field)
             if fields.get(field) == 'missing' and re.search(r'已填写.{0,6}不具体', fragment):
                 fail('MISSING_AS_VAGUE', fragment, field)
-        goal_unassessable = state['self_assessment_alignment']['computed_goal_summary'] == 'not_assessable'
-        self_unassessable = state['self_assessment_alignment']['alignment'] == 'not_assessable'
+        goal_unassessable = fields.get('expected_key_result') in {'missing','placeholder','not_received'}
+        self_unassessable = goal_unassessable
         if goal_unassessable:
             target = str(state['field_values'].get('expected_key_result') or '')
             target_ref = '目标' in sentence or (target and target in sentence) or bool(re.search('关系.{0,5}拉近|拉近.{0,5}关系', sentence) and '关系' in target)
@@ -42,13 +42,8 @@ def resolve_binding_fact_ids(contract, semantic_state):
     goal_id = contract.get('goal_id')
     facts = semantic_state['facts']
     if goal_id:
-        alignment = next((a for a in semantic_state['goal_fact_alignments'] if a['goal_id'] == goal_id), None)
-        if not alignment:
-            return []
-        if claim in {'supported', 'achieved'}:
-            return list(alignment['supporting_fact_ids'])
-        if claim in {'contradicted', 'negative_fact'}:
-            return list(alignment['contradicting_fact_ids'])
+        # Semantic support comes from the model's validated source proofs,
+        # never from keyword alignment. Do not auto-attach guessed support IDs.
         return []
     if claim in {'unresolved', 'not_recorded', 'not_assessable', 'placeholder', 'vague', 'missing'}:
         return []
@@ -114,7 +109,7 @@ def experimental_retry_allowed(context):
     errors = rejection.get('binding_errors', [])
     terminal = {'BINDING_SHAPE', 'UNKNOWN_CONTRACT',
                 'REQUIRED_CONTRACT_OMITTED', 'GOAL_ALIGNMENT_OMITTED',
-                'BOUND_TEXT_MISSING', 'BOUND_TEXT_DROPPED',
+                'BOUND_TEXT_MISSING',
                 'STATE_SUPPORT_MISSING', 'RETRY_OUT_OF_SCOPE'}
     if any(e.get('code') == 'DUPLICATE_CONTRACT' and e.get('contract_id') != 'C_PROCESS' for e in errors):
         return False
@@ -160,9 +155,12 @@ def validate_bindings(points, state, *, retained_texts=None):
         # Metadata comes from state, not model output. Original proof parsing
         # still validates quotes later; no extra fact-to-proof bijection.
         fact_ids = resolve_binding_fact_ids({**contract, 'claim_type': point.get('claim_type')}, state)
-        if point.get('claim_type') in FACT_REQUIRED_CLAIMS and not fact_ids:
+        if not contract['goal_id'] and point.get('claim_type') in FACT_REQUIRED_CLAIMS and not fact_ids:
             fail('STATE_SUPPORT_MISSING', point, contract)
         proofs = point.get('proofs', [])
+        if contract['goal_id'] and point.get('claim_type') in {'supported','partially_supported','contradicted'} and not any(
+            isinstance(p,dict) and p.get('field') in {'process_description','customer_feedback'} and p.get('quote') for p in proofs if isinstance(proofs,list)):
+            fail('STATE_SUPPORT_MISSING', point, contract)
         if not isinstance(proofs, list) or any(not isinstance(p, dict) or p.get('field') not in contract['source_fields'] for p in proofs):
             fail('BOUND_PROOF_MISMATCH', point, contract)
         if contract['allowed_claim_types'] == ['not_assessable'] and not (re.search(r'标准|验收|关键结果不明确', text) and re.search(r'无法|难以|不能判断', text)):
@@ -181,8 +179,6 @@ def validate_bindings(points, state, *, retained_texts=None):
                 fail('GOAL_TEXT_BINDING_MISMATCH', point, contract)
             for error in unrecorded_denials(text, state, contract['goal_id']):
                 fail(error['code'], {**point, 'text': error['text']}, contract)
-            if goal['status'] == 'unresolved' and re.search(r'客户(?:已经|已)(?:明确)?(?:同意|确认|承诺)|目标(?:已经|已)达成', text) and not re.search(r'记录.{0,15}(?:未|无|不足)|不足以证明|是否|无法判断', text):
-                fail('UNRESOLVED_TEXT_ASSERTED', point, contract)
         if cid == 'C_PROCESS' and contract['allowed_claim_types'] == ['joint_agreement_recorded'] and not re.search(r'约定|共同安排|商定|约好', text):
             fail('JOINT_AGREEMENT_OMITTED', point, contract)
         for error in text_invariants(text, state):

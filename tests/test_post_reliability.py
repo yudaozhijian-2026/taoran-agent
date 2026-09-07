@@ -33,7 +33,7 @@ def test_pending_ongoing_completed_and_actor(source,text,blocked):
     assert bool(claim_hits(text,'facts.reason',{'source_text':source})) == blocked
 
 
-def test_grounding_recheck_recomputes_score_from_new_facts(tmp_path,monkeypatch):
+def test_conflict_observations_do_not_trigger_regeneration_or_replace_latest_facts(tmp_path,monkeypatch):
     r=reviewer(tmp_path)
     v=visit(process_description='收集劳保订单，本周不会再点单')
     initial=valid_payload(r,v)
@@ -51,13 +51,12 @@ def test_grounding_recheck_recomputes_score_from_new_facts(tmp_path,monkeypatch)
     try:
         result=r.review_q34(v)
         assert result.status=='completed'
-        assert len(calls)==2 and not calls[1][1]['repair']
-        assert '唯一一次受控重核' in calls[1][0][-1]['content']
-        assert result.quality_audit['fact_grounding_reassessed']
+        assert len(calls)==1
+        assert result.quality_audit['semantic_gate']['policy']=='observe_only'
+        assert result.quality_audit['semantic_gate']['observation_count']>0
         initial_facts=Q34SemanticFacts(provider='llm-chat',**initial['facts'])
-        assert score_q34(v,result)[0].score!=score_q34(v,initial_facts)[0].score
-        assert result.purpose_achievement=='partially_achieved'
-        assert '客户收集劳保订单' not in result.reason
+        assert score_q34(v,result)[0].score==score_q34(v,initial_facts)[0].score
+        assert result.purpose_achievement==initial['facts']['purpose_achievement']
     finally:r.close()
 
 

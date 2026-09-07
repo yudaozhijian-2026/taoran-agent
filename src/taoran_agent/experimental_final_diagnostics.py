@@ -77,7 +77,7 @@ def repair_instruction(reason):
     if reason == "wording_experimental_binding_conflict":
         return "若错误为C_PROCESS的DUPLICATE_CONTRACT，将该契约的多条过程事实合并为一条，保留客户需求和销售回应以及对应连续原文证据；这不是否定这些事实，不要按forbidden_claim删除已记录事实。其他错误仅按rendering_repairs修复指定contract和suggestion_scope，保持其他点逐字不变。goal_id、claim_type必须与契约一致；fact_ids等机器元数据由程序补齐，不要求模型输出。正文与对应目标一致，证据用连续原文。仍输出完整JSON，只重试一次。"
     if reason == "wording_experimental_invariant_conflict":
-        return "依据invariant_errors中的code、错句、goal_ids/fact_ids修正业务内容一次。BUSINESS_SEMANTIC_STATE是已知状态：保留支持目标及对应事实、主体、时间、否定状态；占位和模糊不可说未填，未记录不可说未发生。分别陈述各子目标，禁止让无关反馈缺口污染已完成动作。只改违反不变量的推理，输出完整JSON；证据仍使用原始字段。"
+        return "依据invariant_errors中的code、错句、goal_ids/fact_ids修正业务内容一次。语义索引仅供定位，原始记录才是事实依据：保留支持目标及对应事实、主体、时间、否定状态；占位和模糊不可说未填，未记录不可说未发生。分别陈述各子目标，禁止让无关反馈缺口污染已完成动作。只改违反不变量的推理，输出完整JSON；证据仍使用原始字段。"
     if reason == "wording_experimental_record_state_conflict":
         return "按state_errors定位原句：记录未体现联系时间不能写成实际未约定时间；目标占位时只能说无法判断，不能用目的或过程补目标。保留已有事实与原始字段，修正具体错误后返回完整JSON。"
     if reason and reason.startswith("wording_experimental_audit_"):
@@ -91,9 +91,9 @@ def repair_instruction(reason):
         }.get(reason.removeprefix("wording_experimental_audit_"), "核查主体、目标范围、时态、关键事实、自评和建议一致性。")
         return "独立语义复核未通过。" + focus + "重新生成完整JSON，保持逐项校验和连续原文证据，不补造事实，不以固定模板代替业务分析。"
     if reason == "wording_experimental_receipt_role_conflict":
-        return "收货主体已由用户澄清为销售替客户代收。上次错误地要求客户确认完成来证明销售代收目标。重新生成完整JSON，明确已记录销售代收，不以客户未签收反驳代收。其他具体性标准和原文证据仍保留，不制造客户反馈，也不强行宣告全部合格。"
+        return "依据原定目标核对动作及主体；主体不明确保持未知，不补成销售或客户，也不增加原目标未要求的签收验收条件。保留清楚事实，只有实质影响目标判断的歧义才建议核实。"
     if reason == "wording_experimental_approved_goal_conflict":
-        return "当前目标与过程已通过用户业务审核：采购沟通目标完成。上一轮否定了这个结论；重新依据原文概括已获取信息，保留自评原值，不生成assessment_gap，不追加关系进展或首次合作条件。只输出完整JSON，原文证据不变。"
+        return "重新按当前原定目标与过程独立核对；信息沟通不能增加成交条件，不能以历史样例结论替代当前记录。只输出完整JSON，证据引用原文。"
     if reason == "wording_experimental_goal_inflation":
         return "上次擅自扩大了目标验收范围。确认当前预算卡点不要求全部审批信息；确认合同并承诺签署不要求已经实际签署。只比较输入目标和实际事实，已支持目标时省略assessment_gap，不造新差距；重新生成完整JSON。"
     if reason == "wording_experimental_assessment_evidence_missing":

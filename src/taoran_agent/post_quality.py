@@ -7,6 +7,7 @@ from .purpose_mapping import (
     purpose_policy_for_visit,
     structure_purpose_mapping,
 )
+from .record_contract import field_claim_hits, visit_contract
 from .rules import normalized_text
 
 
@@ -37,23 +38,11 @@ def quality_context(visit, snapshot):
               "field_states": {},
               "source_text": "\n".join(str(getattr(visit, f, "") or "") for f in (
                   "process_description", "customer_feedback"))}
-    if visit.next_contact_date is not None:
-        current, following = visit.visit_date, visit.next_contact_date
-        result["calendar"] = {
-            "visit_date": current.isoformat(), "next_contact_date": following.isoformat(),
-            "after_visit": following > current,
-            "different_month": (current.year, current.month) != (following.year, following.month),
-            "different_quarter": (current.year, (current.month-1)//3) != (following.year, (following.month-1)//3),
-        }
-    for field in ("expected_key_result", "process_description", "customer_feedback",
-                  "next_action_purpose", "next_action_expected_result", "next_contact_at"):
-        value = getattr(visit, field, None)
-        result["field_states"][field] = "empty" if value in (None, "", [], {}) else "present"
-    supplied = visit.metadata.get("source_supplied_fields")
-    if isinstance(supplied, list):
-        for field in result["field_states"]:
-            if field not in supplied:
-                result["field_states"][field] = "not_received"
+    contract = visit_contract(visit)
+    result['record_contract'] = contract
+    result['field_states'] = contract['presence']
+    if 'calendar' in contract:
+        result['calendar'] = contract['calendar']
     try:
         record = purpose_mapping_record(snapshot)
         policy = purpose_policy_for_visit(structure_purpose_mapping(record), visit)
@@ -72,6 +61,7 @@ def quality_context(visit, snapshot):
 
 def quality_hits(text, target, context):
     hits = advice_hits(text, target)
+    hits += field_claim_hits(text, {"_record_contract": context.get("record_contract", {"presence": context.get("field_states", {})})}, target)
     for match in re.finditer(r"[^。；\n]+", text):
         clause = match.group()
         rule = None

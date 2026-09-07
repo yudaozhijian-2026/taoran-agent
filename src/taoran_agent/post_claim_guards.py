@@ -134,10 +134,6 @@ def advice_hits(text, target):
             or re.search(r"(?:关键结果|原定目标)(?:应|须|要)(?:当)?(?:改为|调整为|写明为|写成)", clause)
         ):
             rule = "retroactive_goal_replacement"
-        if target in {"O_KR", "A2"} and not future and not prohibited and not re.search(
-            r"(?:原定|原计划|原本|事先|保留原目标|本次计划|此次计划)", clause
-        ) and re.search(r"(?:关键结果|目标).{0,10}(?:补充|细化|写明)", clause):
-            rule = "goal_clarification_must_preserve_original_intent"
         if target in {"N", "facts.reason"} and not prohibited and re.search(
             r"(?:与|和)(?:本次|此次).{0,12}(?:无衔接|不衔接|毫无关联|没有关联)", clause
         ):

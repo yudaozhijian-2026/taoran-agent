@@ -65,7 +65,7 @@ def test_customer_actor_and_process_state(source, output, blocked):
     ("将本次关键结果校准为合同流程完成", "O_KR", True),
     ("建议把原定目标改为核对发票", "A2", True),
     ("核实本次原定具体目标，保留原目标及补充说明", "O_KR", False),
-    ("在想取得的关键结果中补充本次具体收集事项", "A2", True),
+    ("在想取得的关键结果中补充本次具体收集事项", "A2", False),
     ("在关键结果中补充本次原定要了解的事项并保留原记录", "O_KR", False),
     ("请在想取得的关键结果中补充本次计划收集的具体信息项", "O_KR", False),
     ("下次拜访可将关键结果写明为核对发票", "O_KR", False),
@@ -78,7 +78,7 @@ def test_goal_history_and_precise_next_step_advice(output, target, blocked):
     assert bool(advice_hits(output, target)) == blocked
 
 
-def test_factual_error_stops_before_local_repair_and_preserves_audit(tmp_path, monkeypatch):
+def test_factual_observation_keeps_model_decision_and_preserves_audit(tmp_path, monkeypatch):
     r = reviewer(tmp_path)
     v = visit(process_description="现场给客户收货，送卡")
     original = valid_payload(r, v)
@@ -93,10 +93,11 @@ def test_factual_error_stops_before_local_repair_and_preserves_audit(tmp_path, m
     monkeypatch.setattr(r, "_request", model)
     attempts = []
     try:
-        with pytest.raises(ModelCallError, match="post_fact_grounding_conflict"):
-            r._analyze(v, False, attempts)
-        assert len(calls) == 2
-        assert attempts[0].diagnostic_evidence_id
+        parsed,_=r._analyze(v, False, attempts)
+        assert len(calls) == 1
+        assert parsed.facts.reason == original['facts']['reason']
+        assert parsed._semantic_gate['observation_count'] > 0
+        assert parsed._semantic_gate['diagnostic_evidence_id']
         assert _format_retry_allowed(ModelCallError("post_fact_grounding_conflict"))
     finally:
         r.close()
@@ -117,13 +118,13 @@ def test_goal_advice_repair_preserves_facts(tmp_path, monkeypatch):
     monkeypatch.setattr(r, "_request", model)
     try:
         parsed, _ = r._analyze(v, False)
-        assert calls == [False, True]
+        assert calls == [False]
         assert parsed.facts.model_dump() == original["facts"]
     finally:
         r.close()
 
 
-def test_grounding_failure_is_not_displayed_as_a_successful_report(tmp_path, monkeypatch):
+def test_observed_conflict_does_not_block_current_model_scoring(tmp_path, monkeypatch):
     r = reviewer(tmp_path)
     v = visit(process_description="现场给客户收货，送卡")
     original = valid_payload(r, v)
@@ -135,9 +136,8 @@ def test_grounding_failure_is_not_displayed_as_a_successful_report(tmp_path, mon
     try:
         request = PostEvaluationRequest(context=RequestContext(tenant_id="test", request_id="guard", user_id="test-user"), visit=v, visit_record_code="test-record")
         result = TaoranAgent(semantic_reviewer=r).evaluate(request, "guard-test")
-        assert result.semantic_facts.status == "fallback"
-        assert result.semantic_facts.failure_reason == "post_fact_grounding_conflict"
-        assert "已暂停正式评分回写" in result.ai_opinion
-        assert "客户现场收货动作已完成" not in result.ai_opinion
+        assert result.semantic_facts.status == "completed"
+        assert result.semantic_facts.quality_audit['semantic_gate']['observation_count'] > 0
+        assert "已暂停正式评分回写" not in result.ai_opinion
     finally:
         r.close()

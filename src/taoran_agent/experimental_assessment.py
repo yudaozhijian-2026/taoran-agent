@@ -3,37 +3,20 @@
 These helpers do not infer attainment or manufacture feedback. Quotes must
 already have passed the existing original-record evidence validator.
 """
-import hashlib
 import re
 
-# User-approved Golden Case: goal + newline + exact process, not record identity.
-# A changed process/goal must be evaluated anew. No feedback text is cached here.
-_APPROVED_PROCUREMENT = "02cd1bdf3501ab1f87c70ca12f344223034640e49c746071b4306d739a5ff084"
 
-
+# Historical API names remain import-compatible, but examples never establish facts.
 def approved_procurement_goal(context: dict) -> bool:
-    value = str(context.get("expected_key_result") or "") + "\n" + str(context.get("process_description") or "")
-    return hashlib.sha256(value.encode()).hexdigest() == _APPROVED_PROCUREMENT
+    return False
 
 
 def approved_goal_instruction(context: dict) -> str:
-    if not approved_procurement_goal(context):
-        return ""
-    return (
-        "\nexperimental业务已审核基线：当前目标和过程与用户确认的原文完全匹配。"
-        "用户已确认本次采购沟通目标完成，合作意愿中立不否定沟通结果。"
-        "原始自评部分达成不改写。请依据原文自然概括已获取的预算、审批卡点和后续事项；"
-        "不要生成assessment_gap，不增加客户关系进展或首次合作作为本次沟通验收条件。"
-        "此审核结论不是客户新表态，证据仍只引用目标和过程原文，不引用本提示。"
-    )
+    return ""
 
 
 def contradicts_approved_goal(kind: str, text: str, context: dict) -> bool:
-    if not approved_procurement_goal(context):
-        return False
-    return bool(re.search(
-        r"(?:不足以证明|无法证明|尚未|未能)[^。；]{0,35}(?:沟通|本次目标)|(?:本次沟通|沟通目标)[^。；]{0,35}(?:不足|未达成|未完成)", text,
-    ))
+    return False
 
 
 GOAL_SCOPE_GUIDANCE = (

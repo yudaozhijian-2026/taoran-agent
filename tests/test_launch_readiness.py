@@ -237,7 +237,7 @@ def test_unknown_fact_and_word_count_boundaries(source, text, blocked):
     assert bool(quality_hits(text, "facts.reason", context)) == blocked
 
 
-def test_all_localized_conflicts_repaired_in_one_call(tmp_path, monkeypatch):
+def test_localized_semantic_conflicts_are_observed_without_extra_model_call(tmp_path, monkeypatch):
     from test_post_repair import reviewer, valid_payload
     r = reviewer(tmp_path)
     v = visit(process_description="客户已下单，正在走合同流程。")
@@ -262,7 +262,8 @@ def test_all_localized_conflicts_repaired_in_one_call(tmp_path, monkeypatch):
     monkeypatch.setattr(r, "_request", model)
     try:
         parsed, _ = r._analyze(v, False)
-        assert calls == [False, True]
+        assert calls == [False]
+        assert parsed._semantic_gate['observation_count'] > 0
         assert parsed.facts.model_dump() == original["facts"]
     finally:
         r.close()

@@ -1,7 +1,6 @@
 import asyncio
 from concurrent.futures import Future, ThreadPoolExecutor
 from queue import Queue
-from threading import Event
 from types import SimpleNamespace
 
 from taoran_agent import api
@@ -46,38 +45,15 @@ def test_multiple_readers_receive_same_snapshot_without_consuming_it():
     assert all(r['preview_feedback_text'] == '同一份建议' for r in results)
 
 
-def test_final_first_keeps_preview_worker_and_stream_alive(monkeypatch):
-    release = Event()
-    entered = Event()
-    def preview(settings, visit, emit, **kwargs):
-        entered.set()
-        assert release.wait(3)
-        emit('迟到但有效的建议')
-        return {'status': 'completed'}
-    monkeypatch.setattr(api, 'stream_semantic_preview_v22', preview)
-    monkeypatch.setattr(api, '_quick_check_run_final', lambda *args: {
-        'status': 'completed', 'feedback_text': '正式反馈',
-        'final_feedback_hash': 'hash', 'full_feedback_ms': 1})
-    t = task()
-    try:
-        outcome = api._quick_check_run(SimpleNamespace(visit=None), None, t['events'])
-        assert entered.wait(1)
-        assert not outcome['preview_future'].done()
-        t['future'] = Future()
-        t['future'].set_result(outcome)
-        async def stream():
-            seen = []
-            async for event in api._interactive_quick_check_events(Request(), t):
-                seen.append(event)
-                if 'event: final_completed' in event:
-                    assert not outcome['preview_future'].done()
-                    release.set()
-            return ''.join(seen)
-        result = asyncio.run(stream())
-        assert result.index('event: final_completed') < result.index('迟到但有效的建议')
-        assert '迟到但有效的建议' in collect(t)
-    finally:
-        release.set()
+def test_basic_mode_uses_one_ai_call_without_speculative_preview(monkeypatch):
+    calls=[]
+    def forbidden(*args,**kwargs):raise AssertionError('No second AI generation')
+    monkeypatch.setattr(api,'stream_semantic_preview_v22',forbidden)
+    monkeypatch.setattr(api,'_quick_check_run_final',lambda *args: calls.append(1) or {'status':'completed','feedback_text':'AI意见'})
+    outcome=api._quick_check_run(SimpleNamespace(visit=None),None,task()['events'])
+    assert calls==[1]
+    assert outcome['preview']=={'status':'completed','kind':'basic'}
+    assert outcome['final']['feedback_text']=='AI意见'
 
 
 def test_failed_final_does_not_remove_preview():

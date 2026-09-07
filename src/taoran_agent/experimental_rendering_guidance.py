@@ -38,25 +38,11 @@ def select_guidance(state):
     def add(code, target):
         selected.append({**asdict(GUIDANCE[code]), 'target': target})
     for field, value in state['field_states'].items():
-        code = {'missing': 'FIELD_STATE_MISSING', 'placeholder': 'FIELD_STATE_PLACEHOLDER', 'vague': 'FIELD_STATE_VAGUE'}.get(value)
+        code = {'missing': 'FIELD_STATE_MISSING', 'placeholder': 'FIELD_STATE_PLACEHOLDER'}.get(value)
         if code:
             add(code, field)
-    for goal in state['goal_items']:
-        if goal['assessability'] != 'assessable':
-            add('GOAL_NOT_ASSESSABLE', goal['goal_id'])
-        if goal['status'] == 'supported' and state['field_states']['customer_feedback'] == 'missing':
-            add('GOAL_SUPPORTED_WITH_MISSING_FEEDBACK', goal['goal_id'])
-    rel = state['relations']
-    if rel['JOINT_AGREEMENT']['status'] == 'recorded':
+    if state['relations']['JOINT_AGREEMENT']['status'] == 'recorded':
         add('JOINT_AGREEMENT_RECORDED', 'PROCESS')
-        if rel['CUSTOMER_COMMITMENT']['status'] == 'not_recorded':
-            add('JOINT_AGREEMENT_WITHOUT_COMMITMENT', 'PROCESS')
-    if rel['CUSTOMER_INDIVIDUAL_ACTION']['status'] == 'not_recorded':
-        add('NOT_RECORDED_CUSTOMER_ACTION', 'PROCESS')
-    if state['field_states']['customer_feedback'] == 'missing' and any(f['temporality'] == 'actual' and f['fact_type'] in {'COMPLETED_EVENT', 'SALES_ACTION', 'CUSTOMER_ACTION'} for f in state['facts']):
-        add('COMPLETED_EVENT_WITH_MISSING_FEEDBACK', 'PROCESS')
-    if state['self_assessment_alignment']['computed_goal_summary'] == 'partially_achieved':
-        add('COMPOSITE_GOAL_PARTIAL', 'GOALS')
     return selected
 
 
@@ -84,10 +70,20 @@ NEXT_ACTION_FIELDS = frozenset({'next_action_purpose', 'next_action_other_purpos
 def next_action_fact_ids(state):
     """Inherit existing facts in section scope; never infer/create facts."""
     return [f['fact_id'] for f in state['facts']
-            if f['source_field'] in NEXT_ACTION_FIELDS
+            if (f['source_field'] in NEXT_ACTION_FIELDS or f['source_field'] in {'process_description','customer_feedback'} and f['fact_type'] == 'PLANNED_ACTION' and f['temporality'] == 'planned')
             and f['fact_type'] in {'PLANNED_ACTION', 'JOINT_AGREEMENT', 'CUSTOMER_COMMITMENT', 'CUSTOMER_ACTION', 'SYSTEM_FACT'}
             and f['actor'] in {'customer', 'sales', 'both', 'unknown', 'system'}
             and (f['temporality'] in {'actual', 'planned'} or f['fact_type'] == 'SYSTEM_FACT' and f['temporality'] == 'unknown')]
+
+
+def next_step_proof_allowed(field, quote):
+    """Process evidence is eligible only when its cited span includes a plan."""
+    if field not in {'process_description', 'customer_feedback'}:
+        return True
+    from .experimental_business_semantic_state import build_business_state
+    state = build_business_state({field: quote})
+    return any(f['fact_type'] == 'PLANNED_ACTION' and f['temporality'] == 'planned'
+               for f in state['facts'])
 
 
 def rendering_input(state):
@@ -100,12 +96,13 @@ def rendering_input(state):
             [g['business_meaning'] for g in relevant],
             list(dict.fromkeys(x for g in relevant for x in g['forbidden_language'])),
             list(dict.fromkeys(g['guidance_code'] for g in relevant)), scope, fields, required)))
-    for goal in state['goal_items']:
-        alignment = next(a for a in state['goal_fact_alignments'] if a['goal_id'] == goal['goal_id'])
-        claim = 'not_assessable' if goal['assessability'] != 'assessable' else goal['status']
-        add('C_' + goal['goal_id'], goal['goal_id'], {'goal': goal, 'alignment': alignment}, [claim],
-            alignment['supporting_fact_ids'], [goal['source_field'], 'process_description', 'customer_feedback', 'self_assessment'],
-            True, [goal['goal_id'], goal['source_field'], 'GOALS'], ['O_KR'])
+    for original in state['goal_items']:
+        goal = {k: deepcopy(v) for k,v in original.items() if k not in {'status','assessability'}}
+        goal['status'] = 'unassessed'
+        add('C_' + goal['goal_id'], goal['goal_id'], {'goal': goal},
+            ['supported','partially_supported','contradicted','unresolved','not_assessable'],
+            [], [goal['source_field'], 'process_description', 'customer_feedback', 'self_assessment'],
+            True, [goal['goal_id'], goal['source_field']], ['O_KR'])
     if not state['goal_items']:
         add('C_GOAL_FIELD', '', {'field': 'expected_key_result', 'state': state['field_states']['expected_key_result']},
             [state['field_states']['expected_key_result']], [], ['expected_key_result'], True, ['expected_key_result'], ['O_KR'])
@@ -115,7 +112,7 @@ def rendering_input(state):
         ['joint_agreement_recorded'] if joint['status'] == 'recorded' else ['recorded_fact'],
         process_facts, ['process_description', 'customer_feedback'], joint['status'] == 'recorded', ['PROCESS'], ['R'])
     add('C_NEXT', '', {'field': 'next_action_expected_result', 'state': state['field_states']['next_action_expected_result']},
-        ['planned'], [], ['next_action_purpose', 'next_action_other_purpose', 'next_action_expected_result', 'next_contact_at'],
+        ['planned'], [], ['next_action_purpose', 'next_action_other_purpose', 'next_action_expected_result', 'next_contact_at', 'process_description', 'customer_feedback'],
         state['field_states']['next_action_expected_result'] == 'placeholder',
         ['next_action_purpose', 'next_action_other_purpose', 'next_action_expected_result', 'next_contact_at'], ['N'])
     add('C_CONTEXT', '', {'state': 'context'}, ['context'], [], ['visit_date', 'customer_type_ii', 'visit_method', 'is_appointment', 'purpose_code', 'opportunity_stage', 'opportunity_stages'], False, [], [])
@@ -123,28 +120,17 @@ def rendering_input(state):
         if contract['contract_id'] == 'C_NEXT':
             contract['allowed_fact_ids'] = next_action_fact_ids(state)
         elif contract['goal_id']:
-            alignment = next(a for a in state['goal_fact_alignments'] if a['goal_id'] == contract['goal_id'])
-            contract['contradicting_fact_ids'] = list(alignment['contradicting_fact_ids'])
-            contract['allowed_fact_ids'] = list(dict.fromkeys(alignment['supporting_fact_ids'] + alignment['contradicting_fact_ids']))
+            contract['allowed_fact_ids'] = list(process_facts)
         else:
             contract['allowed_fact_ids'] = list(contract['supporting_fact_ids'])
     return {'RENDERING_CONTRACTS': contracts, 'KNOWLEDGE_GUIDANCE': guidance}
 
 
-RENDERING_INSTRUCTION = '''
-V36.4b渲染优先级：Semantic State > Rendering Contract > Knowledge Guidance > Raw Text。
-不重新判断状态。原始文本仅用于连续原文引用和自然表达。其他旧提示如与状态冲突，以本契约为准。
-analysis_points的目标点只需contract_id、goal_id、claim_type、text，非目标点省略goal_id；另保留既有kind/proofs原文证据协议。
-不要生成fact_ids、source_fields或其他机器元数据，程序会由状态和契约自动补齐。
-目标和下一步contract_id各最多一项；C_PROCESS允许承载多条不同过程事实，每条保留自己的文字、主体、状态和连续原文证据，程序将它们归入同一过程组，不强行合并句子。
-先覆盖全部required=true的契约，C_PROCESS至少一项且可分段。goal_id与claim_type必须精确选自该契约，非目标项不需要goal_id。
-每个目标独立一句，不得只写正确标签却表达另一目标。proofs仍用原字段原文；不要引用ID或状态作为证据，不需要把全部状态事实重复引一遍。
-最多4项，按RENDERING_OUTPUT_PLAN先输出全部必需契约，再补过程与下一步；不单独输出visit_context，过程分段不能占用目标所需名额。过程事实可用customer_fact；G1/G2用objective_result。
-每项尽量40字，最多55字。目标引用勿写成既成承诺；unresolved优先“当前记录尚未体现……”开头。不得接着写“客户未就此作出承诺”；只有原文明确否定或拒绝，才能表述对应否定事实。
-vague/goal_not_assessable表示目标本身缺少标准：说已填但缺少明确验收标准、无法准确判断达成程度，不纠正自评。
-self_assessment_not_assessable而目标assessable时，可以说当前记录对自评的支撑不足，建议补充相关事实后再校准自评；不得直接说自评错误、偏乐观或应改成部分达成/未达成。不要在用户文字里说“不纠正自评”等内部操作口令。
-placeholder必须说已填写但属于占位内容，不能说未具体填写；联系时间缺失另句陈述。
-共同约定必须承认双方已形成约定；R建议如有缺口只说明客户另外需要完成的独立行动尚未记录。
-禁止以客户反馈缺失否认已完成销售代收。建议与分析同样服从状态和Guidance。
-只输出完整JSON，内部绑定ID不得出现在text或suggestion中，用户只看到自然文本。
-'''
+RENDERING_INSTRUCTION = """
+契约只限定字段来源、原定目标和输出位置，不预先决定目标达成。按原文独立选择目标claim_type：supported、partially_supported、contradicted、unresolved或not_assessable。
+目标点使用对应contract_id和goal_id，其他点省略goal_id。每项目标最多一点，不补造或交换原目标。达成或明确反证必须引用过程/反馈原文；目标本身和自评不能证明已发生。
+每个required契约必须覆盖；C_PROCESS可分段，但不得占用目标所需名额。最多4点，不单独输出背景点，优先保留主要结果和限制。
+proofs引用指定字段连续原文，不生成fact_ids、source_fields等机器元数据，不在用户文本里显示内部ID或枚举。
+C_NEXT可引用过程/反馈中的明确未来计划，并保留计划状态；只有已写空的字段才可称未填写。
+建议具体性和业务达成分别判断，不能要求先补完成结果再判断原目标具体性。
+"""

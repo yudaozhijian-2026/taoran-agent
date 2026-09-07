@@ -39,6 +39,11 @@ class AgentStore:
         with self._connection:
             self._connection.executescript(
                 """
+                CREATE TABLE IF NOT EXISTS quick_check_recovery (
+                    check_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL,
+                    retention_until REAL NOT NULL, payload_json TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_quick_recovery_retention ON quick_check_recovery(retention_until);
                 CREATE TABLE IF NOT EXISTS precheck_runs (
                     check_id TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL,
@@ -209,6 +214,40 @@ class AgentStore:
                 f"DELETE FROM precheck_runs WHERE tenant_id = ? AND request_id IN ({placeholders})",
                 (tenant_id, *ids),
             )
+
+    def save_quick_check(self, check_id, tenant_id, retention_until, payload):
+        with self._lock, self._connection:
+            self._connection.execute(
+                "INSERT INTO quick_check_recovery VALUES (?,?,?,?) ON CONFLICT(check_id) DO UPDATE SET payload_json=excluded.payload_json, retention_until=excluded.retention_until WHERE tenant_id=excluded.tenant_id",
+                (check_id,tenant_id,retention_until,json.dumps(payload,ensure_ascii=False,separators=(',',':'))))
+
+    def get_quick_check(self, check_id):
+        from time import time
+        with self._lock, self._connection:
+            self._connection.execute('DELETE FROM quick_check_recovery WHERE retention_until < ?', (time(),))
+            row=self._connection.execute('SELECT payload_json FROM quick_check_recovery WHERE check_id=?',(check_id,)).fetchone()
+        return json.loads(row['payload_json']) if row else None
+
+    def find_quick_check(self, tenant_id, user_id, record_code, input_hash):
+        from time import time
+        with self._lock:
+            row=self._connection.execute("""
+                SELECT payload_json FROM quick_check_recovery WHERE tenant_id=? AND retention_until>?
+                AND json_extract(payload_json,'$.user_id')=? AND json_extract(payload_json,'$.record_code')=?
+                AND json_extract(payload_json,'$.input_hash')=?
+                ORDER BY json_extract(payload_json,'$.created_at') DESC LIMIT 1
+            """,(tenant_id,time(),user_id,record_code,input_hash)).fetchone()
+        return json.loads(row['payload_json']) if row else None
+
+    def latest_quick_check(self, tenant_id, record_code):
+        from time import time
+        with self._lock:
+            row=self._connection.execute("""
+                SELECT payload_json FROM quick_check_recovery WHERE tenant_id=? AND retention_until>?
+                AND json_extract(payload_json,'$.record_code')=?
+                ORDER BY json_extract(payload_json,'$.created_at') DESC LIMIT 1
+            """,(tenant_id,time(),record_code)).fetchone()
+        return json.loads(row['payload_json']) if row else None
 
     def get_feedback_artifact(
         self,

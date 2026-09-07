@@ -8,11 +8,13 @@ import re
 from .experimental_attribution import speaker_spans
 from .experimental_business_semantic_state import (
     build_business_state,
-    classify_field_state,
 )
 from .experimental_semantic_invariants import validate_invariants
 
-VERSION = "record-state-v36"
+VERSION = "record-state-v47"
+from .record_contract import GUIDANCE as CONTRACT_GUIDANCE
+from .record_contract import context_contract, field_claim_hits, goal_scope_hits
+
 FIELDS = {
     "expected_key_result": "goal", "purpose_code": "purpose",
     "other_purpose": "purpose", "process_description": "reported_event",
@@ -22,7 +24,7 @@ FIELDS = {
 }
 GUIDANCE = """\nrecord_state是程序按原字段建立的来源索引，不是额外业务事实。
 sources的id/field/start/end/quote不能改写；actor_hint、modality_hint仅来自明确措辞，不确定时保持unknown。
-field_states=not_recorded只代表未记录，不代表没有发生或未约定。允许自然使用“记录未体现”“未填写”。
+field_states使用not_received/empty/present。未收到不能说用户未填写；只有empty可以说未填写。缺少事实证据只能说记录未体现，不代表没有发生。
 goal.parts是目标文字分项，不是实际已达成项；逐项比较对应事实。暂无采购计划属于已获得的需求现状信息，不等于存在积极采购意向。
 信息确认类目标中，明确的否定回答也是确认结果：询问现阶段需求得到暂无计划，已经获得该需求状态；不得再写尚未确认需求。只有目标明确要求积极意向或采购承诺时，否定回答才不能满足该要求。复合目标需分别说已确认当前状态、下一步承诺在记录中尚未体现，不用后者否认前者。
 客户表示会转告的已发生事实是“作出表态”，转告是否完成仍未知。self_report只描述销售自评，不作为AI已核实结论。
@@ -36,8 +38,8 @@ def build(context):
     sources, states = [], {}
     for field, role in FIELDS.items():
         value = context.get(field)
-        states[field] = "not_recorded" if classify_field_state(field, value) == "missing" else "recorded"
-        if states[field] == "not_recorded":
+        states[field] = context_contract(context)["presence"].get(field, "not_received")
+        if states[field] != "present":
             sources.append({"id": f"s{len(sources)}", "field": field, "start": None,
                 "end": None, "quote": "", "role": role, "actor_hint": "record",
                 "modality_hint": "not_recorded", "negative_statement": False})
@@ -74,22 +76,23 @@ def build(context):
             {"id": f"g{i}", "text": part, "attainment": "unassessed"} for i, part in enumerate(parts)]}}
 
 
-def boundary_issues(text, context):
+def boundary_issues(text, context, *, target="analysis"):
     """Bounded shared checks, not a general Chinese inference engine."""
     state = build(context)
     issues = validate_invariants(text, state["BUSINESS_SEMANTIC_STATE"])
+    issues += [{"error_type": h["rule"], "field": h.get("field", "expected_key_result"), "text": h["quote"]} for h in field_claim_hits(text, context) + goal_scope_hits(text, context, target)]
     for sentence in re.split(r"[，,。！？；;\n]", text):
         if not sentence.strip():
             continue
         for field, label in (("next_contact_at", r"(?:下次)?联系(?:时间|日期)"),
                              ("expected_key_result", r"(?:本次)?(?:目标|关键结果)"),
                              ("process_description", r"过程(?:描述|记录)")):
-            if state["field_states"][field] == "recorded" and (
+            if state["field_states"][field] == "present" and (
                 re.search(label + r"(?:尚)?(?:未填写|未提供|为空|空白)", sentence)
                 or re.search(r"(?:未填写|未提供)(?:具体)?" + label, sentence)
             ):
                 issues.append({"error_type": "recorded_as_missing", "field": field, "text": sentence})
-        if (state["field_states"]["next_contact_at"] == "not_recorded"
+        if (state["field_states"]["next_contact_at"] != "present"
                 and re.search(r"(?:未|没有|尚未)(?:约定|安排|确定)[^。；]{0,8}(?:联系|拜访)?(?:时间|日期)", sentence)
                 and not re.search(r"(?:记录|填写|表单).{0,8}(?:未|没有|尚未)(?:体现|记录|显示)", sentence)):
             issues.append({"error_type": "missing_as_absent", "field": "next_contact_at", "text": sentence})
@@ -103,3 +106,5 @@ def boundary_issues(text, context):
             if (inferred or substituted or assessment) and not disclaimer:
                 issues.append({"error_type": "unknown_goal_assessed", "field": "expected_key_result", "text": sentence})
     return issues
+
+GUIDANCE += CONTRACT_GUIDANCE

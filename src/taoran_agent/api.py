@@ -46,8 +46,6 @@ from .connector import (
 from .evaluation_operations import router as evaluation_operations_router
 from .experimental_attribution import attribution_hints
 from .experimental_final_consistency import pending_finding_codes
-from .experimental_final_diagnostics import audit as experimental_final_audit
-from .experimental_final_diagnostics import category as experimental_failure_category
 from .experimental_quick_check_transport import ExperimentalQuickCheckNoStore
 from .experimental_rendering_binding import experimental_retry_allowed
 from .experimental_semantic_streaming import stream_semantic_preview
@@ -1478,8 +1476,11 @@ def _knowledge_model_context(
         "next_action_expected_result",
         "next_contact_at",
     ]
-    visit_snapshot: dict[str, Any] = {}
+    from .record_contract import visit_contract
+    visit_snapshot: dict[str, Any] = {"_record_contract": visit_contract(request.visit)}
     for field in visit_fields:
+        if visit_snapshot["_record_contract"]["presence"].get(field) == "not_received":
+            continue
         value = visit.get(field)
         if not experimental and isinstance(value, str) and field in text_limits:
             value = value[: text_limits[field]]
@@ -1555,7 +1556,7 @@ def _prune_knowledge_model_context(
     return {
         **context,
         "visit_snapshot": {
-            field: value for field, value in visit_snapshot.items() if field in allowed
+            field: value for field, value in visit_snapshot.items() if field in allowed or field == "_record_contract"
         },
     }
 
@@ -1617,7 +1618,7 @@ def _enhance_front_suggestions(
     )
     analysis_fields = (
         "customer_type_ii", "opportunity_stage", "visit_method", "is_appointment",
-        "opportunity_stages",
+        "opportunity_stages", "visit_date", "_record_contract",
         "purpose_code", "other_purpose",
         "expected_key_result", "process_description", "customer_feedback",
         "self_assessment", "deviation_reason", "next_action_purpose",
@@ -1673,7 +1674,7 @@ def _enhance_front_suggestions(
     )
     store = get_store(settings)
     if experimental:
-        cache_key = canonical_hash({"experimental_final_version": "semantic-rendering-advice-repair-20260907", "key": cache_key})
+        cache_key = canonical_hash({"experimental_final_version": "record-contract-goal-review-v47-20260907", "key": cache_key})
     persisted = store.get_feedback_artifact(
         response.tenant_id,
         _FRONT_WORDING_ARTIFACT_TYPE,
@@ -2257,11 +2258,56 @@ def _canonicalize_interactive_quick_check(
     return canonical_request, settings, record_code, input_hash, user_id, force
 
 
+def _quick_check_persist(task):
+    if not task.get('request_snapshot'):
+        return
+    from .quick_check_recovery import save
+    save(task, get_store(task.get('_settings')))
+
+
+def _quick_check_schedule(task, canonical_request, settings):
+    task['_settings'] = settings
+    task['request_snapshot'] = canonical_request.model_dump(mode='json')
+    task['attempt'] = task.get('attempt', 0) + 1
+    generation = task['attempt']
+    task['status'] = 'processing'
+    task['phase_timings'] = {}
+    task.pop('outcome', None)
+    task.pop('completed_at', None)
+    from .async_opinion import basic_feedback
+    task['basic_feedback'] = basic_feedback(canonical_request.visit)
+    task['preview_snapshot'] = {'text':task['basic_feedback'],'status':'completed','kind':'basic'}
+    task['events'] = Queue()
+    queued = monotonic()
+    _quick_check_persist(task)  # Durable source precedes dispatch.
+    def work():
+        task['phase_timings']['worker_queue_ms'] = int((monotonic()-queued)*1000)
+        _quick_check_persist(task)
+        return _quick_check_run(canonical_request, settings, task['events'])
+    task['future'] = _quick_check_executor.submit(work)
+    def completed(_future):
+        with _quick_check_lock:
+            if task.get('attempt') != generation:
+                return
+            outcome = _quick_check_resolve(task)
+            _quick_check_preview_snapshot(task)
+            _quick_check_persist(task)
+            preview = (outcome or {}).get('preview_future')
+            if preview is not None:
+                def preview_done(_):
+                    with _quick_check_lock:
+                        if task.get('attempt') == generation:
+                            _quick_check_preview_snapshot(task)
+                            _quick_check_persist(task)
+                preview.add_done_callback(preview_done)
+    task['future'].add_done_callback(completed)
+
+
 def _quick_check_cleanup(now: float) -> None:
     expired = [
         check_id
         for check_id, task in _quick_check_tasks.items()
-        if float(task["expires_at"]) <= now
+        if float(task["expires_at"]) <= now and task["future"].done()
     ]
     for check_id in expired:
         task = _quick_check_tasks.pop(check_id)
@@ -2274,42 +2320,12 @@ def _quick_check_run_final(
     canonical_request: PrecheckRequest,
     settings: Settings,
 ) -> dict[str, Any]:
-    """Run candidate-only Final presentation on validated model wording."""
-    started = monotonic()
-    request_id = canonical_request.context.request_id
-    try:
-        result = _execute_unified_button_feedback(canonical_request, settings, experimental=True)
-        final = UnifiedButtonPrecheckResponse.from_precheck(
-            result,
-            latency_ms=int((monotonic() - started) * 1000),
-        )
-        if final.semantic_review.status != "completed" or "本次拜访分析：" not in final.feedback_text:
-            diagnostics = experimental_final_audit(final.semantic_review)
-            _logger.warning("experimental_final_failed request_ref=%s diagnostics=%s", hashlib.sha256(request_id.encode()).hexdigest()[:16], json.dumps(diagnostics))
-            return {"status": "failed", "failure_category": experimental_failure_category(diagnostics["failure_reason"]),
-                    "full_feedback_ms": int((monotonic() - started) * 1000), "diagnostics": diagnostics}
-        return {
-            "status": "completed",
-            "feedback_text": final.feedback_text,
-            "final_feedback_hash": hashlib.sha256(final.feedback_text.encode()).hexdigest(),
-            "provider_first_byte_ms": result.semantic_review.model_first_byte_ms,
-            "provider_complete_ms": result.semantic_review.model_complete_ms,
-            "full_feedback_ms": int((monotonic() - started) * 1000),
-            "knowledge_cache_hit": result.semantic_review.cache_hit,
-            "model_attempt_count": result.semantic_review.attempt_count,
-            "diagnostics": experimental_final_audit(result.semantic_review),
-            "recovered_after_retry": result.semantic_review.recovered_after_retry,
-        }
-    except Exception as exc:  # noqa: BLE001 - report only the safe exception class
-        _logger.warning("interactive_quick_check_final_failed class=%s", type(exc).__name__)
-        return {"status": "failed", "failure_category": "final_service_error"}
-    finally:
-        # _execute_unified_button_feedback uses normal precheck infrastructure.
-        # Remove its transient request rows so unsaved browser text is not kept.
-        get_store(settings).delete_prechecks_by_request_ids(
-            canonical_request.context.tenant_id,
-            [request_id, f"{request_id}__enrichment"],
-        )
+    """AI work outlives the browser; semantics are observations, never gates."""
+    from .async_opinion import generate
+    reviewer=get_agent(settings).semantic_reviewer
+    if not isinstance(reviewer,ChatModelReviewer):
+        return {'status':'failed','failure_category':'model_unavailable','recoverable':True}
+    return generate(reviewer,canonical_request.visit,settings)
 
 
 def _quick_check_run(
@@ -2317,30 +2333,10 @@ def _quick_check_run(
     settings: Settings,
     events: Queue[dict[str, Any]],
 ) -> dict[str, Any]:
-    final_future = _quick_check_final_executor.submit(
-        _quick_check_run_final, canonical_request, settings,
-    )
-    def run_preview() -> dict[str, Any]:
-        try:
-            preview = stream_semantic_preview_v22(
-                settings,
-                canonical_request.visit,
-                lambda text: events.put({"type": "preview_delta", "text": text}),
-                interactive=True,
-            )
-        except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
-            preview = {"status": "failed", "failure_category": "preview_service_error"}
-        events.put({"type": "preview_complete", **preview})
-        return preview
-
-    preview_future = _quick_check_preview_executor.submit(run_preview)
-    try:
-        final = final_future.result()
-    except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
-        final = {"status": "failed", "failure_category": "final_service_error"}
-    # Final remains available immediately; Preview keeps running independently.
-    preview = preview_future.result() if preview_future.done() else {"status": "processing"}
-    return {"preview": preview, "final": final, "preview_future": preview_future}
+    # Basic feedback is deterministic and already persisted before dispatch.
+    # A single AI request replaces it; there is no second speculative model call.
+    return {'preview':{'status':'completed','kind':'basic'},
+        'final':_quick_check_run_final(canonical_request,settings)}
 
 
 def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
@@ -2396,6 +2392,11 @@ def _quick_check_task(check_id: str, stream_token: str) -> dict[str, Any]:
     with _quick_check_lock:
         _quick_check_cleanup(monotonic())
         task = _quick_check_tasks.get(check_id)
+        if task is None:
+            from .quick_check_recovery import load
+            task = load(check_id, get_store())
+            if task is not None:
+                _quick_check_tasks[check_id] = task
         launch_valid = task is not None and (
             monotonic() <= float(task["stream_token_expires_at"])
             and hmac.compare_digest(str(task["stream_token"]), stream_token)
@@ -2436,6 +2437,21 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
     preview_snapshot = _quick_check_preview_snapshot(task)
     result["preview_status"] = preview_snapshot["status"]
     result["preview_feedback_text"] = preview_snapshot["text"]
+    result['recoverable'] = task['status'] == 'failed' and bool(task.get('request_snapshot'))
+    result['attempt'] = task.get('attempt',1)
+    result['phase_timings'] = {**task.get('phase_timings',{}), **((outcome or {}).get('final',{}).get('phase_timings',{}))}
+    preview_timing = (outcome or {}).get('preview', {})
+    first, total = preview_timing.get('first_real_ai_text_ms'), preview_timing.get('semantic_complete_ms')
+    result['phase_timings']['preview'] = {'first_byte_wait_ms':first,
+        'generation_ms':max(0,total-first) if isinstance(first,int) and isinstance(total,int) else None,
+        'total_ms':total, 'status':preview_timing.get('status','processing')}
+    result['basic_feedback'] = task.get('basic_feedback','')
+    result['preview_kind'] = 'basic' if task.get('basic_feedback') else 'ai'
+    result['generated_at'] = (outcome or {}).get('final',{}).get('generated_at')
+    latest=get_store(task.get('_settings')).latest_quick_check(task['tenant_id'],task['record_code']) if task.get('request_snapshot') else None
+    result['superseded'] = bool(latest and latest.get('input_hash') != task['input_hash'] and latest.get('created_at','') > task.get('created_at',''))
+    result['retention_until'] = task.get('retention_until')
+    _quick_check_persist(task)
     return result
 
 
@@ -2454,13 +2470,22 @@ def create_interactive_quick_check_task(
     with _quick_check_lock:
         _quick_check_cleanup(now)
         existing_id = _quick_check_idempotency.get(key)
-        if existing_id and not force:
+        if not existing_id:
+            saved=get_store(settings).find_quick_check(key[0],key[1],record_code,input_hash)
+            if saved:
+                from .quick_check_recovery import load
+                restored=load(saved['check_id'],get_store(settings))
+                if restored:
+                    existing_id=restored['check_id'];_quick_check_tasks[existing_id]=restored
+                    _quick_check_idempotency[key]=existing_id
+        if existing_id:
             existing = _quick_check_tasks.get(existing_id)
             if existing is not None:
                 _quick_check_resolve(existing)
-            if existing is not None and existing["status"] != "failed":
+            if existing is not None:
                 if now > float(existing["stream_token_expires_at"]):
                     existing["stream_token"] = secrets.token_urlsafe(32)
+                    existing["stream_token_until"] = datetime.now(UTC).timestamp() + settings.quick_check_stream_token_ttl_seconds
                     existing["stream_token_expires_at"] = (
                         now + settings.quick_check_stream_token_ttl_seconds
                     )
@@ -2482,9 +2507,6 @@ def create_interactive_quick_check_task(
                     "form_revision": f"experimental-027-fresh-{check_id}",
                 }),
             })
-        future = _quick_check_executor.submit(
-            _quick_check_run, canonical_request, settings, events,
-        )
         sequence_key = (canonical_request.context.tenant_id, record_code)
         previous = [
             item["check_sequence"]
@@ -2501,12 +2523,14 @@ def create_interactive_quick_check_task(
             "check_sequence": max(previous, default=0) + 1,
             "status": "processing",
             "created_at": datetime.now(UTC).isoformat(),
-            "expires_at": now + settings.quick_check_task_ttl_seconds,
+            "expires_at": now + settings.quick_check_recovery_ttl_seconds,
+            "retention_until": datetime.now(UTC).timestamp() + settings.quick_check_recovery_ttl_seconds,
+            "stream_token_until": datetime.now(UTC).timestamp() + settings.quick_check_stream_token_ttl_seconds,
             "stream_token": stream_token,
             "stream_token_expires_at": now + settings.quick_check_stream_token_ttl_seconds,
             "events": events,
-            "future": future,
         }
+        _quick_check_schedule(task, canonical_request, settings)
         _quick_check_tasks[check_id] = task
         _quick_check_idempotency[key] = check_id
     return {
@@ -2624,6 +2648,8 @@ async def _interactive_quick_check_events(
                 yield _quick_check_sse("final_failed", {
                     "check_id": task["check_id"],
                     "code": final.get("failure_category", "final_service_error"),
+                    "recoverable": bool(task.get("request_snapshot")),
+                    "phase_timings": final.get("phase_timings",{}),
                 })
             else:
                 yield _quick_check_sse("final_completed", {
@@ -2631,6 +2657,7 @@ async def _interactive_quick_check_events(
                     "feedback_text": final["feedback_text"],
                     "final_feedback_hash": final["final_feedback_hash"],
                     "full_feedback_ms": final["full_feedback_ms"],
+                    "phase_timings": final.get("phase_timings",{}),
                     "stream_elapsed_ms": int((monotonic() - started) * 1000),
                     "knowledge_cache_hit": final.get("knowledge_cache_hit"),
                     "model_attempt_count": final.get("model_attempt_count"),
@@ -2665,6 +2692,26 @@ def get_interactive_quick_check_task(
     return _quick_check_task_response(_quick_check_task(check_id, stream_token))
 
 
+@app.post("/api/v1/quick-check/tasks/{check_id}/resume", status_code=202)
+def resume_interactive_quick_check_task(check_id: str, stream_token: str = Query(min_length=32,max_length=256)):
+    task = _quick_check_task(check_id, stream_token)
+    with _quick_check_lock:
+        result = _quick_check_task_response(task)
+        if result.get('superseded'):
+            raise HTTPException(status_code=409,detail='该任务属于旧记录版本，请分析最新记录')
+        if task['status'] != 'failed':
+            return result  # Idempotent for active and already-completed tasks.
+        if not task.get('request_snapshot'):
+            raise HTTPException(status_code=409, detail='原任务没有可恢复的输入快照')
+        task.setdefault('attempt_history',[]).append({'attempt':task.get('attempt',1),
+            'completed_at':task.get('completed_at'),'outcome':{k:v for k,v in task.get('outcome',{}).items() if k != 'preview_future'},
+            'phase_timings':result['phase_timings']})
+        original = PrecheckRequest.model_validate(task['request_snapshot'])
+        original.context.form_revision = f"v47-resume-{check_id}-{task.get('attempt',1)+1}"
+        _quick_check_schedule(task, original, get_settings())
+        return _quick_check_task_response(task)
+
+
 @app.post("/api/v1/quick-check/tasks/{check_id}/acknowledge")
 def acknowledge_interactive_quick_check_task(
     check_id: str,
@@ -2672,16 +2719,20 @@ def acknowledge_interactive_quick_check_task(
 ) -> dict[str, Any]:
     task = _quick_check_task(check_id, stream_token)
     result = _quick_check_task_response(task)
+    if result.get("superseded"):
+        raise HTTPException(status_code=409,detail="该意见属于旧记录版本，请打开最新版本的分析")
     if result["status"] != "completed" or "final_feedback_text" not in result:
         raise HTTPException(status_code=409, detail="AI检测尚未完成")
     if task.get("acknowledged_at") is None:
         task["acknowledged_at"] = datetime.now(UTC).isoformat()
+        _quick_check_persist(task)
     # Deliberately no Jiandaoyun writeback here.  The parent page owns the
     # current unsaved form and writes the field only after origin validation.
     return {
         "check_id": check_id,
         "status": "acknowledged",
         "acknowledged_at": task["acknowledged_at"],
+        "input_hash":task["input_hash"],"generated_at":result.get("generated_at"),
         "final_feedback_text": result["final_feedback_text"],
     }
 
@@ -2702,6 +2753,7 @@ def interactive_quick_check_page(
     with _quick_check_lock:
         if "session_token" not in task:
             task["session_token"] = secrets.token_urlsafe(32)
+        _quick_check_persist(task)
     public_path = (
         request.headers.get("X-Forwarded-Prefix")
         or settings.quick_check_public_path
@@ -2713,23 +2765,31 @@ def interactive_quick_check_page(
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>TAORAN AI检测</title>
 <style>body{font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#172033;background:#fff}main{padding:22px;max-width:760px;margin:auto}h1{font-size:20px;margin:0 0 12px}.status{color:#15803d;font-weight:700;margin:8px 0 16px}.panel{background:#f5f8fa;border-radius:10px;padding:14px;white-space:pre-wrap;line-height:1.65;min-height:68px}.label{font-weight:600;margin:16px 0 8px}button{margin-top:18px;background:#0b9e95;color:#fff;border:0;border-radius:7px;padding:10px 20px;font-size:15px;cursor:pointer}button[disabled]{opacity:.55;cursor:default}.error{color:#b42318}</style></head><body><main>
 <h1>TAORAN AI检测（experimental）</h1><p id="sourceNote">__TAORAN_SOURCE_NOTE__</p><div id="status" class="status">正在连接检测任务…</div>
-<div id="previewLabel" class="label">AI实时建议</div><div id="content" class="panel"></div>
+<button id="resume" hidden type="button">恢复本次分析</button><div id="timings" class="muted"></div>
+<div id="previewLabel" class="label">基础检查</div><div id="content" class="panel">__TAORAN_BASIC_HTML__</div><div id="versionNote" class="muted"></div>
 <section id="finalPanel" hidden><div class="label">AI反馈意见</div><div id="finalContent" class="panel"></div></section>
 <button id="ack" hidden disabled>已读并返回</button></main><script>
 const publicPath=__TAORAN_PUBLIC_PATH__;
 const sessionToken=__TAORAN_SESSION_TOKEN__;
+const taskVersion=__TAORAN_TASK_VERSION__;
+const initialBasic=__TAORAN_BASIC_JSON__;
 __TAORAN_INTERACTIVE_SCRIPT__
 </script></body></html>"""
-    html = html.replace("__TAORAN_PUBLIC_PATH__", public_path_json)
-    html = html.replace("__TAORAN_SESSION_TOKEN__", json.dumps(task["session_token"]))
-    html = html.replace("__TAORAN_INTERACTIVE_SCRIPT__", files("taoran_agent").joinpath(
-        "interactive_quick_check.js",
-    ).read_text(encoding="utf-8"))
-    html = html.replace("__TAORAN_SOURCE_NOTE__", (
-        "本次检测已保存记录。页面上尚未保存的修改不会被读取。"
-        if task.get("source") == "saved_current_record"
-        else "本次检测按钮传入的当前页面数据；不会自动保存记录。"
-    ))
+    from html import escape
+    basic=task.get('basic_feedback','基础检查：任务输入已接收，正在查询状态；本信息不是AI分析或正式评分。')
+    replacements={
+        '__TAORAN_BASIC_HTML__':escape(basic),
+        '__TAORAN_BASIC_JSON__':json.dumps(basic).replace('<','\\u003c'),
+        '__TAORAN_TASK_VERSION__':json.dumps(task['input_hash']),
+        '__TAORAN_PUBLIC_PATH__':public_path_json,
+        '__TAORAN_SESSION_TOKEN__':json.dumps(task['session_token']),
+        '__TAORAN_INTERACTIVE_SCRIPT__':files('taoran_agent').joinpath('interactive_quick_check.js').read_text(encoding='utf-8'),
+        '__TAORAN_SOURCE_NOTE__':('本次检测已保存记录。页面上尚未保存的修改不会被读取。'
+            if task.get('source')=='saved_current_record' else '本次检测按钮传入的当前页面数据；不会自动保存记录。'),
+    }
+    # One template pass: source text containing template markers stays data.
+    import re
+    html=re.sub('|'.join(map(re.escape,replacements)),lambda m:replacements[m.group()],html)
     return HTMLResponse(
         html,
         headers={
@@ -4475,7 +4535,7 @@ _EXPERIMENTAL_SEMANTIC_V22_REVIEW_UI = """<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>TAORAN V2.2 业务审核（实验）</title><style>
 body{margin:0;background:#f5f7fa;color:#172b4d;font:15px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{max-width:840px;margin:24px auto;padding:24px;background:#fff;border-radius:10px;box-shadow:0 8px 28px #091e4220}h1{font-size:20px;margin:0 0 12px}.tag{color:#8a5b00;background:#fff2cc;border-radius:4px;padding:2px 7px;font-size:12px}p{line-height:1.6}button{margin:5px 5px 5px 0;padding:8px 12px;border:0;border-radius:5px;background:#1f4e78;color:#fff;cursor:pointer}button:disabled{opacity:.6;cursor:wait}#status{padding:12px;background:#e9f2ff;border-radius:6px;margin:14px 0}.box{white-space:pre-wrap;line-height:1.7;min-height:76px;padding:12px;border-radius:6px}.preview{background:#fff9e8}.final{background:#eef7ff}.label{font-weight:600;margin:16px 0 6px}.review{display:grid;grid-template-columns:1fr 120px;gap:8px;max-width:460px;margin-top:18px}.review textarea{grid-column:1/3;min-height:54px}.hint{font-size:13px;color:#667085}</style></head>
-<body><main><h1>TAORAN V2.2 业务审核 <span class="tag">experimental</span></h1><p id="intro">每次仅展示批准的 Golden Case。Preview 只在当前页面显示；提交时只保存评分、短备注、哈希和耗时，不保存 Preview 正文，也不会写回简道云。</p><div id="cases"></div><div id="status">请选择案例后开始审核。</div><div class="label">AI实时建议（Preview）</div><div id="preview" class="box preview"></div><div class="label">AI检测最终结果（Final）</div><div id="final" class="box final"></div><form id="review" hidden><div class="review"><label>审核来源</label><select name="reviewer_type"><option value="human">人工业务审核</option><option value="ai_sales_expert">AI销售专家代理审核</option></select><label>Relevant（是否针对本条记录）</label><select name="relevant"><option>PASS</option><option>FAIL</option></select><label>Specific（是否结合实际情况）</label><select name="specific"><option>PASS</option><option>FAIL</option></select><label>Actionable（是否知道怎么改）</label><select name="actionable"><option>PASS</option><option>FAIL</option></select><label>Consistent with record（是否与记录一致）</label><select name="consistent_with_record"><option>PASS</option><option>FAIL</option></select><textarea name="reviewer_note" maxlength="240" placeholder="可选短备注（不保存 Preview 正文）"></textarea></div><button type="submit">提交审核并回写反馈</button><span id="saved" class="hint"></span></form></main>
+<body><main><h1>TAORAN V2.2 业务审核 <span class="tag">experimental</span></h1><p id="intro">每次仅展示批准的 Golden Case。Preview 只在当前页面显示；提交时只保存评分、短备注、哈希和耗时，不保存 Preview 正文，也不会写回简道云。</p><div id="cases"></div><div id="status">请选择案例后开始审核。</div><div class="label">AI实时分析（Preview）</div><div id="preview" class="box preview"></div><div class="label">AI检测最终结果（Final）</div><div id="final" class="box final"></div><form id="review" hidden><div class="review"><label>审核来源</label><select name="reviewer_type"><option value="human">人工业务审核</option><option value="ai_sales_expert">AI销售专家代理审核</option></select><label>Relevant（是否针对本条记录）</label><select name="relevant"><option>PASS</option><option>FAIL</option></select><label>Specific（是否结合实际情况）</label><select name="specific"><option>PASS</option><option>FAIL</option></select><label>Actionable（是否知道怎么改）</label><select name="actionable"><option>PASS</option><option>FAIL</option></select><label>Consistent with record（是否与记录一致）</label><select name="consistent_with_record"><option>PASS</option><option>FAIL</option></select><textarea name="reviewer_note" maxlength="240" placeholder="可选短备注（不保存 Preview 正文）"></textarea></div><button type="submit">提交审核并回写反馈</button><span id="saved" class="hint"></span></form></main>
 <script>
 const qs=new URLSearchParams(location.search),launchToken=qs.get('launch_token'),reviewLaunchToken=qs.get('review_launch_token'),currentRecord=qs.get('mode')==='current-record',expansionMode=qs.get('mode')==='expansion',credential=launchToken?`launch_token=${encodeURIComponent(launchToken)}`:reviewLaunchToken?`review_launch_token=${encodeURIComponent(reviewLaunchToken)}`:'',cases=expansionMode?Array.from({length:15},(_,i)=>`expansion_${String(i+1).padStart(2,'0')}`):['case_1','case_2','case_3'];let active=null;const list=document.querySelector('#cases'),status=document.querySelector('#status'),preview=document.querySelector('#preview'),final=document.querySelector('#final'),form=document.querySelector('#review'),saved=document.querySelector('#saved'),intro=document.querySelector('#intro');function disable(v){document.querySelectorAll('#cases button').forEach(b=>b.disabled=v)}
 async function start(url){disable(true);active=null;preview.textContent='';final.textContent='';form.hidden=true;saved.textContent='';form.querySelector('button[type="submit"]').disabled=false;status.textContent='AI正在分析当前拜访记录…';try{const res=await fetch(url,{method:'POST'});if(!res.ok)throw new Error();const task=await res.json();active=task;const source=new EventSource(`/api/v1/experimental/semantic-quick-check-v22/${encodeURIComponent(task.check_id)}/events?stream_token=${encodeURIComponent(task.stream_token)}`);source.addEventListener('feedback_delta',e=>{preview.textContent+=JSON.parse(e.data).text;});source.addEventListener('provisional_discarded',()=>{preview.textContent='本次实时建议未通过基础安全检查，已不展示。';});source.addEventListener('completed',e=>{const data=JSON.parse(e.data);final.textContent=data.feedback_text;status.textContent=currentRecord?'AI检测完成。四项均确认通过后，提交将回写真实AI反馈意见。':'AI检测完成，请根据两段内容完成审核。';form.hidden=false;source.close();disable(false);});source.addEventListener('error',()=>{status.textContent='本次实验检测未完成，请重新选择案例。';source.close();disable(false);});}catch{status.textContent='实验任务未能创建，请重新选择案例。';disable(false);}}

@@ -29,7 +29,7 @@ wheels = output / "wheels"
 wheels.mkdir(exist_ok=True)
 lock = tomllib.loads((root / "uv.lock").read_text())
 export = subprocess.run([
-    "/Users/ydzj/.local/bin/uv", "export", "--frozen", "--no-dev", "--no-emit-project",
+    shutil.which("uv") or "uv", "export", "--frozen", "--no-dev", "--no-emit-project",
     "--no-hashes", "--format", "requirements-txt",
 ], cwd=root, check=True, capture_output=True, text=True).stdout
 env = default_environment()

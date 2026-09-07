@@ -34,7 +34,10 @@ def valid_payload(r, v):
                              "decision_impact":"无法核验客户实际确认的设备数量", "gap_kind":"insufficient_specificity"},
             "suggestion": "请核实本次设备数量的客户反馈。", "field_paths": [e["field"]],
             "evidence": [{k: val for k, val in e.items() if k != "section"} | {"category": "system_fact"}]})
-    return {"sections": sections, "facts": {"key_result_quality_ok": False, "process_fact_based": False,
+    from taoran_agent.goal_contract import goals
+    rows = [{"goal_id": g.goal_id, "status": "insufficient_evidence", "evidence_ids": [],
+             "actor_ambiguity_material": False, "reason": "设备数量信息尚不能从记录确认。"} for g in goals(r._input(v, precheck=False))]
+    return {"goal_reviews": rows, "sections": sections, "facts": {"key_result_quality_ok": False, "process_fact_based": False,
         "purpose_achievement": "not_achieved", "next_action_logic_ok": False, "customer_consensus_met": False,
         "reason": "客户未提供设备数量。"}}
 
@@ -98,14 +101,12 @@ def test_real_validator_and_section_only_retry(tmp_path, monkeypatch, error):
     attempts = []
     try:
         parsed, _ = r._analyze(v, False, attempts)
-        assert calls == [False, True]
+        assert calls == [False]
         assert parsed.facts.purpose_achievement == original["facts"]["purpose_achievement"]
-        assert attempts[1].repair_targets == [target]
-        assert attempts[0].diagnostic_evidence_id
-        p = tmp_path / "nested/model-failure-evidence" / (attempts[0].diagnostic_evidence_id + ".json")
-        saved = json.loads(p.read_text())
-        assert saved["candidate"] == original
-        assert saved["details"]["field_error"]
+        assert parsed._semantic_gate['observation_count'] > 0
+        ref=parsed._semantic_gate['diagnostic_evidence_id']
+        saved=json.loads((tmp_path/'nested/model-failure-evidence'/(ref+'.json')).read_text())
+        assert saved['details']['policy']=='observe_only'
         for i, section in enumerate(parsed.sections):
             if i != index:
                 assert section.reason == original["sections"][i]["reason"]

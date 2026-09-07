@@ -25,7 +25,9 @@ def test_p3_collect_information_is_authoritative_and_not_a_kr_pass():
     assert quality_hits("拜访目的与P3阶段不匹配", "T", context)
     assert not quality_hits("关键结果未说明具体收集什么信息", "O_KR", context)
     assert not quality_hits("拜访目的与关键结果不一致", "O_KR", context)
-    assert quality_hits("客户反馈字段未传入", "R", context)
+    assert not quality_hits("客户反馈字段未传入", "R", context)
+    received = quality_context(visit(customer_feedback=""), load_taoran_knowledge_snapshot())
+    assert quality_hits("客户反馈字段未传入", "R", received)
 
 
 def test_optional_evidence_and_purpose_context_only_in_post_prompt(tmp_path):
@@ -35,7 +37,7 @@ def test_optional_evidence_and_purpose_context_only_in_post_prompt(tmp_path):
         post = r._messages(r._input(v,precheck=False),False)[0]["content"]
         assert '"required_evidence"' not in post
         assert '"optional_evidence_types"' in post
-        assert "authoritative_checks=" in post
+        assert "authoritative_checks的presence/calendar/purpose" in post
         front = r._messages(r._input(v,precheck=True),True)[0]["content"]
         assert "authoritative_checks=" not in front
     finally:

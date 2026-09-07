@@ -4,9 +4,9 @@ const vm = require('node:vm');
 const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const code = readFileSync('src/taoran_agent/interactive_quick_check.js', 'utf8');
-function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboard') {
-  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalContent','ack'].map(id => [id, {
-    textContent: id === 'previewLabel' ? 'AI实时建议' : '', hidden: id === 'ack' || id === 'finalPanel', disabled: id === 'ack',
+function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboard', initial = {}) {
+  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalContent','ack','resume','timings','versionNote'].map(id => [id, {
+    textContent: id === 'previewLabel' ? 'AI实时分析' : '', hidden: id === 'ack' || id === 'finalPanel', disabled: id === 'ack',
     addEventListener(name, fn) { this[name] = fn; },
   }]));
   let serial = 0, calls = 0;
@@ -19,7 +19,7 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
     emit(name, data) { this.handlers[name]({data: JSON.stringify(data)}); }
   }
   const context = {
-    URL, URLSearchParams, AbortController, publicPath: '/taoran-027', sessionToken: 'session-token',
+    ...initial, URL, URLSearchParams, AbortController, publicPath: '/taoran-027', sessionToken: 'session-token',
     location: {search: '?check_id=qc_test&stream_token=' + 'x'.repeat(32)},
     document: {referrer, querySelector: selector => nodes[selector.slice(1)]},
     window: {parent, addEventListener: (name, fn) => { handlers[name] = fn; }},
@@ -256,7 +256,7 @@ test('completed Preview remains unchanged after Final and return', async () => {
   assert.equal(h.nodes.finalPanel.hidden, true);
   h.source.emit('final_completed', {check_id: 'qc_test', feedback_text: '正式反馈'});
   assert.equal(h.nodes.content.textContent, '客户已明确采购计划。');
-  assert.equal(h.nodes.previewLabel.textContent, 'AI实时建议');
+  assert.equal(h.nodes.previewLabel.textContent, 'AI实时分析');
   assert.equal(h.nodes.finalContent.textContent, '正式反馈');
   assert.equal(h.nodes.finalPanel.hidden, false);
   await h.nodes.ack.click();
@@ -282,4 +282,61 @@ test('failed Final keeps Preview visible without allowing it to be returned', as
   assert.equal(h.nodes.finalPanel.hidden, true);
   assert.equal(h.nodes.ack.hidden, true);
   assert.equal(h.messages.length, 0);
+});
+
+
+test('failed task resumes same identity and keeps waiting and generation distinct', async () => {
+  const h = harness([
+    (url, options) => {
+      assert.match(url, /tasks\/qc_test\/resume\?stream_token=session-token$/);
+      assert.equal(options.method, 'POST');
+      return {ok:true,status:200,json:async()=>pending()};
+    }, completed()
+  ]);
+  h.source.emit('final_failed', {check_id:'qc_test', code:'timeout',recoverable:true,
+    phase_timings:{attempts:[{first_byte_wait_ms:1200,generation_ms:3800}]}});
+  assert.equal(h.nodes.resume.hidden, false);
+  assert.match(h.nodes.timings.textContent, /首字等待 1.2 秒，生成 3.8 秒/);
+  await h.nodes.resume.click();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.nodes.finalContent.textContent, '真实Final');
+  assert.equal(h.calls, 2);
+});
+
+
+test('offline page keeps truthful basic feedback and never claims AI success', async () => {
+  const h=harness([new Error('offline')],undefined,{initialBasic:'基础检查：原文摘录（非 AI 分析）',taskVersion:'version-a'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.match(h.nodes.content.textContent,/基础检查/);
+  assert.equal(h.nodes.previewLabel.textContent,'基础检查');
+  assert.equal(h.nodes.ack.hidden,true);
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.match(h.nodes.status.textContent,/原任务/);
+});
+
+test('completed AI replaces basic feedback only for the matching version', async () => {
+  const h=harness([{...completed(),input_hash:'version-a',generated_at:'2026-09-07T09:00:00Z'}],undefined,
+    {initialBasic:'基础检查',taskVersion:'version-a'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,'真实Final');
+  assert.equal(h.nodes.previewLabel.textContent,'AI实时分析');
+  assert.match(h.nodes.versionNote.textContent,/2026-09-07/);
+});
+
+test('late old result cannot replace basic feedback of a newer record', async () => {
+  const h=harness([{...completed(),input_hash:'old-version'}],undefined,
+    {initialBasic:'基础检查：新记录原文',taskVersion:'new-version'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,'基础检查：新记录原文');
+  assert.equal(h.nodes.ack.hidden,true);
+  assert.match(h.nodes.status.textContent,/版本不一致/);
+});
+
+test('superseded task cannot be returned as the latest result', async () => {
+  const h=harness([{...completed(),input_hash:'version-a',superseded:true}],undefined,
+    {initialBasic:'基础检查：历史记录',taskVersion:'version-a'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.previewLabel.textContent,'历史版本基础检查');
+  assert.equal(h.nodes.ack.hidden,true);
+  assert.notEqual(h.nodes.content.textContent,'真实Final');
 });

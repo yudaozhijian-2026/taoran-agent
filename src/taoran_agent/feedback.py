@@ -87,6 +87,7 @@ _POST_ADVICE_KEYWORDS = {
 }
 
 _FAILURE_REASON_LABELS = {
+    "post_semantic_audit_unavailable": "独立事实复核未完成，已保留失败详情，请重新分析；本次未发布正式结果",
     "timeout": "大模型调用超时",
     "authentication_failed": "大模型鉴权失败",
     "access_denied": "大模型访问被拒绝",
@@ -647,7 +648,7 @@ def build_evaluation_feedback(
     )
     if semantic_facts.provider.startswith("llm-") and not model_completed:
         reason = (
-            "模型对动作主体或完成状态的解释超出原文证据，已暂停正式评分回写"
+            "模型对动作主体、完成状态或原定目标的解释与原文证据冲突，已暂停正式评分回写"
             if semantic_facts.failure_reason == "post_fact_grounding_conflict"
             else
             "反馈与确定性规则或记录证据不一致，未通过校验"

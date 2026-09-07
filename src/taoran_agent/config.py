@@ -134,6 +134,7 @@ class Settings(BaseSettings):
     # not alter the established synchronous Jiandaoyun button until a tenant
     # has explicitly been placed in the rollout cohort.
     quick_check_interactive_enabled: bool = False
+    quick_check_recovery_ttl_seconds: int = Field(default=604800, ge=3600, le=2592000)
     quick_check_task_ttl_seconds: int = Field(default=1800, ge=300, le=3600)
     quick_check_stream_token_ttl_seconds: int = Field(default=120, ge=60, le=300)
     # Optional reverse-proxy prefix for an isolated candidate, for example

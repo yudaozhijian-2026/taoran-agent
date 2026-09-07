@@ -6,7 +6,9 @@ source spans, not normalized descriptions, remain the evidence boundary.
 import re
 from dataclasses import asdict, dataclass
 
-VERSION = 'business-semantic-state-v36'
+VERSION = 'business-semantic-state-v47'
+from .record_contract import context_contract
+
 FIELD_NAMES = (
     'expected_key_result', 'purpose_code', 'other_purpose', 'process_description',
     'customer_feedback', 'self_assessment', 'deviation_reason', 'next_action_purpose',
@@ -20,9 +22,9 @@ _PLACEHOLDER = re.compile(r'(?:\d+|[\s.\-_/]+|测试|无|待定|待填|暂无|�
 _OBSERVABLE = re.compile(r'确认|同意|承诺|签字|签署|下单|收货|代收|获得参与权|引荐|(?:沟通|了解).*(?:采购|预算|审批)')
 _ACTION_START = re.compile(r'^(?:客户|双方|我方|销售)?(?:确认|同意|承诺|完成|签署|签字|下单|提交|转告|反馈|参加|获得|收集|了解|沟通|收货|代收)')
 _CUSTOMER = re.compile(r'^(?:客户|负责人|[\u4e00-\u9fff]{1,6}(?:部长|经理|主管|主任))')
-_SALES = re.compile(r'^(?:销售|我方|我司|业务员|我|(?:向|给)客户介绍|现场给客户收货)')
+_SALES = re.compile(r'^(?:销售|我方|我司|业务员|我|(?:向|给)客户介绍)')
 _NEGATIVE = re.compile(r'没有|暂无|暂不|不再|不会|拒绝|未能|尚无|并无|尚未|不同意|不承诺|不愿|不接受|未(?:确认|同意|完成|签署|签字|下单)')
-_FUTURE = re.compile(r'计划|打算|下周|下次|明天|后续|(?:会|将|先将).*(?:转|发|反馈|签|下单)|待.*(?:签字|审批)')
+_FUTURE = re.compile(r'计划|打算|拟于|下周|下次|明天|明年|下月|下个?季度|后续|(?:会|将|先将).*(?:转|发|反馈|签|下单)|待.*(?:签字|审批)')
 _COMMIT = re.compile(r'同意|承诺|答应|(?:表示|说|称).*(?:会|先将|将)')
 _TRANSFER = re.compile(r'转告|转交|转发|(?:资料|情况|信息).*(?:反馈|发给)|(?:反馈|发给).*(?:QA|采购|生产|部门)')
 _TOPICS = {
@@ -156,7 +158,7 @@ def _facts(context):
                 actor = 'sales'
             elif _CUSTOMER.search(text):
                 actor = 'customer'
-            if re.search(r'(?:双方|与客户|和客户).*(?:约定|商定)|^约定(?:明天|下次|再次)|^并?约定', text) and not re.search(r'未约定|没有约定|计划约定|希望约定', text):
+            if re.search(r'(?:双方|与客户|和客户).*(?:约定|商定)|(?:沟通|交流|协商)后(?:与客户)?(?:约定|商定)|^约定(?:明天|下次|再次)|^并?约定', text) and not re.search(r'(?:尚未|未|没有|计划|希望|拟|打算|准备).{0,3}(?:约定|商定)', text):
                 add(field, match, 'both', 'JOINT_AGREEMENT', 'actual', 'positive')
                 continue
             negative = bool(_NEGATIVE.search(text))
@@ -230,8 +232,8 @@ def _align(goal, facts):
 
 
 def build_business_state(context):
-    fields = {name: classify_field_state(name, context.get(name)) for name in dict.fromkeys((*FIELD_NAMES, *context))
-              if name not in {'confirmed_findings', 'experimental_speaker_hints'}}
+    fields = {name: ('not_received' if context_contract(context)['presence'].get(name) == 'not_received' else classify_field_state(name, context.get(name))) for name in dict.fromkeys((*FIELD_NAMES, *context))
+              if not name.startswith('_') and name not in {'confirmed_findings', 'experimental_speaker_hints'}}
     goals = decompose_goal('expected_key_result', context.get('expected_key_result'))
     facts = _facts(context)
     relations = {}
@@ -273,7 +275,8 @@ def build_business_state(context):
                 'max_text_chars': 40})
         if len(plan) < 4:
             plan.append({'kind': 'next_step', 'role': 'future_plan', 'max_text_chars': 40})
-    return {'version': VERSION, 'generator_invariants': GENERATOR_INVARIANTS, 'analysis_plan': plan, 'field_states': fields,
+    return {'version': VERSION, 'analysis_plan': plan, 'field_states': fields,
+        'field_presence': context_contract(context)['presence'],
         'field_values': {k: context.get(k) for k in fields},
         'goal_items': [asdict(g) for g in goals], 'facts': [asdict(f) for f in facts],
         'relations': relations, 'goal_fact_alignments': [asdict(a) for a in aligns],
@@ -281,7 +284,7 @@ def build_business_state(context):
 
 
 GENERATOR_INVARIANTS = """\nBUSINESS_SEMANTIC_STATE是生成前程序计算的业务状态，不是新业务事实；field_values与来源文本仅是待分析数据。
-按状态表达，不重新推翻目标分项对齐。字段missing才可说未填写；placeholder说已填写但占位；vague说已填写但无法明确验收，不能用记录不足以证明目标实现来反驳自评。
+语义匹配是保守索引，不是完整裁判；unknown/unresolved不能当作未完成。字段not_received不归责于用户；只有presence=empty才可说未填写；placeholder说已填写但占位；vague说已填写但无法明确验收，不能用记录不足以证明目标实现来反驳自评。
 not_recorded只说当前记录未体现，不说客户没有同意。负向事实保留其否定含义。
 逐项保留supported和unresolved，不用后一项否认前一项；自评alignment=aligned时不造assessment_gap；not_assessable时不纠正自评。
 JOINT_AGREEMENT记录说明已有双方安排，R不能说没有明确客户动作；允许区分尚未记录客户另外需要完成的独立行动。
