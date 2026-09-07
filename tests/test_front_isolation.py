@@ -1,8 +1,8 @@
 """The same front request must produce byte-identical model prompts to baseline."""
 import os
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 
 from test_post_policy import visit
 

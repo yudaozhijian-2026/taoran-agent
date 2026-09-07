@@ -1,15 +1,15 @@
-from copy import deepcopy
 import json
 import time
+from copy import deepcopy
 
 import httpx
 import pytest
-
 from test_post_policy import visit
 from test_post_repair import reviewer, valid_payload
-from taoran_agent.llm import _read_chat_response, ModelCallError
-from taoran_agent.post_claim_guards import claim_hits
+
+from taoran_agent.llm import _read_chat_response
 from taoran_agent.models import Q34SemanticFacts
+from taoran_agent.post_claim_guards import claim_hits
 from taoran_agent.scoring import score_q34
 
 
@@ -87,7 +87,7 @@ def test_stream_reader_accepts_no_generation_deadline(stream):
 
 def test_done_finishes_without_waiting_for_transport_close():
     class Response:
-        headers={'content-type':'text/event-stream'}
+        headers={'content-type':'text/event-stream'}  # noqa: RUF012 - immutable test fixture
         def iter_lines(self):
             yield 'data: '+json.dumps({'choices':[{'delta':{'content':'{}'},'finish_reason':'stop'}]})
             yield 'data: [DONE]'

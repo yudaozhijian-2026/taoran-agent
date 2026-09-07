@@ -35,7 +35,6 @@ from pydantic import ValidationError
 
 from . import __version__
 from .agent import TaoranAgent
-from .evaluation_operations import router as evaluation_operations_router
 from .config import Settings, get_settings
 from .connector import (
     FieldTransferError,
@@ -44,14 +43,13 @@ from .connector import (
     load_jiandaoyun_mapping,
     mapped_jiandaoyun_value,
 )
+from .evaluation_operations import router as evaluation_operations_router
 from .experimental_attribution import attribution_hints
 from .experimental_final_consistency import pending_finding_codes
 from .experimental_final_diagnostics import audit as experimental_final_audit
 from .experimental_final_diagnostics import category as experimental_failure_category
 from .experimental_quick_check_transport import ExperimentalQuickCheckNoStore
 from .experimental_rendering_binding import experimental_retry_allowed
-from .post_review_policy import POLICY_VERSION
-from .source_revision import business_revision
 from .experimental_semantic_streaming import stream_semantic_preview
 from .experimental_semantic_streaming_v21 import stream_semantic_preview_v21
 from .experimental_semantic_streaming_v22 import stream_semantic_preview_v22
@@ -76,7 +74,6 @@ from .llm import (
     _wording_format_failure,
 )
 from .models import (
-    WritebackResult,
     EvaluationAccepted,
     EvaluationResponse,
     FeedbackMode,
@@ -98,7 +95,9 @@ from .models import (
     SemanticReview,
     Severity,
     UnifiedButtonPrecheckResponse,
+    WritebackResult,
 )
+from .post_review_policy import POLICY_VERSION
 from .precheck_engine import TaoranPrecheckEngine
 from .purpose_mapping import (
     PurposeMappingError,
@@ -111,6 +110,7 @@ from .rules import canonical_hash, normalized_text
 from .runtime import build_agent
 from .scoring_contract import TOTAL_RULE_VERSION
 from .semantic import SemanticReviewer
+from .source_revision import business_revision
 from .storage import AgentStore, IdempotencyConflictError
 from .tenant_admin import (
     JiandaoyunAuthorizationRequest,
@@ -674,8 +674,8 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
         _observe_pipeline("post_generation", phases, success=response.semantic_facts.status == "completed")
         _observe_pipeline("post_writeback", {"writeback": phases["writeback"]}, success=writeback.status == "succeeded")
     except Exception as exc:  # noqa: BLE001  # pragma: no cover - job boundary
-        from .post_review_policy import PostInputNotReceived
         from .post_quality import PostFeedbackConflict
+        from .post_review_policy import PostInputNotReceived
         error = str(exc) if isinstance(exc, PostInputNotReceived) else type(exc).__name__
         if isinstance(exc, PostFeedbackConflict):
             from .model_failure_evidence import save_failure_evidence
@@ -2336,7 +2336,7 @@ def _quick_check_run(
     preview_future = _quick_check_preview_executor.submit(run_preview)
     try:
         final = final_future.result()
-    except Exception:
+    except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
         final = {"status": "failed", "failure_category": "final_service_error"}
     # Final remains available immediately; Preview keeps running independently.
     preview = preview_future.result() if preview_future.done() else {"status": "processing"}
@@ -2352,7 +2352,7 @@ def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
         if future is not None and future.done():
             try:
                 outcome["preview"] = future.result()
-            except Exception:
+            except Exception:  # noqa: BLE001 - auxiliary Preview failure is isolated
                 outcome["preview"] = {"status": "failed"}
         while True:
             try:

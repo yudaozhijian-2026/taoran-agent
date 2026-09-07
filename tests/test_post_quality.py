@@ -1,14 +1,12 @@
-from copy import deepcopy
-import json
 import pytest
-
 from test_post_policy import visit
 from test_post_repair import reviewer, valid_payload
-from taoran_agent.post_quality import quality_context, quality_hits, PostFeedbackConflict
+
+from taoran_agent.feedback import _build_post_advice, build_evaluation_feedback
 from taoran_agent.knowledge import load_taoran_knowledge_snapshot
 from taoran_agent.llm import ModelCallError
 from taoran_agent.models import Q34SemanticFacts
-from taoran_agent.feedback import build_evaluation_feedback, _build_post_advice
+from taoran_agent.post_quality import PostFeedbackConflict, quality_context, quality_hits
 
 
 def test_summary_cannot_call_mismatched_self_assessment_objective():
