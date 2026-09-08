@@ -264,18 +264,7 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     suggestion_status = declared if complete_suggestions else "incomplete"
     if not complete_suggestions:
         observations.append({"rule": "suggestion_completeness", "scope": "items", "policy": "observe_only"})
-    audit = {"status": "deferred", "policy": "observe_only", "latency_ms": 0}
-    if complete_suggestions:
-        from ..semantic_observation_jobs import enqueue
-        try:
-            audit["observation_id"] = enqueue(reviewer.settings, {
-                "identity": getattr(reviewer, "observation_identity", {}),
-                "context": context, "candidate": payload.model_dump(), "analysis": analysis})
-            audit["status"] = "queued"
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception("observation enqueue failed")
-            audit["status"] = "enqueue_failed"
+    audit = {"status": "disabled", "policy": "observe_only", "latency_ms": 0}
     audit["findings"] = observations
     reference = save_failure_evidence(reviewer.settings, stage="frontend_semantic_observation",
         candidate=raw, details={"policy": "observe_only", "observations": observations,

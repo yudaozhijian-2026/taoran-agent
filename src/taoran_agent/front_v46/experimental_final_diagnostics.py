@@ -35,7 +35,7 @@ def safe_semantic_audit(value):
     if not isinstance(value, dict):
         return {}
     return {
-        "status": value.get("status") if value.get("status") in {"passed", "rejected", "unavailable", "observed", "queued", "deferred", "enqueue_failed"} else "unavailable",
+        "status": value.get("status") if value.get("status") in {"passed", "rejected", "unavailable", "observed", "queued", "deferred", "enqueue_failed", "disabled"} else "unavailable",
         "observation_id": value.get("observation_id"),
         "failed_checks": [code for code in value.get("failed_checks", []) if code in CHECKS][:6],
         "provider_failure": safe_code(value.get("provider_failure")),

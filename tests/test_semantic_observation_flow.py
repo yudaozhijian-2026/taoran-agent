@@ -58,6 +58,9 @@ def test_ambiguous_source_completes_with_scoped_confirmation_without_regeneratio
         result = reviewer.verbalize_knowledge_issues([{"code": "R"}], taoran_snapshot=snapshot, experimental=True)
         assert result.status == "completed" and result.semantic_observations
         assert len(calls) == 1 and snapshot == before
+        audit_result = result.model_attempts[0]["experimental_semantic_audit"]
+        assert audit_result["status"] == "disabled"
+        assert "observation_id" not in audit_result
         assert "历史AI说已经完成" not in json.dumps(calls, ensure_ascii=False)
         assert "影响：是否取得客户方案认可" in result.confirmation_items[0]
         request = PrecheckRequest(context=RequestContext(tenant_id="test", request_id="front", user_id="test"), visit=visit())

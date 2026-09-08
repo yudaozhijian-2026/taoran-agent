@@ -137,14 +137,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     recover_background_jobs()
     from .evaluation_operations import recover_operations
     recover_operations()
-    from .semantic_observation_jobs import start
-    observer = start(get_settings(), get_agent().semantic_reviewer) if isinstance(get_agent().semantic_reviewer, ChatModelReviewer) else None
-    try:
-        yield
-    finally:
-        if observer:
-            observer[0].set()
-            await asyncio.to_thread(observer[1].join, 25)
+    yield
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
@@ -816,8 +809,6 @@ def health() -> dict[str, Any]:
     monitoring = _monitoring_snapshot()
     if isinstance(agent.semantic_reviewer, ChatModelReviewer):
         monitoring["model_capacity"] = agent.semantic_reviewer.model_capacity.snapshot()
-    from .semantic_observation_jobs import snapshot as observation_snapshot
-    monitoring["semantic_observation"] = observation_snapshot(get_settings())
     return {
         "status": "ok",
         "agent": agent.catalog["agent_code"],
