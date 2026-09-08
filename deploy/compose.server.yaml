@@ -1,7 +1,7 @@
 name: dsm-taoran-v2
 services:
   agent:
-    image: dsm-taoran-v2:0.27.10rc2-live-preview-20260908-side
+    image: dsm-taoran-v2:0.27.11rc1-manual-saved-20260908
     pull_policy: never
     container_name: dsm-taoran-v2-agent
     restart: unless-stopped
