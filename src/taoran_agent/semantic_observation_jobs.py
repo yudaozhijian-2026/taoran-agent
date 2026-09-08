@@ -83,7 +83,8 @@ def run_one(settings, reviewer):
             suggestion_codes=[p['code'] for p in candidate.get('items', [])], repair_details=details)
     except Exception as exc:  # noqa: BLE001 - observation failure never touches delivered work
         failed = not bool(details.get('semantic_issues'))
-        audit['failure'] = type(exc).__name__
+        code = str(exc)
+        audit['failure'] = code if code.startswith('wording_experimental_audit_') else type(exc).__name__
     result = json.dumps({'policy': 'observe_only', 'audit': audit, 'details': details,
                          'identity': payload.get('identity', {}),
                          'source_hash': row['source_hash'], 'candidate_hash': row['candidate_hash']},
@@ -100,7 +101,7 @@ def start(settings, original_reviewer):
     from .front_v46 import bind
     reviewer = bind(original_reviewer)
     reviewer.observation_workload = 'backend'
-    reviewer.observation_max_attempts = 1
+    reviewer.observation_max_attempts = 2
     stop = Event()
     recover(settings)
 

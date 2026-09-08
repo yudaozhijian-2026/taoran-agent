@@ -104,3 +104,30 @@ def test_partial_advice_repair_keeps_analysis_and_queues_only_complete_candidate
         assert json.loads(calls[1]['messages'][1]['content'])['candidate_analysis'] == first_analysis
     finally:
         r.close()
+
+
+def test_background_format_repair_uses_failed_review_context(tmp_path):
+    import httpx
+
+    from taoran_agent.front_v46.reviewer import FrontReviewer
+    s, p = setup(tmp_path)
+    s = s.model_copy(update={'llm_model': 'test', 'llm_api_url': 'https://example.test/chat'})
+    from pydantic import SecretStr
+    s.llm_api_key = SecretStr('test')
+    calls = []
+    def provider(request):
+        calls.append(json.loads(request.content))
+        raw = {'checks': {}} if len(calls) == 1 else {
+            'checks': {k: True for k in ['actor', 'goal', 'temporal', 'coverage', 'consistency', 'assessment']}, 'issues': []}
+        return httpx.Response(200, json={'choices': [{'message': {'content': json.dumps(raw)}, 'finish_reason': 'stop'}]})
+    r = FrontReviewer(s, None, transport=httpx.MockTransport(provider))
+    r.observation_workload = 'backend'
+    r.observation_max_attempts = 2
+    try:
+        enqueue(s, p)
+        assert run_one(s, r)
+        assert len(calls) == 2
+        assert 'review_repair' in calls[1]['messages'][-1]['content']
+        assert snapshot(s)['completed'] == 1
+    finally:
+        r.close()
