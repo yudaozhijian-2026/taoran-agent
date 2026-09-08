@@ -35,6 +35,7 @@ from pydantic import ValidationError
 
 from . import __version__
 from .agent import TaoranAgent
+from .client_timings import ClientTimings
 from .config import Settings, get_settings
 from .connector import (
     FieldTransferError,
@@ -136,7 +137,14 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     recover_background_jobs()
     from .evaluation_operations import recover_operations
     recover_operations()
-    yield
+    from .semantic_observation_jobs import start
+    observer = start(get_settings(), get_agent().semantic_reviewer) if isinstance(get_agent().semantic_reviewer, ChatModelReviewer) else None
+    try:
+        yield
+    finally:
+        if observer:
+            observer[0].set()
+            await asyncio.to_thread(observer[1].join, 25)
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
@@ -808,6 +816,8 @@ def health() -> dict[str, Any]:
     monitoring = _monitoring_snapshot()
     if isinstance(agent.semantic_reviewer, ChatModelReviewer):
         monitoring["model_capacity"] = agent.semantic_reviewer.model_capacity.snapshot()
+    from .semantic_observation_jobs import snapshot as observation_snapshot
+    monitoring["semantic_observation"] = observation_snapshot(get_settings())
     return {
         "status": "ok",
         "agent": agent.catalog["agent_code"],
@@ -2011,6 +2021,8 @@ def _execute_knowledge_button_feedback(
     if isinstance(reviewer, ChatModelReviewer):
         from .front_v46 import bind
         reviewer = bind(reviewer)
+        reviewer.observation_identity = {"tenant_id": base_context.tenant_id,
+            "request_id": base_context.request_id, "record_version": base_context.form_revision}
     # Current product setting prioritizes data-grounded AI wording. There is no
     # short UI cutoff; only the provider connection safety limit remains.
     phase_latency_ms: dict[str, int] = {}
@@ -2966,6 +2978,7 @@ def resume_interactive_quick_check_task(check_id: str, stream_token: str = Query
 def acknowledge_interactive_quick_check_task(
     check_id: str,
     stream_token: str = Query(min_length=32, max_length=256),
+    client_timings: ClientTimings | None = None,
 ) -> dict[str, Any]:
     task = _quick_check_task(check_id, stream_token)
     result = _quick_check_task_response(task)
@@ -2973,6 +2986,10 @@ def acknowledge_interactive_quick_check_task(
         raise HTTPException(status_code=409,detail="该意见属于旧记录版本，请打开最新版本的分析")
     if result["status"] != "completed" or "final_feedback_text" not in result:
         raise HTTPException(status_code=409, detail="AI检测尚未完成")
+    if client_timings is not None:
+        task["client_timings"] = {"basis": "popup_open_relative_ms", "reported_by": "browser",
+                                  **client_timings.model_dump(exclude_none=True)}
+        _quick_check_persist(task)
     if task.get("acknowledged_at") is None:
         task["acknowledged_at"] = datetime.now(UTC).isoformat()
         _quick_check_persist(task)

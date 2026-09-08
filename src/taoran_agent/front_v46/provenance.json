@@ -24,5 +24,9 @@
   "method_ast_sha256": {
     "verbalize_knowledge_issues": "f915828dede29fdddf04afd48dfaa4f5da511f5df39f6c4efce8c9f09cd69179",
     "_experimental_audit_wording": "a1ec91781f68b8c1dfde3a678c6baf66bc646fb66a81b9be5f8b459722b620ff"
-  }
+  },
+  "runtime_overrides_ast_sha256": {
+    "_experimental_audit_wording": "a7151b7d3fc6d039a0ac642dcbbed1bee48f7904e9346dcdeb31b0e3cde1b599"
+  },
+  "runtime_override_reason": "0.27.16rc1: durable background observation uses backend capacity reservation and one contract attempt; original semantic rules retained."
 }

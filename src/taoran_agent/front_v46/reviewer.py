@@ -24,7 +24,7 @@ class FrontReviewer(CurrentReviewer):
         """
         started = monotonic()
         audit.update(version=experimental_semantic_audit.VERSION, status="unavailable")
-        lease = self.model_capacity.acquire("frontend", timeout)
+        lease = self.model_capacity.acquire(getattr(self, "observation_workload", "frontend"), timeout)
         try:
             if lease is None:
                 audit["provider_failure"] = "queue_timeout"
@@ -37,7 +37,7 @@ class FrontReviewer(CurrentReviewer):
                     "response_format": {"type": "json_object"}}
             if self.settings.llm_model.startswith("glm-"):
                 body["thinking"] = {"type": "disabled"}
-            for review_attempt in range(2):
+            for review_attempt in range(getattr(self, "observation_max_attempts", 2)):
                 remaining = timeout - (monotonic() - started)
                 if remaining <= 0:
                     raise ModelCallError("wording_experimental_audit_upstream")
@@ -72,7 +72,7 @@ class FrontReviewer(CurrentReviewer):
                     break
                 except (ValueError, TypeError, KeyError) as exc:
                     code = str(exc) if str(exc) in {"wording_experimental_audit_comparison", "wording_experimental_audit_truncated"} else "wording_experimental_audit_contract"
-                    if review_attempt:
+                    if review_attempt + 1 >= getattr(self, "observation_max_attempts", 2):
                         raise ModelCallError(code) from None
                     # Retry the review contract on the identical candidate, never
                     # regenerate business text in response to an invalid verdict.

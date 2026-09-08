@@ -197,7 +197,7 @@ def test_full_pipeline_semantic_findings_do_not_trigger_generation_repair(monkey
         assert len(requests) == 1
         assert "patch" not in calls
         assert result.visit_analysis
-        assert result.model_attempts[0]["experimental_semantic_audit"]["status"] == "observed"
+        assert result.model_attempts[0]["experimental_semantic_audit"]["status"] == "queued"
     finally:
         reviewer.close()
 

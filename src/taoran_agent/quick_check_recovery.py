@@ -25,6 +25,7 @@ FIELDS = (
     "attempt",
     "attempt_history",
     "phase_timings",
+    "client_timings",
     "preview_snapshot",
     "basic_feedback",
     "front_policy",

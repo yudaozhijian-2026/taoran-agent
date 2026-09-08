@@ -87,12 +87,14 @@ def configure(messages, schema):
 def generate(reviewer, items, snapshot, timeout_seconds):
     """One bounded shape repair; semantic observations never request a retry."""
     started = monotonic()
-    first = _generate_once(reviewer, items, snapshot, timeout_seconds)
+    holder = {}
+    first = _generate_once(reviewer, items, snapshot, timeout_seconds, holder=holder)
     incomplete = first.status == "completed" and first.suggestion_status == "incomplete"
     if not incomplete and first.failure_reason not in {"invalid_contract", "invalid_json", "output_truncated"}:
         return first
     second = _generate_once(reviewer, items, snapshot, timeout_seconds,
-                            repair_errors=first.validation_errors or [{"code": "suggestion_completeness" if incomplete else first.failure_reason}])
+                            repair_errors=first.validation_errors or [{"code": "suggestion_completeness" if incomplete else first.failure_reason}],
+                            repair_candidate=holder.get("candidate") if incomplete else None)
     if incomplete and second.status != "completed":
         second = first.model_copy(update={"model_attempts": second.model_attempts})
     attempts = first.model_attempts + [dict(a, attempt=2) for a in second.model_attempts]
@@ -101,7 +103,8 @@ def generate(reviewer, items, snapshot, timeout_seconds):
         "latency_ms": int((monotonic() - started) * 1000)})
 
 
-def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=None):
+def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=None,
+                   repair_candidate=None, holder=None):
     import json
 
     import httpx
@@ -116,11 +119,19 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
               if k != "confirmed_findings"}
     schema = Payload.model_json_schema()
     data = {"visit_analysis_context": source,
-            "field_specificity_checks": items,
+            "field_specificity_checks": [{**{k: v for k, v in i.items() if k not in {"source_fields", "reference_context"}},
+                "source_field_names": list(i.get("source_fields", {})),
+                "reference_field_names": list(i.get("reference_context", {}))} for i in items],
             "original_goals": [{"goal_id": g.goal_id, "source_text": g.source_text} for g in goals(source)]}
     messages = [{"role": "system", "content": ""},
                 {"role": "user", "content": json.dumps(data, ensure_ascii=False)}]
+    if repair_candidate is not None:
+        schema["properties"].pop("analysis_points", None)
+        schema["required"] = [k for k in schema.get("required", []) if k != "analysis_points"]
+        data["candidate_analysis"] = repair_candidate["analysis_points"]
     configure(messages, schema)
+    if repair_candidate is not None:
+        messages[0]["content"] += "只修复缺失的items、confirmations、suggestion_status和suggestion_reason，不返回analysis_points。candidate_analysis仅用于保持意见一致，不是新增事实，所有事实仍以最新原文为准。"
     if repair_errors:
         messages[0]["content"] += "上次输出结构无效。仅修复列出的格式要求，仍独立依据本次原文，不增加事实。"
         data["format_errors"] = repair_errors
@@ -154,6 +165,11 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             raise ModelCallError("output_truncated")
         raw = choice["message"]["content"]
         raw = _load_model_json(raw)
+        if repair_candidate is not None:
+            raw = {**repair_candidate, **{k: v for k, v in raw.items() if k in {
+                "items", "confirmations", "suggestion_status", "suggestion_reason"}}}
+        if holder is not None:
+            holder["candidate"] = raw
         lease.release()
         lease = None  # The independent observer uses its own shared capacity lease.
         return complete(reviewer, raw, [str(i["code"]) for i in items],
@@ -248,20 +264,19 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     suggestion_status = declared if complete_suggestions else "incomplete"
     if not complete_suggestions:
         observations.append({"rule": "suggestion_completeness", "scope": "items", "policy": "observe_only"})
-    audit, details = {}, {}
-    try:
-        reviewer._experimental_audit_wording(
-            context, analysis, [p.suggestion for p in payload.items],
-            reviewer.settings.frontend_model_timeout_seconds, audit,
-            analysis_points=[(p.kind, p.text, []) for p in payload.analysis_points],
-            suggestion_codes=[p.code for p in payload.items], repair_details=details,
-        )
-    except Exception:  # noqa: BLE001 - observer failure must not fail generation
-        observations.append({"rule": "independent_semantic_disagreement" if details.get("semantic_issues") else "observer_unavailable", "scope": "review",
-                             "policy": "observe_only"})
-    observations += [{**item, "scope": item.get("target", "review"), "policy": "observe_only"}
-                     for item in details.get("semantic_issues", [])]
-    audit.update(status="observed", policy="observe_only", findings=observations)
+    audit = {"status": "deferred", "policy": "observe_only", "latency_ms": 0}
+    if complete_suggestions:
+        from ..semantic_observation_jobs import enqueue
+        try:
+            audit["observation_id"] = enqueue(reviewer.settings, {
+                "identity": getattr(reviewer, "observation_identity", {}),
+                "context": context, "candidate": payload.model_dump(), "analysis": analysis})
+            audit["status"] = "queued"
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("observation enqueue failed")
+            audit["status"] = "enqueue_failed"
+    audit["findings"] = observations
     reference = save_failure_evidence(reviewer.settings, stage="frontend_semantic_observation",
         candidate=raw, details={"policy": "observe_only", "observations": observations,
                                "source_hash": context.get("_record_contract", {}).get("source_hash")})

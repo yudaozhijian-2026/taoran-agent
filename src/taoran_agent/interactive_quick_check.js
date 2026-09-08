@@ -9,6 +9,16 @@ const ack = document.querySelector('#ack');
 const resume = document.querySelector('#resume');
 const returnNotice = document.querySelector('#returnNotice');
 let feedbackHandedOff = false;
+const viewStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
+const clientTimings = {};
+function markTiming(key) {
+  if (clientTimings[key] === undefined) clientTimings[key] = Math.max(0, Math.round(
+    (typeof performance !== 'undefined' ? performance.now() : Date.now()) - viewStarted));
+}
+function markVisible(key) {
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(() => markTiming(key)));
+  else markTiming(key);
+}
 // Refresh/reopen retains the redeemed task capability, not an expired launch URL.
 if (typeof history !== 'undefined') {
   params.set('stream_token', token);
@@ -24,7 +34,7 @@ const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
 const restartText = '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候；可关闭后重新打开查看进度。';
-const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908'].includes(frontPolicy);
+const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 if (versionedMode) {
   content.textContent = waitingText;
@@ -59,9 +69,11 @@ function previewSnapshot(text, state) {
   if (typeof text === 'string') {
     // An empty snapshot can retract an incomplete attempt before format retry.
     content.textContent = text || (dualMode ? waitingText : '');
+    if (text.trim()) markVisible('first_text_visible_ms');
     if (dualMode && previewLabel) previewLabel.textContent = 'AI实时分析';
   }
   previewSucceeded = state === 'completed';
+  if (previewSucceeded) markVisible('preview_complete_visible_ms');
   previewComplete = state === 'completed' || state === 'unavailable' || state === 'failed';
   if ((!content.textContent || content.textContent === waitingText) && previewComplete) content.textContent = '正在生成完整分析。';
   if (finalDone && !finalFailed) {
@@ -91,6 +103,8 @@ function finish(text) {
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   finalDone = true;
   finalContent.textContent = text;
+  markVisible('final_visible_ms');
+  markVisible('first_text_visible_ms');
   if (versionedMode && (!dualMode || (previewComplete && !previewSucceeded))) {
     content.textContent = text;
     if (previewLabel) previewLabel.textContent = 'AI实时分析';
@@ -127,6 +141,7 @@ async function poll() {
     if (response.status === 401 || response.status === 403) return fail('access_denied', undefined, true);
     if (!response.ok) throw new Error('retryable_transport');
     const task = response.data;
+    markTiming('task_received_ms');
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
     previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
@@ -170,11 +185,13 @@ source.addEventListener('preview_delta', event => decode(event, data => {
   if (!previewComplete && typeof data.text === 'string') {
     if (content.textContent === waitingText) content.textContent = '';
     content.textContent += data.text;
+    if (data.text.trim()) markVisible('first_text_visible_ms');
   }
 }));
 source.addEventListener('preview_complete', event => decode(event, data => {
   previewComplete = true;
   previewSucceeded = data.status === 'completed';
+  if (previewSucceeded) markVisible('preview_complete_visible_ms');
   if (!finalDone) stage(data.status === 'unavailable'
     ? '实时预览暂不可用，仍在生成最终检测结果…'
     : 'AI实时分析已生成，正在完成最终检测…'
@@ -240,7 +257,9 @@ ack.addEventListener('click', async () => {
   ack.disabled = true;
   const generation = lifecycle;
   try {
-    const response = await requestJson(base + '/acknowledge' + query, {method: 'POST'});
+    markTiming('acknowledge_clicked_ms');
+    const response = await requestJson(base + '/acknowledge' + query, {method: 'POST',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify(clientTimings)});
     if (disposed || generation !== lifecycle) return;
     if (!response.ok) throw new Error('ack_failed');
     const data = response.data;

@@ -34,6 +34,7 @@ def test_historical_front_methods_match_verified_v46_source():
     for name, digest in manifest["method_ast_sha256"].items():
         if name == "verbalize_knowledge_issues":
             continue  # Generation policy is now explicitly observation-only; audit remains V4.6.
+        digest = manifest.get("runtime_overrides_ast_sha256", {}).get(name, digest)
         tree = ast.parse(textwrap.dedent(inspect.getsource(getattr(FrontReviewer, name))))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and "Independent candidate-only verifier" in node.value:
