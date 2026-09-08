@@ -202,7 +202,7 @@ def test_old_version_late_result_cannot_be_acknowledged(recovery, monkeypatch):
     assert denied.value.status_code == 409
 
 
-def test_first_html_contains_basic_feedback_and_escapes_untrusted_template_markers(
+def test_first_html_shows_waiting_without_saved_basic_feedback(
     recovery, monkeypatch
 ):
     settings, _store, _request, task = recovery
@@ -215,7 +215,9 @@ def test_first_html_contains_basic_feedback_and_escapes_untrusted_template_marke
         Request({"type": "http", "headers": []}), task["check_id"], "b" * 40
     )
     html = response.body.decode()
-    assert "&lt;script&gt;alert(1)&lt;/script&gt;__TAORAN_SESSION_TOKEN__" in html
+    assert "alert(1)" not in html and "__TAORAN_SESSION_TOKEN__" not in html
     assert html.count("<script>") == 1
-    assert "基础检查" in html and "const taskVersion=" in html
+    assert "基础检查" not in html and "const taskVersion=" in html
+    assert "AI正在分析" in html
+    assert 'id="timings"' not in html and 'id="versionNote"' not in html
     assert response.headers["referrer-policy"] == "no-referrer"

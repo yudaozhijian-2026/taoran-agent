@@ -296,7 +296,7 @@ test('failed task resumes same identity and keeps waiting and generation distinc
   h.source.emit('final_failed', {check_id:'qc_test', code:'timeout',recoverable:true,
     phase_timings:{attempts:[{first_byte_wait_ms:1200,generation_ms:3800}]}});
   assert.equal(h.nodes.resume.hidden, false);
-  assert.match(h.nodes.timings.textContent, /首字等待 1.2 秒，生成 3.8 秒/);
+  assert.equal(h.nodes.timings.textContent, '');
   await h.nodes.resume.click();
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.nodes.finalContent.textContent, '真实Final');
@@ -304,30 +304,31 @@ test('failed task resumes same identity and keeps waiting and generation distinc
 });
 
 
-test('offline page keeps truthful basic feedback and never claims AI success', async () => {
+test('offline page keeps truthful waiting status and never claims AI success', async () => {
   const h=harness([new Error('offline')],undefined,{initialBasic:'基础检查：原文摘录（非 AI 分析）',taskVersion:'version-a'});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.match(h.nodes.content.textContent,/基础检查/);
-  assert.equal(h.nodes.previewLabel.textContent,'基础检查');
+  assert.match(h.nodes.content.textContent,/AI正在分析/);
+  assert.doesNotMatch(h.nodes.content.textContent,/基础检查|原文摘录/);
+  assert.equal(h.nodes.previewLabel.textContent,'AI实时分析');
   assert.equal(h.nodes.ack.hidden,true);
   assert.equal(h.nodes.finalPanel.hidden,true);
   assert.match(h.nodes.status.textContent,/原任务/);
 });
 
-test('completed AI replaces basic feedback only for the matching version', async () => {
+test('completed AI replaces waiting status only for the matching version', async () => {
   const h=harness([{...completed(),input_hash:'version-a',generated_at:'2026-09-07T09:00:00Z'}],undefined,
     {initialBasic:'基础检查',taskVersion:'version-a'});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.content.textContent,'真实Final');
   assert.equal(h.nodes.previewLabel.textContent,'AI实时分析');
-  assert.match(h.nodes.versionNote.textContent,/2026-09-07/);
+  assert.equal(h.nodes.versionNote.textContent, '');
 });
 
-test('late old result cannot replace basic feedback of a newer record', async () => {
+test('late old result cannot replace the waiting status of a newer record', async () => {
   const h=harness([{...completed(),input_hash:'old-version'}],undefined,
     {initialBasic:'基础检查：新记录原文',taskVersion:'new-version'});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.nodes.content.textContent,'基础检查：新记录原文');
+  assert.match(h.nodes.content.textContent,/AI正在分析/);
   assert.equal(h.nodes.ack.hidden,true);
   assert.match(h.nodes.status.textContent,/版本不一致/);
 });
@@ -336,16 +337,17 @@ test('superseded task cannot be returned as the latest result', async () => {
   const h=harness([{...completed(),input_hash:'version-a',superseded:true}],undefined,
     {initialBasic:'基础检查：历史记录',taskVersion:'version-a'});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.nodes.previewLabel.textContent,'历史版本基础检查');
+  assert.equal(h.nodes.previewLabel.textContent,'历史版本');
   assert.equal(h.nodes.ack.hidden,true);
   assert.notEqual(h.nodes.content.textContent,'真实Final');
 });
 
 const restored = {initialBasic:'基础检查：记录原文',taskVersion:'version-a',frontPolicy:'front-v46-restored-20260908'};
-test('restored V4.6 retains basic feedback offline and never claims AI success', async () => {
+test('restored V4.6 retains waiting status offline and never claims AI success', async () => {
   const h=harness([new Error('offline')],undefined,restored);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.nodes.content.textContent,restored.initialBasic);
+  assert.match(h.nodes.content.textContent,/AI正在分析|未生成成功/);
+  assert.doesNotMatch(h.nodes.content.textContent,/基础检查|记录原文/);
   assert.equal(h.nodes.ack.hidden,true);
 });
 test('restored V4.6 displays independent Preview and Final after reopening', async () => {
@@ -363,7 +365,8 @@ test('restored V4.6 Final first remains usable while Preview completes later', a
   ],undefined,restored);
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.finalContent.textContent,'真实Final');
-  assert.equal(h.nodes.content.textContent,restored.initialBasic);
+  assert.match(h.nodes.content.textContent,/AI正在分析|未生成成功/);
+  assert.doesNotMatch(h.nodes.content.textContent,/基础检查|记录原文/);
   await h.tick(1000);
   assert.equal(h.nodes.content.textContent,'稍后完成的实时意见');
   assert.equal(h.nodes.finalContent.textContent,'真实Final');
@@ -371,7 +374,8 @@ test('restored V4.6 Final first remains usable while Preview completes later', a
 test('restored V4.6 does not display either opinion for an old input version', async () => {
   const h=harness([{...completed(),input_hash:'old-version',preview_feedback_text:'旧意见',preview_status:'completed'}],undefined,restored);
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.nodes.content.textContent,restored.initialBasic);
+  assert.match(h.nodes.content.textContent,/AI正在分析|未生成成功/);
+  assert.doesNotMatch(h.nodes.content.textContent,/基础检查|记录原文/);
   assert.equal(h.nodes.finalPanel.hidden,true);
   assert.equal(h.nodes.ack.hidden,true);
 });

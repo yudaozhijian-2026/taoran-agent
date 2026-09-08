@@ -2937,23 +2937,18 @@ def interactive_quick_check_page(
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>TAORAN AI检测</title>
 <style>body{font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#172033;background:#fff}main{padding:22px;max-width:760px;margin:auto}h1{font-size:20px;margin:0 0 12px}.status{color:#15803d;font-weight:700;margin:8px 0 16px}.panel{background:#f5f8fa;border-radius:10px;padding:14px;white-space:pre-wrap;line-height:1.65;min-height:68px}.label{font-weight:600;margin:16px 0 8px}button{margin-top:18px;background:#0b9e95;color:#fff;border:0;border-radius:7px;padding:10px 20px;font-size:15px;cursor:pointer}button[disabled]{opacity:.55;cursor:default}.error{color:#b42318}</style></head><body><main>
 <h1>TAORAN AI检测（experimental）</h1><p id="sourceNote">__TAORAN_SOURCE_NOTE__</p><div id="status" class="status">正在连接检测任务…</div>
-<button id="resume" hidden type="button">恢复本次分析</button><div id="timings" class="muted"></div>
-<div id="previewLabel" class="label">基础检查</div><div id="content" class="panel">__TAORAN_BASIC_HTML__</div><div id="versionNote" class="muted"></div>
+<button id="resume" hidden type="button">恢复本次分析</button>
+<div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel">AI正在分析，请稍候；可关闭后重新打开查看进度。</div>
 <section id="finalPanel" hidden><div class="label">AI反馈意见</div><div id="finalContent" class="panel"></div></section>
 <button id="ack" hidden disabled>已读并返回</button></main><script>
 const publicPath=__TAORAN_PUBLIC_PATH__;
 const sessionToken=__TAORAN_SESSION_TOKEN__;
 const taskVersion=__TAORAN_TASK_VERSION__;
-const initialBasic=__TAORAN_BASIC_JSON__;
 const frontPolicy=__TAORAN_FRONT_POLICY__;
 __TAORAN_INTERACTIVE_SCRIPT__
 </script></body></html>"""
-    from html import escape
-    basic=task.get('basic_feedback','基础检查：任务输入已接收，正在查询状态；本信息不是AI分析或正式评分。')
     replacements={
         '__TAORAN_FRONT_POLICY__':json.dumps(task.get('front_policy')),
-        '__TAORAN_BASIC_HTML__':escape(basic),
-        '__TAORAN_BASIC_JSON__':json.dumps(basic).replace('<','\\u003c'),
         '__TAORAN_TASK_VERSION__':json.dumps(task['input_hash']),
         '__TAORAN_PUBLIC_PATH__':public_path_json,
         '__TAORAN_SESSION_TOKEN__':json.dumps(task['session_token']),

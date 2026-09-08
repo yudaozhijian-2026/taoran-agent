@@ -4,22 +4,11 @@ const checkId = params.get('check_id'), token = sessionToken;
 const status = document.querySelector('#status'), content = document.querySelector('#content');
 const finalPanel = document.querySelector('#finalPanel'), finalContent = document.querySelector('#finalContent');
 const ack = document.querySelector('#ack');
-const resume = document.querySelector('#resume'), timings = document.querySelector('#timings');
+const resume = document.querySelector('#resume');
 // Refresh/reopen retains the redeemed task capability, not an expired launch URL.
 if (typeof history !== 'undefined') {
   params.set('stream_token', token);
   history.replaceState(null, '', location.pathname + '?' + params.toString());
-}
-function showTimings(value) {
-  if (!timings || !value) return;
-  const parts = [];
-  if (Number.isFinite(value.worker_queue_ms)) parts.push('任务排队 ' + (value.worker_queue_ms / 1000).toFixed(1) + ' 秒');
-  for (const [i, item] of (value.attempts || []).entries()) {
-    const measures = [['model_queue_ms','模型排队'],['first_byte_wait_ms','首字等待'],['generation_ms','生成'],['semantic_review_ms','复核']];
-    const text = measures.filter(([key]) => Number.isFinite(item[key])).map(([key,label]) => label + ' ' + (item[key]/1000).toFixed(1) + ' 秒');
-    if (text.length) parts.push('第 ' + (i+1) + ' 次：' + text.join('，'));
-  }
-  timings.textContent = parts.join('；');
 }
 const base = publicPath + '/api/v1/quick-check/tasks/' + encodeURIComponent(checkId);
 const query = '?stream_token=' + encodeURIComponent(token);
@@ -28,27 +17,25 @@ let disposed = false, returnTimer, lifecycle = 0;
 let previewComplete = false;
 let finalDone = false, finalFailed = false;
 const activeRequests = new Set();
-const basicMode = typeof initialBasic === 'string';
+const versionedMode = typeof taskVersion === 'string';
+const waitingText = 'AI正在分析，请稍候；可关闭后重新打开查看进度。';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908'].includes(frontPolicy);
-const versionNode = document.querySelector('#versionNote');
 const previewLabel = document.querySelector('#previewLabel');
-if (basicMode) {
-  content.textContent = initialBasic;
+if (versionedMode) {
+  content.textContent = waitingText;
   previewComplete = !dualMode;
-  if (previewLabel) previewLabel.textContent = '基础检查';
-  if (versionNode) versionNode.textContent = '记录版本：' + taskVersion.slice(0,12);
+  if (previewLabel) previewLabel.textContent = 'AI实时分析';
 }
 function applyVersion(task) {
-  if (!basicMode) return true;
+  if (!versionedMode) return true;
   if (task.input_hash !== taskVersion) { fail('record_version_mismatch','结果与当前记录版本不一致，已停止展示。',true); return false; }
   if (task.superseded) {
-    content.textContent = initialBasic;
+    content.textContent = waitingText;
     finalPanel.hidden = true;
-    if (previewLabel) previewLabel.textContent = '历史版本基础检查';
+    if (previewLabel) previewLabel.textContent = '历史版本';
     fail('superseded','记录已产生新版本，请从最新记录重新打开分析。',true);
     return false;
   }
-  if (versionNode) versionNode.textContent = '记录版本：' + taskVersion.slice(0,12) + (task.generated_at ? ' · AI生成时间：' + task.generated_at : ' · AI后台生成中');
   return true;
 }
 const allowedParents = new Set(['https://www.jiandaoyun.com', 'https://jiandaoyun.com']);
@@ -63,13 +50,13 @@ function settle() {
   if (finalDone && previewComplete) { done = true; stopTransport(); }
 }
 function previewSnapshot(text, state) {
-  if ((basicMode && !dualMode) || previewComplete) return;
+  if ((versionedMode && !dualMode) || previewComplete) return;
   if (typeof text === 'string' && (text || !dualMode)) {
     content.textContent = text;
     if (dualMode && previewLabel) previewLabel.textContent = 'AI实时分析';
   }
   previewComplete = state === 'completed' || state === 'unavailable' || state === 'failed';
-  if (!content.textContent && previewComplete) content.textContent = '本次AI实时分析未生成成功。';
+  if ((!content.textContent || content.textContent === waitingText) && previewComplete) content.textContent = '本次AI实时分析未生成成功。';
   if (finalDone && !finalFailed) stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
   settle();
 }
@@ -90,7 +77,7 @@ function finish(text) {
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   finalDone = true;
   finalContent.textContent = text;
-  if (basicMode && !dualMode) {
+  if (versionedMode && !dualMode) {
     content.textContent = text;
     if (previewLabel) previewLabel.textContent = 'AI实时分析';
     finalPanel.hidden = true;
@@ -126,15 +113,14 @@ async function poll() {
     if (response.status === 401 || response.status === 403) return fail('access_denied', undefined, true);
     if (!response.ok) throw new Error('retryable_transport');
     const task = response.data;
-    showTimings(task.phase_timings);
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
     previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
     if (task.status === 'completed') finish(task.final_feedback_text);
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);
-    else stage(dualMode && previewComplete ? '实时分析已生成，最终反馈仍在后台生成，可重新打开查看。' : 'AI任务正在后台运行，可关闭后重新打开查看；当前显示基础检查。');
-  } catch (_) { stage('连接暂时中断，正在查询原任务；基础检查仍可查看，后台生成不会因此取消。'); }
+    else stage(dualMode && previewComplete ? '实时分析已生成，最终反馈仍在后台生成，可重新打开查看。' : 'AI任务正在后台运行，可关闭后重新打开查看；请等待分析结果。');
+  } catch (_) { stage('连接暂时中断，正在查询原任务；后台生成不会因此取消。'); }
   finally {
     polling = false;
     if (!done && !disposed) {
@@ -160,7 +146,10 @@ source.addEventListener('preview_snapshot', event => decode(event, data => {
   previewSnapshot(data.text, data.status);
 }));
 source.addEventListener('preview_delta', event => decode(event, data => {
-  if (!previewComplete && typeof data.text === 'string') content.textContent += data.text;
+  if (!previewComplete && typeof data.text === 'string') {
+    if (content.textContent === waitingText) content.textContent = '';
+    content.textContent += data.text;
+  }
 }));
 source.addEventListener('preview_complete', event => decode(event, data => {
   previewComplete = true;
@@ -172,13 +161,11 @@ source.addEventListener('preview_complete', event => decode(event, data => {
 }));
 source.addEventListener('final_completed', event => decode(event, data => {
   if (data.check_id !== checkId) return fail('task_mismatch', undefined, true);
-  showTimings(data.phase_timings);
-  if (basicMode) { recover(); return; }
+  if (versionedMode) { recover(); return; }
   finish(data.feedback_text);
 }));
 source.addEventListener('final_failed', event => decode(event, data => {
   if (data.check_id !== checkId) return fail('task_mismatch', undefined, true);
-  showTimings(data.phase_timings);
   fail(data.code || 'final_service_error');
   if (resume) resume.hidden = data.recoverable === false;
 }));
@@ -189,8 +176,8 @@ if (resume) resume.addEventListener('click', async () => {
     const response = await requestJson(base + '/resume' + query, {method:'POST'});
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
     done = false; finalDone = false; finalFailed = false; previewComplete = false;
-    content.textContent = basicMode ? initialBasic : ''; finalContent.textContent = ''; finalPanel.hidden = true;
-    if (basicMode) { previewComplete = !dualMode; if (previewLabel) previewLabel.textContent = '基础检查'; }
+    content.textContent = versionedMode ? waitingText : ''; finalContent.textContent = ''; finalPanel.hidden = true;
+    if (versionedMode) { previewComplete = !dualMode; if (previewLabel) previewLabel.textContent = 'AI实时分析'; }
     resume.hidden = true; status.className = 'status';
     stage('正在恢复本次记录的分析，检测编号保持不变…');
     retryDelay = 1000; recover();
@@ -239,7 +226,7 @@ ack.addEventListener('click', async () => {
     }
     window.parent.postMessage({pluginMessage: {
       type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: data.final_feedback_text,
-      ...(basicMode ? {input_hash:taskVersion,generated_at:data.generated_at} : {}),
+      ...(versionedMode ? {input_hash:taskVersion,generated_at:data.generated_at} : {}),
     }}, parentOrigin);
     // Sending a message is not proof that Jiandaoyun has assigned the field.
     stage('最终反馈已交给简道云处理；请返回表单核对，记录尚未保存。');
@@ -253,4 +240,4 @@ ack.addEventListener('click', async () => {
   }
 });
 
-if (basicMode) recover(); // Initial HTML already contains basic feedback, including when offline.
+if (versionedMode) recover(); // Poll the retained task; the waiting message is not an AI result.
