@@ -822,6 +822,7 @@ def health() -> dict[str, Any]:
         "agent": agent.catalog["agent_code"],
         "version": agent.catalog["agent_version"],
         "release_version": __version__,
+        "release_name": "TAORAN V1",
         "prewarm": prewarm,
         "monitoring": monitoring,
     }
@@ -3059,7 +3060,7 @@ def interactive_quick_check_page(
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>TAORAN AI检测</title>
 <style>body{font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#172033;background:#fff}main{padding:22px;max-width:760px;margin:auto}h1{font-size:20px;margin:0 0 12px}.status{color:#15803d;font-weight:700;margin:8px 0 16px}.panel{background:#f5f8fa;border-radius:10px;padding:14px;white-space:pre-wrap;line-height:1.65;min-height:68px}.label{font-weight:600;margin:16px 0 8px}button{margin-top:18px;background:#0b9e95;color:#fff;border:0;border-radius:7px;padding:10px 20px;font-size:15px;cursor:pointer}button[disabled]{opacity:.55;cursor:default}.error{color:#b42318}</style></head><body><main>
-<h1>TAORAN AI检测（experimental）</h1>
+<h1>TAORAN V1 · AI检测</h1>
 <p id="returnNotice" role="note" style="background:#fff7e6;padding:12px;border-radius:7px;line-height:1.6">分析完成后，请点击“已读并返回”，可将 AI 最终反馈带回拜访记录填写页面。直接关闭弹窗不会同步反馈。</p>
 <div id="status" class="status">正在连接检测任务…</div>
 <button id="resume" hidden type="button">恢复本次分析</button>
