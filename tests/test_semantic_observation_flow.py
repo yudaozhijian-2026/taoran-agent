@@ -25,6 +25,8 @@ from taoran_agent.semantic import HeuristicSemanticReviewer
 def candidate(ambiguous=True):
     text = "已确认采购方案" if ambiguous else "客户表示预算尚未批准"
     return {
+        "suggestion_status": "needs_confirmation" if ambiguous else "no_change_needed",
+        "suggestion_reason": "确认问题已列出" if ambiguous else "原文清楚记录客户预算未批准",
         "analysis_points": [{"kind": "objective_result", "text": "方案确认方不明确，不足以判断客户认可" if ambiguous else "客户已明确说明预算尚未批准",
                              "proofs": [{"field": "process_description", "quote": text}]}],
         "items": [{"code": "R", "suggestion": "", "present": [], "proofs": []}],

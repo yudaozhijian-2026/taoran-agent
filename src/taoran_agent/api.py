@@ -1758,7 +1758,7 @@ def _enhance_front_suggestions(
     )
     store = get_store(settings)
     if experimental:
-        cache_key = canonical_hash({"experimental_final_version": "front-v46-observe-20260908", "key": cache_key})
+        cache_key = canonical_hash({"experimental_final_version": "front-v46-complete-20260908", "key": cache_key})
     persisted = store.get_feedback_artifact(
         response.tenant_id,
         _FRONT_WORDING_ARTIFACT_TYPE,
@@ -1921,6 +1921,8 @@ def _apply_knowledge_wording(
             "model_attempts": wording.model_attempts,
             "semantic_observations": wording.semantic_observations,
             "confirmation_items": wording.confirmation_items,
+            "suggestion_status": wording.suggestion_status,
+            "suggestion_count": sum(bool(i.suggestion.strip()) for i in wording.items),
             "model_first_byte_ms": wording.model_first_byte_ms,
             "model_complete_ms": wording.model_complete_ms,
             "model_request_id": wording.model_request_id,
@@ -2616,7 +2618,12 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
     preview_snapshot = _quick_check_preview_snapshot(task)
     result["preview_status"] = preview_snapshot["status"]
     result["preview_feedback_text"] = preview_snapshot["text"]
-    result['recoverable'] = task['status'] == 'failed' and bool(task.get('request_snapshot'))
+    content_incomplete = task['status'] == 'completed' and (
+        preview_snapshot['status'] in {'unavailable', 'failed'}
+        or (result.get('diagnostics') or {}).get('suggestion_status') == 'incomplete'
+    )
+    result['content_complete'] = task['status'] == 'completed' and not content_incomplete and preview_snapshot['status'] == 'completed'
+    result['recoverable'] = (task['status'] == 'failed' or content_incomplete) and bool(task.get('request_snapshot'))
     result['attempt'] = task.get('attempt',1)
     result['phase_timings'] = {**task.get('phase_timings',{}), **((outcome or {}).get('final',{}).get('phase_timings',{}))}
     preview_timing = (outcome or {}).get('preview', {})
@@ -2885,7 +2892,7 @@ def resume_interactive_quick_check_task(check_id: str, stream_token: str = Query
         result = _quick_check_task_response(task)
         if result.get('superseded'):
             raise HTTPException(status_code=409,detail='该任务属于旧记录版本，请分析最新记录')
-        if task['status'] != 'failed':
+        if not result.get('recoverable'):
             return result  # Idempotent for active and already-completed tasks.
         if not task.get('request_snapshot'):
             raise HTTPException(status_code=409, detail='原任务没有可恢复的输入快照')

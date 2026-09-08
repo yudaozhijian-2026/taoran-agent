@@ -252,6 +252,8 @@ class ModelSectionAnalysis(BaseModel):
 
 
 class SemanticReview(BaseModel):
+    suggestion_status: Literal["has_suggestions", "no_change_needed", "needs_confirmation", "incomplete"] | None = None
+    suggestion_count: int = Field(default=0, ge=0, le=16)
     status: Literal["completed", "not_configured", "unavailable", "timeout"]
     issues: list[Issue] = Field(default_factory=list)
     provider: str
@@ -367,7 +369,9 @@ class KnowledgeWordingResult(BaseModel):
     # Request-local retry evidence, excluded from JSON/schema/persistence.
     _experimental_repair_context: dict[str, Any] = PrivateAttr(default_factory=dict)
     status: Literal["completed", "unavailable", "timeout"]
-    items: list[KnowledgeWordingItem] = Field(default_factory=list, max_length=4)
+    items: list[KnowledgeWordingItem] = Field(default_factory=list, max_length=16)
+    suggestion_status: Literal["has_suggestions", "no_change_needed", "needs_confirmation", "incomplete"] | None = None
+    suggestion_reason: str = Field(default="", max_length=1000)
     visit_analysis: str = Field(default="", max_length=16000)
     visit_analysis_sections: list[FrontVisitAnalysisSection] = Field(
         default_factory=list,

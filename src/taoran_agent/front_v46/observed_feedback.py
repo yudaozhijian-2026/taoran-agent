@@ -10,7 +10,7 @@ from ..model_failure_evidence import save_failure_evidence
 from ..models import FrontVisitAnalysisEvidence, KnowledgeWordingItem, KnowledgeWordingResult
 from ..semantic_observation import GUIDANCE, observe
 
-VERSION = "TAORAN-FRONT-V46-OBSERVE-20260908"
+VERSION = "TAORAN-FRONT-V46-COMPLETE-20260908"
 
 
 class Shape(BaseModel):
@@ -26,6 +26,7 @@ class Point(Shape):
     kind: Literal["visit_context", "objective_result", "customer_fact", "judgment_gap",
                   "next_step", "assessment_gap"]
     text: str = Field(min_length=1, max_length=4000)
+    requires_followup: bool = False
     proofs: list[Proof] = Field(default_factory=list, max_length=5)
     contract_id: str | None = None
     goal_id: str | None = None
@@ -34,7 +35,7 @@ class Point(Shape):
 
 
 class ItemProof(Proof):
-    features: list[str] = Field(max_length=16)
+    features: list[str] = Field(default_factory=list, max_length=16)
 
 
 class Item(Shape):
@@ -55,6 +56,8 @@ class Payload(Shape):
     analysis_points: list[Point] = Field(min_length=1, max_length=20)
     items: list[Item] = Field(default_factory=list, max_length=16)
     confirmations: list[Confirmation] = Field(default_factory=list, max_length=4)
+    suggestion_status: Literal["has_suggestions", "no_change_needed", "needs_confirmation"] | None = None
+    suggestion_reason: str = Field(default="", max_length=1000)
 
 
 def configure(messages, schema):
@@ -67,6 +70,9 @@ def configure(messages, schema):
         + GUIDANCE
         + "保留V4.6简洁表达：本次拜访分析和智能填写建议。analysis_points用自然中文逐项目标分析，"
         "总分析尽量不超过300字；items只返回有必要建议的检查项，无建议返回空数组，不要求凑齐检查项。"
+        "必须返回suggestion_status和suggestion_reason：有填写建议为has_suggestions；确实无需补充为no_change_needed并说明原文依据；"
+        "信息不足且已有需确认问题为needs_confirmation。同一问题不在items和confirmations重复。"
+        "analysis_points指出尚待解决的信息缺口时requires_followup为true，并提供对应建议或需确认问题。不能用空数组表示漏检，也不要强行凑建议。"
         "original_goals只定位原定目标，达成与否须核对本次原文，不能由阶段或后续履约条件替代。"
         "缺少信息在中文正文写“不足以判断”，不输出内部英文状态，不强迫肯定或否定。证据只选本次原字段连续原文，程序核对引用。"
         "confirmations仅列影响具体结论的需确认事项：field和quote定位原文，question是中性核对问题，"
@@ -80,13 +86,16 @@ def generate(reviewer, items, snapshot, timeout_seconds):
     """One bounded shape repair; semantic observations never request a retry."""
     started = monotonic()
     first = _generate_once(reviewer, items, snapshot, timeout_seconds)
-    if first.failure_reason not in {"invalid_contract", "invalid_json", "output_truncated"}:
+    incomplete = first.status == "completed" and first.suggestion_status == "incomplete"
+    if not incomplete and first.failure_reason not in {"invalid_contract", "invalid_json", "output_truncated"}:
         return first
     second = _generate_once(reviewer, items, snapshot, timeout_seconds,
-                            repair_errors=first.validation_errors or [{"code": first.failure_reason}])
+                            repair_errors=first.validation_errors or [{"code": "suggestion_completeness" if incomplete else first.failure_reason}])
+    if incomplete and second.status != "completed":
+        second = first.model_copy(update={"model_attempts": second.model_attempts})
     attempts = first.model_attempts + [dict(a, attempt=2) for a in second.model_attempts]
     return second.model_copy(update={"attempt_count": 2, "model_attempts": attempts,
-        "recovered_after_retry": second.status == "completed",
+        "recovered_after_retry": second.status == "completed" and second.suggestion_status != "incomplete",
         "latency_ms": int((monotonic() - started) * 1000)})
 
 
@@ -221,6 +230,17 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
         else:
             observations.append({"rule": "unresolved_confirmation_source", "field": item.field,
                                  "scope": "confirmations", "policy": "observe_only"})
+    has_suggestions = any(p.suggestion.strip() for p in payload.items)
+    declared = payload.suggestion_status
+    complete_suggestions = bool(payload.suggestion_reason.strip()) and (
+        (declared == "has_suggestions" and has_suggestions)
+        or (declared == "needs_confirmation" and confirmations)
+        or (declared == "no_change_needed" and not has_suggestions and not confirmations
+            and not any(p.requires_followup or p.kind in {"judgment_gap", "assessment_gap"} for p in payload.analysis_points))
+    )
+    suggestion_status = declared if complete_suggestions else "incomplete"
+    if not complete_suggestions:
+        observations.append({"rule": "suggestion_completeness", "scope": "items", "policy": "observe_only"})
     audit, details = {}, {}
     try:
         reviewer._experimental_audit_wording(
@@ -242,6 +262,7 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
         return max(0, usage.get(key, 0)) + max(0, audit.get(key, 0))
     return KnowledgeWordingResult(
         status="completed", visit_analysis=analysis,
+        suggestion_status=suggestion_status, suggestion_reason=payload.suggestion_reason,
         items=[KnowledgeWordingItem(code=p.code, suggestion=p.suggestion,
                                     specific=None) for p in payload.items],
         visit_analysis_evidence=evidence[:14], confirmation_items=confirmations,

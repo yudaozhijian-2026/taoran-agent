@@ -272,3 +272,24 @@ def test_form_click_starts_new_attempt_after_failure_and_reuses_new_running_task
     assert duplicate["check_id"] == fresh["check_id"] and duplicate["reused"]
     assert len(calls) == 1
     assert store.get_quick_check(failed["check_id"])["status"] == "failed"
+
+
+@pytest.mark.parametrize('part', ['preview', 'suggestions'])
+def test_partial_feedback_remains_visible_and_can_resume_same_version(recovery, monkeypatch, part):
+    settings, _store, request, task = recovery
+    calls = []
+    def run(*args):
+        calls.append(1)
+        return {'preview': {'status': 'failed' if part == 'preview' and len(calls) == 1 else 'completed'},
+                'final': {'status':'completed', 'feedback_text':'已生成的拜访分析',
+                          'diagnostics': {'suggestion_status': 'incomplete' if part == 'suggestions' and len(calls) == 1 else 'no_change_needed'}}}
+    monkeypatch.setattr(api, '_quick_check_run', run)
+    api._quick_check_schedule(task, request, settings)
+    partial = api.get_interactive_quick_check_task(task['check_id'], 'b' * 40)
+    assert partial['recoverable'] and not partial['content_complete']
+    assert partial['final_feedback_text'] == '已生成的拜访分析'
+    result = api.resume_interactive_quick_check_task(task['check_id'], 'b' * 40)
+    assert result['check_id'] == task['check_id'] and result['input_hash'] == 'original-hash'
+    assert not result['recoverable'] and result['content_complete']
+    api.resume_interactive_quick_check_task(task['check_id'], 'b' * 40)
+    assert len(calls) == 2

@@ -22,7 +22,7 @@ const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
 const restartText = '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候；可关闭后重新打开查看进度。';
-const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908'].includes(frontPolicy);
+const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 if (versionedMode) {
   content.textContent = waitingText;
@@ -126,7 +126,11 @@ async function poll() {
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
     previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
-    if (task.status === 'completed') finish(task.final_feedback_text);
+    if (task.status === 'completed') {
+      finish(task.final_feedback_text);
+      if (resume) resume.hidden = !task.recoverable;
+      if (task.recoverable) stage('部分分析未完成，任务已保留，可恢复本次分析。');
+    }
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);
     else stage(dualMode && previewSucceeded ? '实时分析已生成，最终反馈仍在后台生成，可重新打开查看。' : 'AI任务正在后台运行，可关闭后重新打开查看；请等待分析结果。');
@@ -186,6 +190,7 @@ if (resume) resume.addEventListener('click', async () => {
   try {
     const response = await requestJson(base + '/resume' + query, {method:'POST'});
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
+    ack.hidden = true; ack.disabled = true;
     done = false; finalDone = false; finalFailed = false; previewComplete = false; previewSucceeded = false;
     content.textContent = versionedMode ? waitingText : ''; finalContent.textContent = ''; finalPanel.hidden = true;
     if (versionedMode) { previewComplete = !dualMode; if (previewLabel) previewLabel.textContent = 'AI实时分析'; }

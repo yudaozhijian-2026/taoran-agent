@@ -138,6 +138,8 @@ def test_full_pipeline_semantic_findings_do_not_trigger_generation_repair(monkey
         else:
             response = ordinary(request)
             payload = json.loads(response.json()["choices"][0]["message"]["content"])
+            payload["suggestion_status"] = "no_change_needed"
+            payload["suggestion_reason"] = "需要补充记录信息"
             valid.append(deepcopy(payload))
             if mode == "process_fragments":
                 point = deepcopy(payload["analysis_points"][0])

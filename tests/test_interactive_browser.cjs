@@ -434,3 +434,14 @@ test('unavailable Preview degrades to exact Final without claiming Preview succe
   assert.equal(h.nodes.ack.disabled, false);
   assert.equal(h.nodes.finalPanel.hidden, true);
 });
+
+test('partial completed feedback remains visible with recovery instead of false full success', async () => {
+  const h = harness([{check_id:'qc_test', input_hash:'v1', status:'completed', recoverable:true, content_complete:false,
+    preview_status:'unavailable', final_feedback_text:'已生成分析及补充建议'}], undefined,
+    {taskVersion:'v1',frontPolicy:'front-v46-observe-20260908'});
+  await h.tick();
+  assert.equal(h.nodes.content.textContent,'已生成分析及补充建议');
+  assert.equal(h.nodes.resume.hidden,false);
+  assert.match(h.nodes.status.textContent,/部分分析未完成/);
+  assert.doesNotMatch(h.nodes.status.textContent,/检测编号|qc_test/);
+});

@@ -306,9 +306,15 @@ def build_front_ai_suggestions_with_model(
         for name, code in model_code_by_name.items()
         if code in natural and natural[code].specific is not None
     }
+    advice_labels = {code: name for name, code in model_code_by_name.items()}
+    if experimental and any(repair.get("kind") == "goal_reminder_relocated" and repair.get("code") == "R"
+                            for attempt in wording.model_attempts for repair in attempt.get("recommendation_repairs", [])):
+        advice_labels["R"] = "目标核对建议"
     result = _front_ai_suggestions(
         structured,
         natural_by_section=natural_by_section,
+        explicit_advice=[(advice_labels.get(item.code, "填写核对"), item.suggestion)
+                        for item in wording.items if item.code != "C" and item.suggestion.strip()] if experimental else None,
         specificity_by_section=specificity_by_section,
         natural_completion=(natural.get("C").suggestion if natural.get("C") else ""),
         visit_analysis=wording.visit_analysis,
@@ -321,6 +327,18 @@ def build_front_ai_suggestions_with_model(
         experimental=experimental,
     )
 
+    if experimental and wording.suggestion_status:
+        empty_message = "本次未生成逐项填写建议；目标达成判断请见上方分析。"
+        if wording.suggestion_status == "no_change_needed":
+            result = result.replace(empty_message, "本次无需额外补充填写。" + _clean_front_text(wording.suggestion_reason))
+        elif wording.suggestion_status == "needs_confirmation":
+            result = result.replace(empty_message, "请核对下方需确认事项，无需重复补充相同内容。")
+        elif wording.suggestion_status == "incomplete":
+            notice = "填写建议完整性核对未完成，不能据此认定无需补充。"
+            if empty_message in result:
+                result = result.replace(empty_message, notice)
+            else:
+                result = result.replace("智能填写建议：", "智能填写建议：\n" + notice)
     if wording.confirmation_items:
         footer = "提交后，系统将自动生成正式评分和反馈意见。"
         body = "需确认事项：\n" + "\n".join(f"{i}. {text}" for i, text in enumerate(wording.confirmation_items, 1))
@@ -341,6 +359,7 @@ def _front_ai_suggestions(
     structured: PrecheckResponse,
     *,
     natural_by_section: dict[str, str] | None = None,
+    explicit_advice: list[tuple[str, str]] | None = None,
     recommendation_labels: dict[str, str] | None = None,
     specificity_by_section: dict[str, bool] | None = None,
     system_notice: str | None = None,
@@ -423,7 +442,10 @@ def _front_ai_suggestions(
             + "”。请根据实际拜访情况补充。"
         )
 
-    for _, label, section_name, field, issue_codes, missing_codes in _FRONT_SPECIFICITY_CHECKS:
+    if explicit_advice is not None:
+        advice.extend(f"{label}：{_clean_front_text(text)}" for label, text in explicit_advice if _clean_front_text(text))
+    checks = _FRONT_SPECIFICITY_CHECKS if explicit_advice is None else ()
+    for _, label, section_name, field, issue_codes, missing_codes in checks:
         field_unreceived = (
             field in unreceived or field.split("[].", 1)[0] in unreceived
         )

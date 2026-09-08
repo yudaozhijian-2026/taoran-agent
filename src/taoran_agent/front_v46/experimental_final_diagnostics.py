@@ -18,6 +18,9 @@ def safe_code(value):
 
 def audit(review):
     return {
+        "suggestion_status": getattr(review, "suggestion_status", None),
+        "suggestion_count": getattr(review, "suggestion_count", sum(bool(i.suggestion.strip()) for i in getattr(review, "items", []))),
+        "confirmation_count": len(getattr(review, "confirmation_items", [])),
         "failure_reason": safe_code(getattr(review, "failure_reason", None)),
         "model_attempt_count": getattr(review, "attempt_count", None),
         "recovered_after_retry": getattr(review, "recovered_after_retry", False),
