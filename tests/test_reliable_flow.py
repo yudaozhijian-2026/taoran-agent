@@ -126,3 +126,10 @@ def test_delivery_retry_is_bounded_and_permission_failure_not_retried(env, monke
         writeback.writeback_evaluation(settings, request, response, store=store)
     assert len(calls) == expected_calls
     assert len({c['json']['transaction_id'] for c in calls}) == 1
+
+
+def test_public_application_version_matches_installed_release():
+    from importlib.metadata import version
+
+    from taoran_agent import __version__
+    assert __version__ == version('dsm-taoran-agent')

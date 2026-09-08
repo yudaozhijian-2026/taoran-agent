@@ -16,7 +16,7 @@ import urllib.request
 from pathlib import Path
 
 BASE = Path("/TAORAN agent")
-VERSION = "0.27.8rc1-reliable-flow-20260908-1310"
+VERSION = "0.27.8rc2-reliable-flow-20260908-1315"
 OLD = "0.27.7rc3-popup-selfservice-20260908"
 EXPECTED_IMAGE = "sha256:6de7b4ea4b4e2d0df38cbf03a25f490fe9deeb255992bcec19299375eb49c8f1"
 RELEASE = BASE / "releases" / VERSION
@@ -237,7 +237,7 @@ def main(mode):
         print("TAORAN-only replacement started")
     elif mode == "verify":
         h = health()
-        assert h["release_version"] == "0.27.8rc1" and h["prewarm"]["status"] == "ready"
+        assert h["release_version"] == "0.27.8rc2" and h["prewarm"]["status"] == "ready"
         assert inspect()["State"]["Health"]["Status"] == "healthy"
         assert inspect()["Config"]["Image"] == "dsm-taoran-v2:" + VERSION
         assert inspect()["RestartCount"] == 0, "Unexpected restarts"
