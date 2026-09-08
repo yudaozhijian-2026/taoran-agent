@@ -2654,6 +2654,11 @@ def create_interactive_quick_check_task(
             existing = _quick_check_tasks.get(existing_id)
             if existing is not None:
                 _quick_check_resolve(existing)
+            if existing is not None and existing.get('status') in {'failed', 'expired'}:
+                # An explicit click on the form can start again after failure.
+                # Active/successful tasks still deduplicate; keep the failed audit.
+                existing = None
+                force = True
             if existing is not None and existing.get('front_policy') == POLICY_VERSION:
                 if now > float(existing["stream_token_expires_at"]):
                     existing["stream_token"] = secrets.token_urlsafe(32)
@@ -2919,7 +2924,20 @@ def interactive_quick_check_page(
     settings = get_settings()
     _require_interactive_quick_check(settings)
     # Validate before returning a page, without exposing the task body in HTML.
-    task = _quick_check_task(check_id, stream_token)
+    try:
+        task = _quick_check_task(check_id, stream_token)
+    except HTTPException as exc:
+        if exc.status_code not in {404, 410}:
+            raise
+        return HTMLResponse(
+            '<!doctype html><html lang="zh-CN"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1">'
+            '<title>TAORAN AI检测</title><body><main><h1>TAORAN AI检测</h1>'
+            '<p>检测链接已失效或任务已过期。请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。</p>'
+            '</main></body></html>',
+            status_code=exc.status_code,
+            headers={"Cache-Control": "no-store", "Referrer-Policy": "no-referrer"},
+        )
     # Redeem the short launch capability into a task-scoped, memory-only
     # session. Reading/reviewing a slow result must not be cut off at 120s.
     with _quick_check_lock:
@@ -2937,6 +2955,7 @@ def interactive_quick_check_page(
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>TAORAN AI检测</title>
 <style>body{font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#172033;background:#fff}main{padding:22px;max-width:760px;margin:auto}h1{font-size:20px;margin:0 0 12px}.status{color:#15803d;font-weight:700;margin:8px 0 16px}.panel{background:#f5f8fa;border-radius:10px;padding:14px;white-space:pre-wrap;line-height:1.65;min-height:68px}.label{font-weight:600;margin:16px 0 8px}button{margin-top:18px;background:#0b9e95;color:#fff;border:0;border-radius:7px;padding:10px 20px;font-size:15px;cursor:pointer}button[disabled]{opacity:.55;cursor:default}.error{color:#b42318}</style></head><body><main>
 <h1>TAORAN AI检测（experimental）</h1><p id="sourceNote">__TAORAN_SOURCE_NOTE__</p><div id="status" class="status">正在连接检测任务…</div>
+<p id="returnNotice" role="note" style="background:#fff7e6;padding:12px;border-radius:7px;line-height:1.6">分析完成后，请点击“已读并返回”，可将 AI 最终反馈带回拜访记录填写页面。直接关闭弹窗不会同步反馈。</p>
 <button id="resume" hidden type="button">恢复本次分析</button>
 <div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel">AI正在分析，请稍候；可关闭后重新打开查看进度。</div>
 <section id="finalPanel" hidden><div class="label">AI反馈意见</div><div id="finalContent" class="panel"></div></section>

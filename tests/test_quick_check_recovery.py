@@ -146,7 +146,7 @@ def test_wait_generation_and_review_timings_have_distinct_meanings():
     }
 
 
-def test_duplicate_click_reuses_running_task_even_when_force_and_after_restart(
+def test_running_task_reuses_but_interrupted_task_can_restart_from_form(
     recovery, monkeypatch
 ):
     settings, _store, request, _unused = recovery
@@ -173,7 +173,8 @@ def test_duplicate_click_reuses_running_task_even_when_force_and_after_restart(
     api._quick_check_tasks.clear()
     api._quick_check_idempotency.clear()
     reopened = api.create_interactive_quick_check_task({}, "tenant-a", "secret")
-    assert reopened["check_id"] == first["check_id"] and reopened["recoverable"] and len(calls) == 1
+    assert reopened["check_id"] != first["check_id"] and len(calls) == 2
+    assert reopened["status"] == "processing" and not reopened["reused"]
     assert reopened["basic_feedback"] == first["basic_feedback"]
 
 
@@ -218,6 +219,56 @@ def test_first_html_shows_waiting_without_saved_basic_feedback(
     assert "alert(1)" not in html and "__TAORAN_SESSION_TOKEN__" not in html
     assert html.count("<script>") == 1
     assert "基础检查" not in html and "const taskVersion=" in html
+    assert "分析完成后，请点击“已读并返回”，可将 AI 最终反馈带回拜访记录填写页面。直接关闭弹窗不会同步反馈。" in html
+    assert "点击“已读并返回”" in html
     assert "AI正在分析" in html
     assert 'id="timings"' not in html and 'id="versionNote"' not in html
     assert response.headers["referrer-policy"] == "no-referrer"
+
+
+@pytest.mark.parametrize("http_status", [404, 410])
+def test_expired_launch_shows_self_service_page_without_credentials(recovery, monkeypatch, http_status):
+    settings, _store, _request, _task = recovery
+    settings.quick_check_interactive_enabled = True
+    def expired(*args):
+        raise HTTPException(status_code=http_status, detail="Not Found")
+    monkeypatch.setattr(api, "_quick_check_task", expired)
+    from starlette.requests import Request
+    response = api.interactive_quick_check_page(
+        Request({"type": "http", "headers": []}), "private-task-id", "private-token" * 4
+    )
+    html = response.body.decode()
+    assert response.status_code == http_status
+    assert "返回拜访记录界面重新点击“AI检测”" in html
+    assert all(text not in html for text in ["private-task-id", "private-token", "管理员", "检测编号"])
+    assert response.headers["cache-control"] == "no-store"
+
+
+@pytest.mark.parametrize("restart", [False, True])
+def test_form_click_starts_new_attempt_after_failure_and_reuses_new_running_task(recovery, monkeypatch, restart):
+    settings, store, request, _task = recovery
+    settings.quick_check_interactive_enabled = True
+    monkeypatch.setattr(api, "_quick_check_idempotency", {})
+    monkeypatch.setattr(api, "_canonicalize_interactive_quick_check",
+        lambda *args: (request, settings, "TEST", "same-version", "user-a", False))
+    monkeypatch.setattr(api, "_quick_check_run", lambda *args: {
+        "preview": {"status": "failed"},
+        "final": {"status": "failed", "failure_category": "timeout"}})
+    failed = api.create_interactive_quick_check_task({}, "tenant-a", "secret")
+    assert failed["status"] == "failed"
+    if restart:
+        api._quick_check_tasks.clear()
+        api._quick_check_idempotency.clear()
+    calls = []
+    class PendingExecutor:
+        def submit(self, *args):
+            calls.append(1)
+            return Future()
+    monkeypatch.setattr(api, "_quick_check_executor", PendingExecutor())
+    fresh = api.create_interactive_quick_check_task({}, "tenant-a", "secret")
+    duplicate = api.create_interactive_quick_check_task({}, "tenant-a", "secret")
+    assert fresh["check_id"] != failed["check_id"] and not fresh["reused"]
+    assert fresh["status"] == "processing"
+    assert duplicate["check_id"] == fresh["check_id"] and duplicate["reused"]
+    assert len(calls) == 1
+    assert store.get_quick_check(failed["check_id"])["status"] == "failed"

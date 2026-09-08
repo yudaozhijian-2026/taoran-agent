@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const code = readFileSync('src/taoran_agent/interactive_quick_check.js', 'utf8');
 function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboard', initial = {}) {
-  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalContent','ack','resume','timings','versionNote'].map(id => [id, {
+  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalContent','ack','resume','timings','versionNote','returnNotice'].map(id => [id, {
     textContent: id === 'previewLabel' ? 'AI实时分析' : '', hidden: id === 'ack' || id === 'finalPanel', disabled: id === 'ack',
     addEventListener(name, fn) { this[name] = fn; },
   }]));
@@ -104,10 +104,10 @@ test('temporary errors recover without substituting preview for Final', async ()
   await h.tick(); await h.tick();
   assert.equal(h.nodes.finalContent.textContent, '真实Final');
 });
-test('expired access ends polling with a traceable state', async () => {
+test('expired access directs a new check without administrator or task identifiers', async () => {
   const h = harness([{http: 404}]); h.source.emit('error');
   await new Promise(resolve => setImmediate(resolve));
-  assert.match(h.nodes.status.textContent, /qc_test.*task_or_token_expired/);
+  assert.equal(h.nodes.status.textContent, '检测链接已失效或任务已过期。请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。');
   assert.equal(h.nodes.ack.hidden, true); assert.equal(h.timers.size, 0);
 });
 test('Final failure cannot enable return', async () => {
@@ -115,7 +115,8 @@ test('Final failure cannot enable return', async () => {
   h.source.emit('preview_delta', {text: '辅助预览'}); h.source.emit('error');
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.nodes.ack.hidden, true);
-  assert.match(h.nodes.status.textContent, /evidence_validation_failed/);
+  assert.match(h.nodes.status.textContent, /返回拜访记录界面重新点击/);
+  assert.doesNotMatch(h.nodes.status.textContent, /qc_test|检测编号|evidence_validation_failed|管理员/);
 });
 test('late Preview cannot overwrite Final', () => {
   const h = harness();
@@ -390,4 +391,38 @@ test('semantic observation shows confirmation and remains a completed returnable
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.finalPanel.hidden,false);
   assert.doesNotMatch(h.nodes.status.textContent,/失败|未完成/);
+});
+
+for (const value of [{http:410},{check_id:'qc_test',status:'expired'},{http:403}]) {
+  test('failure supports self-service re-entry without identifiers ' + JSON.stringify(value), async () => {
+    const h = harness([value]); h.source.emit('error');
+    await new Promise(resolve => setImmediate(resolve));
+    assert.match(h.nodes.status.textContent, /返回拜访记录界面重新点击“AI检测”/);
+    assert.doesNotMatch(h.nodes.status.textContent, /qc_test|检测编号|管理员|task_expired|access_denied/);
+    assert.equal(h.nodes.ack.hidden,true);
+  });
+}
+
+function leaveEvent() {
+  return {prevented:false, preventDefault() {this.prevented=true;}};
+}
+test('completed feedback still warns on leave until explicit return', async () => {
+  const h = harness([{check_id:'qc_test',final_feedback_text:'正式反馈'}]);
+  h.source.emit('preview_complete',{status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:'正式反馈'});
+  const before=leaveEvent(); h.handlers.beforeunload(before);
+  assert.equal(before.prevented,true);
+  assert.equal(h.messages.length,0);
+  await h.nodes.ack.click();
+  assert.equal(h.messages.length,1);
+  const after=leaveEvent(); h.handlers.beforeunload(after);
+  assert.equal(after.prevented,false);
+  assert.match(h.nodes.returnNotice.textContent,/核对并保存/);
+});
+test('closing completed popup without return never hands off feedback', () => {
+  const h=harness();
+  h.source.emit('preview_complete',{status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:'正式反馈'});
+  h.handlers.pagehide();
+  assert.equal(h.messages.length,0);
 });

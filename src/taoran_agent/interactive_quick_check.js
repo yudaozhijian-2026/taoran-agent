@@ -5,6 +5,8 @@ const status = document.querySelector('#status'), content = document.querySelect
 const finalPanel = document.querySelector('#finalPanel'), finalContent = document.querySelector('#finalContent');
 const ack = document.querySelector('#ack');
 const resume = document.querySelector('#resume');
+const returnNotice = document.querySelector('#returnNotice');
+let feedbackHandedOff = false;
 // Refresh/reopen retains the redeemed task capability, not an expired launch URL.
 if (typeof history !== 'undefined') {
   params.set('stream_token', token);
@@ -18,6 +20,7 @@ let previewComplete = false;
 let finalDone = false, finalFailed = false;
 const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
+const restartText = '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候；可关闭后重新打开查看进度。';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
@@ -33,7 +36,7 @@ function applyVersion(task) {
     content.textContent = waitingText;
     finalPanel.hidden = true;
     if (previewLabel) previewLabel.textContent = '历史版本';
-    fail('superseded','记录已产生新版本，请从最新记录重新打开分析。',true);
+    fail('superseded','拜访记录已更新。',true);
     return false;
   }
   return true;
@@ -68,7 +71,10 @@ function fail(code, message, terminal = false) {
   ack.hidden = true;
   ack.disabled = true;
   if (resume) resume.hidden = terminal;
-  stage((message || '本次分析未完成，任务已保留，可恢复本次分析。') + ' 检测编号：' + checkId + '（' + code + '）');
+  const expired = code === 'task_or_token_expired' || code === 'task_expired';
+  stage(expired
+    ? '检测链接已失效或任务已过期。' + restartText
+    : (message || '本次分析未完成。') + restartText);
   status.className = 'status error';
   settle();
 }
@@ -108,7 +114,7 @@ async function poll() {
     const response = await requestJson(base + query);
     if (disposed || generation !== lifecycle) return;
     if (response.status === 404 || response.status === 410) {
-      return fail('task_or_token_expired', '任务链接已失效或超过保留期限，请凭检测编号联系管理员查询。', true);
+      return fail('task_or_token_expired', undefined, true);
     }
     if (response.status === 401 || response.status === 403) return fail('access_denied', undefined, true);
     if (!response.ok) throw new Error('retryable_transport');
@@ -179,16 +185,16 @@ if (resume) resume.addEventListener('click', async () => {
     content.textContent = versionedMode ? waitingText : ''; finalContent.textContent = ''; finalPanel.hidden = true;
     if (versionedMode) { previewComplete = !dualMode; if (previewLabel) previewLabel.textContent = 'AI实时分析'; }
     resume.hidden = true; status.className = 'status';
-    stage('正在恢复本次记录的分析，检测编号保持不变…');
+    stage('正在恢复本次分析，请稍候…');
     retryDelay = 1000; recover();
-  } catch (_) { stage('恢复请求暂未确认，请重试恢复；不会创建重复检测任务。检测编号：' + checkId); }
+  } catch (_) { stage('恢复请求暂未确认。' + restartText); }
   finally { resume.disabled = false; }
 });
 // Both a named server failure and a broken SSE are resolved through the result API.
 source.addEventListener('error', recover);
 window.addEventListener('online', recover);
 window.addEventListener('beforeunload', event => {
-  if (!done) { event.preventDefault(); event.returnValue = ''; }
+  if (!feedbackHandedOff && !finalFailed) { event.preventDefault(); event.returnValue = ''; }
 });
 window.addEventListener('pagehide', () => {
   disposed = true;
@@ -210,7 +216,7 @@ window.addEventListener('pageshow', event => {
 ack.addEventListener('click', async () => {
   if (disposed || returning || ack.disabled) return;
   if (window.parent === window || !allowedParents.has(parentOrigin)) {
-    stage('无法确认简道云来源，请从测试表单的候选按钮重新打开。');
+    stage('无法确认简道云来源。' + restartText);
     return;
   }
   returning = true;
@@ -228,6 +234,8 @@ ack.addEventListener('click', async () => {
       type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: data.final_feedback_text,
       ...(versionedMode ? {input_hash:taskVersion,generated_at:data.generated_at} : {}),
     }}, parentOrigin);
+    feedbackHandedOff = true;
+    if (returnNotice) returnNotice.textContent = 'AI反馈意见已交给简道云处理，请返回拜访记录录入界面核对并保存。';
     // Sending a message is not proof that Jiandaoyun has assigned the field.
     stage('最终反馈已交给简道云处理；请返回表单核对，记录尚未保存。');
     returnTimer = setTimeout(() => { returning = false; ack.disabled = false; }, 3000);
@@ -235,7 +243,7 @@ ack.addEventListener('click', async () => {
     if (disposed || generation !== lifecycle) return;
     returning = false;
     ack.disabled = false;
-    stage('最终反馈未能返回，请重试返回；如连接已过期，请关闭后重新点击检测。检测编号：' + checkId);
+    stage('最终反馈未能返回。' + restartText);
     status.className = 'status error';
   }
 });
