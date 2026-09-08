@@ -72,8 +72,8 @@ def test_revision_ignores_both_output_mapping_shapes_but_not_business():
     assert business_revision(a, mapping) != business_revision({**b, "business": "v2"}, mapping)
 
 
-@pytest.mark.parametrize("reason", ["new_job", "source_edit", "old_policy", "missing_revision", "new_form", "read_failure"])
-def test_guard_fails_closed_without_any_write(env, monkeypatch, reason):
+@pytest.mark.parametrize("reason", ["new_job", "source_edit", "old_policy", "missing_revision", "mapping_changed", "knowledge_changed", "no_store"])
+def test_direct_delivery_ignores_snapshot_and_freshness(env, monkeypatch, reason):
     settings, store, raw, _mapping, create, calls = env
     request, result = create()
     if reason == "new_job":
@@ -84,15 +84,29 @@ def test_guard_fails_closed_without_any_write(env, monkeypatch, reason):
         result.knowledge_version_audit["post_policy"]["version"] = "old"
     elif reason == "missing_revision":
         request.context.form_revision = None
-    elif reason == "new_form":
-        request.writeback_target.entry_id = "different"
-    else:
-        def fail(*args):
-            raise delivery.JiandaoyunReadError("temporary failure")
-        monkeypatch.setattr(delivery, "get_jiandaoyun_record", fail)
+    elif reason == "mapping_changed":
+        request.visit.metadata["source_mapping_hash"] = "old"
+    elif reason == "knowledge_changed":
+        result.knowledge_version_audit["actual_records_hash"] = "old"
+    elif reason == "no_store":
+        store = None
+    def read_after_write(*args):
+        assert calls, "must not read the record before delivery"
+        return deepcopy(raw)
+    monkeypatch.setattr(delivery, "get_jiandaoyun_record", read_after_write)
+    value = delivery.writeback_evaluation(settings, request, result, store=store)
+    assert value.status == "succeeded"
+    assert len(calls) == 1
+    assert set(calls[0]["json"]["data"]) == {"score", "feedback"}
+
+
+def test_wrong_form_still_rejected_without_any_write(env):
+    settings, store, _raw, _mapping, create, calls = env
+    request, result = create()
+    request.writeback_target.entry_id = "different"
     value = delivery.writeback_evaluation(settings, request, result, store=store)
     assert value.status == "failed"
-    assert value.error_message.startswith("WRITEBACK_")
+    assert value.error_message == "WRITEBACK_TARGET_CHANGED"
     assert calls == []
 
 
@@ -106,14 +120,14 @@ def test_latest_writes_and_other_tenant_does_not_supersede(env):
     assert calls[0]["json"]["is_start_trigger"] is False
 
 
-def test_later_task_wins_when_old_model_finishes_last(env):
+def test_last_completed_delivery_wins_even_for_an_older_task(env):
     settings, store, _raw, _mapping, create, calls = env
     old_request, old_result = create()
     new_request, new_result = create("job2")
     assert delivery.writeback_evaluation(settings, new_request, new_result, store=store).status == "succeeded"
     store.complete_evaluation(old_result)
-    assert delivery.writeback_evaluation(settings, old_request, old_result, store=store).error_message == "WRITEBACK_SUPERSEDED"
-    assert len(calls) == 1
+    assert delivery.writeback_evaluation(settings, old_request, old_result, store=store).status == "succeeded"
+    assert len(calls) == 2
 
 
 def test_source_guard_survives_store_restart(env):
@@ -271,7 +285,7 @@ def test_localized_semantic_conflicts_are_observed_without_extra_model_call(tmp_
 
 
 @pytest.mark.parametrize("change", ["knowledge", "mapping", "policy_hash"])
-def test_same_version_content_changes_block_delivery(env, change):
+def test_same_version_content_changes_do_not_block_delivery(env, change):
     settings, store, _raw, _mapping, create, calls = env
     request, result = create()
     if change == "knowledge":
@@ -280,8 +294,8 @@ def test_same_version_content_changes_block_delivery(env, change):
         request.visit.metadata["source_mapping_hash"] = "different"
     else:
         result.knowledge_version_audit["post_policy"]["hash"] = "different"
-    assert delivery.writeback_evaluation(settings, request, result, store=store).status == "failed"
-    assert calls == []
+    assert delivery.writeback_evaluation(settings, request, result, store=store).status == "succeeded"
+    assert len(calls) == 1
 
 
 def test_model_failure_cannot_use_delivery_retry(env):

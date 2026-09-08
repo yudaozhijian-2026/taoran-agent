@@ -108,7 +108,7 @@ from .rules import canonical_hash, normalized_text
 from .runtime import build_agent
 from .scoring_contract import TOTAL_RULE_VERSION
 from .semantic import SemanticReviewer
-from .source_revision import business_revision
+from .source_revision import analysis_input_revision, business_revision, source_lock
 from .storage import AgentStore, IdempotencyConflictError
 from .tenant_admin import (
     JiandaoyunAuthorizationRequest,
@@ -2690,6 +2690,9 @@ def create_interactive_quick_check_task(
     x_tenant_id: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
 ) -> dict[str, Any]:
+    if request.get("saved_record_check") is True:
+        from .saved_record_check import launch
+        return launch(request, x_tenant_id, x_api_key)
     canonical_request, settings, record_code, input_hash, user_id, force, basis = (
         _canonicalize_interactive_quick_check(request, x_tenant_id, x_api_key)
     )
@@ -5067,12 +5070,33 @@ def _enqueue_jiandaoyun_record(
             },
         }
     )
-    return submit_jiandaoyun_evaluation(
-        request,
-        background_tasks,
-        x_tenant_id,
-        x_api_key,
-    )
+    canonical = adapt_jiandaoyun_evaluation_request(request, mapping)
+    if event.request_id and event.request_id.startswith("manual_saved_"):
+        return _submit_saved_analysis(canonical, background_tasks, x_tenant_id, x_api_key)
+    return submit_evaluation(canonical, background_tasks, x_tenant_id, x_api_key)
+
+
+def _submit_saved_analysis(request, background_tasks, x_tenant_id, x_api_key):
+    """Compare before analysis only. Failed attempts never count as a success."""
+    authorize(request.context.tenant_id, x_tenant_id, x_api_key)
+    with source_lock(request.context.tenant_id, request.writeback_target):
+        latest = get_store().latest_source_job(request)
+        if latest and analysis_input_revision(PostEvaluationRequest.model_validate(
+            latest["request"]
+        )) == analysis_input_revision(request):
+            response = latest.get("response") or {}
+            usable = latest["status"] in {"queued", "running"} or (
+                latest["status"] == "completed"
+                and (response.get("semantic_facts") or {}).get("status") == "completed"
+                and (response.get("writeback") or {}).get("status") == "succeeded"
+            )
+            if usable:
+                return EvaluationAccepted(
+                    job_id=latest["job_id"], trace_id=response.get("trace_id", "reused"),
+                    status="completed" if latest["status"] == "completed" else "queued",
+                    input_snapshot_hash=latest["input_snapshot_hash"],
+                )
+        return submit_evaluation(request, background_tasks, x_tenant_id, x_api_key)
 
 
 @app.post(
@@ -5120,7 +5144,7 @@ async def receive_jiandaoyun_visit_webhook(
         raise HTTPException(status_code=400, detail="invalid webhook body")
     operation = str(body.get("op", ""))
     record = body.get("data")
-    if operation not in {"data_create", "data_update"} or not isinstance(record, dict):
+    if operation != "data_create" or not isinstance(record, dict):
         return {
             "status": "ignored",
             "operation": operation or "connection_test",

@@ -22,3 +22,16 @@ def business_revision(record, mapping):
     }
     return canonical_hash({k: v for k, v in record.items()
                            if k not in outputs and k not in {"updateTime", "updater"}})
+
+
+def analysis_input_revision(request):
+    """Only actual TAORAN inputs decide whether a saved edit needs analysis.
+
+    Mapping adapters normalize widget wrappers and subforms before this runs.
+    Routing, AI outputs, platform audit data and transfer metadata are excluded.
+    """
+    data = request.model_dump(mode="json")
+    data["visit"].pop("metadata", None)
+    for key in ("context", "writeback_target", "visit_record_code"):
+        data.pop(key, None)
+    return canonical_hash(data)

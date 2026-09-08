@@ -11,12 +11,9 @@ import httpx
 from .config import Settings
 from .connector import load_jiandaoyun_mapping
 from .jiandaoyun_api import JiandaoyunReadError, get_jiandaoyun_record
-from .knowledge import load_taoran_knowledge_snapshot
 from .models import EvaluationResponse, PostEvaluationRequest, WritebackResult
-from .post_review_policy import POLICY_VERSION, knowledge_manifest
-from .rules import canonical_hash
 from .scoring_contract import TOTAL_RULE_VERSION
-from .source_revision import business_revision, source_lock
+from .source_revision import source_lock
 
 
 class JiandaoyunWritebackError(RuntimeError):
@@ -66,7 +63,7 @@ def _blocked_rule_feedback(response: EvaluationResponse) -> str:
 
 
 def writeback_evaluation(settings, request, response, *, store=None):
-    """Retry delivery only, rechecking source/version before every attempt."""
+    """Retry delivery only; do not compare the record with the analysis snapshot."""
     for attempt in range(3):
         try:
             result = _writeback_once(settings, request, response, store=store)
@@ -95,11 +92,11 @@ def _writeback_once(
     *,
     store=None,
 ) -> WritebackResult:
-    """Fail closed for changed sources, superseded tasks and obsolete policies.
+    """Write completed analysis to its target, then verify the delivered outputs.
 
-    The lock serializes this application's writes and acceptance of new jobs.
-    Jiandaoyun has no assumed atomic compare-and-swap: a human edit during the
-    remote read/update interval remains an external race, documented in QA.
+    Source edits, newer tasks and policy changes no longer suppress delivery.
+    The last completed delivery wins. Tenant and target isolation still apply.
+    ``store`` remains accepted for compatibility with existing callers.
     """
     target = request.writeback_target
     if target is None:
@@ -113,34 +110,11 @@ def _writeback_once(
         tenant = settings.tenant_config(request.context.tenant_id)
         if tenant is not None and not tenant.enabled:
             return blocked("WRITEBACK_TENANT_DISABLED")
-        if store is None:
-            return blocked("WRITEBACK_GUARD_STORE_REQUIRED")
         mapping_path = settings.jiandaoyun_mapping_path_for(request.context.tenant_id)
         mapping = load_jiandaoyun_mapping(mapping_path)
         if (target.app_id != mapping.get("source_application_id")
                 or target.entry_id != mapping.get("source_entry_id")):
             return blocked("WRITEBACK_TARGET_CHANGED")
-        if not store.is_latest_source_job(request, response.job_id):
-            return blocked("WRITEBACK_SUPERSEDED")
-        version = response.knowledge_version_audit.get("post_policy", {}).get("version")
-        if version != POLICY_VERSION:
-            return blocked("WRITEBACK_POLICY_CHANGED")
-        current_manifest = knowledge_manifest(load_taoran_knowledge_snapshot(settings.knowledge_snapshot_path))
-        if response.knowledge_version_audit.get("actual_records_hash") != current_manifest["actual_records_hash"]:
-            return blocked("WRITEBACK_KNOWLEDGE_CHANGED")
-        if response.knowledge_version_audit.get("post_policy", {}).get("hash") != current_manifest["post_policy"]["hash"]:
-            return blocked("WRITEBACK_POLICY_CHANGED")
-        if request.visit.metadata.get("source_mapping_hash") != canonical_hash(mapping):
-            return blocked("WRITEBACK_MAPPING_CHANGED")
-        if not request.context.form_revision:
-            return blocked("WRITEBACK_SOURCE_REVISION_MISSING")
-        try:
-            current = get_jiandaoyun_record(settings, request.context.tenant_id,
-                                          target.app_id, target.entry_id, target.data_id)
-        except JiandaoyunReadError:
-            return blocked("WRITEBACK_SOURCE_READ_FAILED")
-        if business_revision(current, mapping) != request.context.form_revision:
-            return blocked("WRITEBACK_SOURCE_CHANGED")
         result = _writeback_current_evaluation(settings, request, response)
         if result.status != "succeeded":
             return result
@@ -149,8 +123,6 @@ def _writeback_once(
                 target.app_id, target.entry_id, target.data_id)
         except JiandaoyunReadError:
             return blocked("WRITEBACK_VERIFY_READ_FAILED")
-        if business_revision(confirmed, mapping) != request.context.form_revision:
-            return blocked("WRITEBACK_SOURCE_CHANGED")
         expected = evaluation_writeback_values(response)
         for name, spec in mapping.get("output_fields", {}).items():
             widget = _output_widget_id(spec)

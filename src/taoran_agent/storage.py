@@ -338,19 +338,23 @@ class AgentStore:
             ).fetchone()
             return self._evaluation_record(row), True
 
-    def is_latest_source_job(self, request, job_id: str) -> bool:
+    def latest_source_job(self, request):
         target = request.writeback_target
         if target is None:
-            return False
+            return None
         with self._lock:
             row = self._connection.execute(
-                """SELECT job_id FROM evaluation_jobs WHERE tenant_id = ?
+                """SELECT * FROM evaluation_jobs WHERE tenant_id = ?
                 AND json_extract(request_json, '$.writeback_target.app_id') = ?
                 AND json_extract(request_json, '$.writeback_target.entry_id') = ?
                 AND json_extract(request_json, '$.writeback_target.data_id') = ?
                 ORDER BY rowid DESC LIMIT 1""",
                 (request.context.tenant_id, target.app_id, target.entry_id, target.data_id),
             ).fetchone()
+        return self._evaluation_record(row) if row else None
+
+    def is_latest_source_job(self, request, job_id: str) -> bool:
+        row = self.latest_source_job(request)
         return row is not None and row["job_id"] == job_id
 
     def complete_evaluation(self, response: EvaluationResponse) -> None:
