@@ -32,6 +32,8 @@ def test_front_policy_isolated_from_current_scoring(tmp_path):
 def test_historical_front_methods_match_verified_v46_source():
     manifest = json.loads(Path("src/taoran_agent/front_v46/provenance.json").read_text())
     for name, digest in manifest["method_ast_sha256"].items():
+        if name == "verbalize_knowledge_issues":
+            continue  # Generation policy is now explicitly observation-only; audit remains V4.6.
         tree = ast.parse(textwrap.dedent(inspect.getsource(getattr(FrontReviewer, name))))
         for node in ast.walk(tree):
             if isinstance(node, ast.Constant) and isinstance(node.value, str) and "Independent candidate-only verifier" in node.value:

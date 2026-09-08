@@ -111,7 +111,7 @@ def test_structure_grouping_is_metadata_only_and_empty_patch_arrays_have_valid_s
 
 
 @pytest.mark.parametrize("mode", ["process_fragments", "business_patch", "bad_patch"])
-def test_full_pipeline_groups_structure_locally_and_reaudits_business_patch(monkeypatch, mode):
+def test_full_pipeline_semantic_findings_do_not_trigger_generation_repair(monkeypatch, mode):
     from front_provider_fixture import PIPELINE_CONTEXT, pipeline_provider
 
     calls = []
@@ -191,19 +191,11 @@ def test_full_pipeline_groups_structure_locally_and_reaudits_business_patch(monk
         result = api._enhance_front_suggestions(
             response, reviewer, settings, 5, {"visit_snapshot": PIPELINE_CONTEXT}, experimental=True
         )
-        assert result.status == ("unavailable" if mode == "bad_patch" else "completed"), (
-            result.model_dump()
-        )
-        assert len(requests) == (1 if mode == "process_fragments" else 2)
-        if mode == "process_fragments":
-            assert result.model_attempts[0]["structural_repairs"][0]["fragment_count"] == 2
-            assert calls == ["generate", "audit"]
-        elif mode == "business_patch":
-            assert calls == ["generate", "audit", "patch", "audit"]
-            assert result.model_attempts[-1]["retry_mode"] == "scoped"
-        else:
-            assert calls == ["generate", "audit", "patch"]
-            assert not result.visit_analysis
+        assert result.status == "completed", result.model_dump()
+        assert len(requests) == 1
+        assert "patch" not in calls
+        assert result.visit_analysis
+        assert result.model_attempts[0]["experimental_semantic_audit"]["status"] == "observed"
     finally:
         reviewer.close()
 

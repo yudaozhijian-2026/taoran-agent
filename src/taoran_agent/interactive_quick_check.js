@@ -29,7 +29,7 @@ let previewComplete = false;
 let finalDone = false, finalFailed = false;
 const activeRequests = new Set();
 const basicMode = typeof initialBasic === 'string';
-const dualMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-restored-20260908';
+const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908'].includes(frontPolicy);
 const versionNode = document.querySelector('#versionNote');
 const previewLabel = document.querySelector('#previewLabel');
 if (basicMode) {

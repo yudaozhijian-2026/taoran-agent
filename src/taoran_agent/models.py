@@ -273,6 +273,8 @@ class SemanticReview(BaseModel):
     recovered_after_retry: bool = False
     validation_errors: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     model_attempts: list[dict[str, Any]] = Field(default_factory=list, max_length=2)
+    semantic_observations: list[dict[str, Any]] = Field(default_factory=list, max_length=64)
+    confirmation_items: list[str] = Field(default_factory=list, max_length=4)
 
 
 class FrontSpecificityFeatures(BaseModel):
@@ -393,6 +395,8 @@ class KnowledgeWordingResult(BaseModel):
     recovered_after_retry: bool = False
     validation_errors: list[dict[str, str]] = Field(default_factory=list, max_length=20)
     model_attempts: list[dict[str, Any]] = Field(default_factory=list, max_length=2)
+    semantic_observations: list[dict[str, Any]] = Field(default_factory=list, max_length=64)
+    confirmation_items: list[str] = Field(default_factory=list, max_length=4)
 
 
 class PrecheckResponse(BaseModel):

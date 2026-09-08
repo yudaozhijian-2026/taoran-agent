@@ -1692,7 +1692,7 @@ def _enhance_front_suggestions(
     )
     analysis_fields = (
         "customer_type_ii", "opportunity_stage", "visit_method", "is_appointment",
-        "opportunity_stages",
+        "opportunity_stages", "visit_date", "_record_contract",
         "purpose_code", "other_purpose",
         "expected_key_result", "process_description", "customer_feedback",
         "self_assessment", "deviation_reason", "next_action_purpose",
@@ -1741,6 +1741,7 @@ def _enhance_front_suggestions(
             "input_snapshot_hash": response.input_snapshot_hash,
             "knowledge_snapshot_hash": response.knowledge_snapshot_hash,
             "prompt_version": KNOWLEDGE_WORDING_PROMPT_VERSION,
+            "opinion_policy": "semantic-observe-20260908",
             "model": settings.llm_model,
             "field_specificity_checks": field_checks,
             "taoran_snapshot": taoran_snapshot,
@@ -1748,7 +1749,7 @@ def _enhance_front_suggestions(
     )
     store = get_store(settings)
     if experimental:
-        cache_key = canonical_hash({"experimental_final_version": "front-v46-restored-20260908", "key": cache_key})
+        cache_key = canonical_hash({"experimental_final_version": "front-v46-observe-20260908", "key": cache_key})
     persisted = store.get_feedback_artifact(
         response.tenant_id,
         _FRONT_WORDING_ARTIFACT_TYPE,
@@ -1909,6 +1910,8 @@ def _apply_knowledge_wording(
             "recovered_after_retry": wording.recovered_after_retry,
             "validation_errors": wording.validation_errors,
             "model_attempts": wording.model_attempts,
+            "semantic_observations": wording.semantic_observations,
+            "confirmation_items": wording.confirmation_items,
             "model_first_byte_ms": wording.model_first_byte_ms,
             "model_complete_ms": wording.model_complete_ms,
             "model_request_id": wording.model_request_id,
@@ -1989,7 +1992,7 @@ def _execute_knowledge_button_feedback(
     base_context = canonical_request.context
     mapping_path = settings.jiandaoyun_mapping_path_for(base_context.tenant_id)
     reviewer = get_agent().semantic_reviewer
-    if experimental and isinstance(reviewer, ChatModelReviewer):
+    if isinstance(reviewer, ChatModelReviewer):
         from .front_v46 import bind
         reviewer = bind(reviewer)
     # Current product setting prioritizes data-grounded AI wording. There is no
@@ -2047,7 +2050,7 @@ def _execute_knowledge_button_feedback(
                     reviewer,
                     settings,
                     knowledge_wording_budget,
-                    (_v46_knowledge_model_context if experimental else _knowledge_model_context)(live_request, live_snapshot, experimental=experimental),
+                    _knowledge_model_context(live_request, live_snapshot, experimental=experimental),
                     experimental=experimental,
                 )
         else:

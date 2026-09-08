@@ -1,3 +1,5 @@
+> 当前语义策略见 [语义观察说明](references/releases/0.27.7rc1-semantic-observe-20260908.md)。前端保持 V4.6 展示结构，语义疑点只观察；旧文档的阻断与强制语义重生成不再适用。
+
 > 前端弹窗当前恢复为 V4.6，详见 [前端恢复说明](references/releases/0.27.6rc1-front-v46-20260908.md)。V4.7 后台评分与任务保护仍有效。
 
 # DSM TAORAN原则评分智能体

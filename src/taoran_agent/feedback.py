@@ -306,7 +306,7 @@ def build_front_ai_suggestions_with_model(
         for name, code in model_code_by_name.items()
         if code in natural and natural[code].specific is not None
     }
-    return _front_ai_suggestions(
+    result = _front_ai_suggestions(
         structured,
         natural_by_section=natural_by_section,
         specificity_by_section=specificity_by_section,
@@ -320,6 +320,12 @@ def build_front_ai_suggestions_with_model(
         ai_only=True,
         experimental=experimental,
     )
+
+    if wording.confirmation_items:
+        footer = "提交后，系统将自动生成正式评分和反馈意见。"
+        body = "需确认事项：\n" + "\n".join(f"{i}. {text}" for i, text in enumerate(wording.confirmation_items, 1))
+        result = result.replace(footer, body + "\n\n" + footer) if footer in result else result + "\n\n" + body
+    return result
 
 
 def build_front_ai_suggestions(
@@ -683,11 +689,10 @@ def build_evaluation_feedback(
     result = "\n".join(lines)
     context = semantic_facts.quality_audit.get("authoritative_checks")
     if context:
-        from .post_quality import PostFeedbackConflict, quality_hits
-        hits = quality_hits(result, "facts.reason", context)
-        semantic_facts.quality_audit["final_review"] = {"status":"failed" if hits else "passed", "hits":hits}
-        if hits:
-            raise PostFeedbackConflict(hits, result)
+        from .semantic_observation import final_feedback_observations
+        semantic_facts.quality_audit["final_review"] = final_feedback_observations(
+            analysis_text, advice_items, context,
+        )
     return result
 
 

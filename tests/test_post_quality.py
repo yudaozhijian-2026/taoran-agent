@@ -6,7 +6,7 @@ from taoran_agent.feedback import _build_post_advice, build_evaluation_feedback
 from taoran_agent.knowledge import load_taoran_knowledge_snapshot
 from taoran_agent.llm import ModelCallError
 from taoran_agent.models import Q34SemanticFacts
-from taoran_agent.post_quality import PostFeedbackConflict, quality_context, quality_hits
+from taoran_agent.post_quality import quality_context, quality_hits
 
 
 def test_summary_cannot_call_mismatched_self_assessment_objective():
@@ -65,7 +65,7 @@ def test_quality_conflicts_have_targeted_locations(tmp_path,case):
         r.close()
 
 
-def test_met_sections_do_not_get_knowledge_filler_and_final_conflict_blocks(tmp_path):
+def test_met_sections_do_not_get_knowledge_filler_and_final_conflict_is_observed(tmp_path):
     r=reviewer(tmp_path)
     v=visit(customer_type_ii="opportunity",opportunity_stage="P3",purpose_code="收集信息")
     payload=valid_payload(r,v)
@@ -77,6 +77,8 @@ def test_met_sections_do_not_get_knowledge_filler_and_final_conflict_blocks(tmp_
     assert _build_post_advice([],facts,model_completed=True,knowledge_issues=[],
         knowledge_suggestions=["补充联系人角色使过程更完整"])==[]
     facts.reason="拜访目的与P3阶段不匹配"
-    with pytest.raises(PostFeedbackConflict):
-        build_evaluation_feedback(v,50,50,100,[],facts)
+    feedback = build_evaluation_feedback(v,50,50,100,[],facts)
+    assert facts.reason in feedback
+    assert facts.quality_audit["final_review"]["policy"] == "observe_only"
+    assert facts.quality_audit["final_review"]["hits"]
     r.close()

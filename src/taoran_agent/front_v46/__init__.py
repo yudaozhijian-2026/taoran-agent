@@ -1,5 +1,5 @@
 """V4.6 frontend-only policy; backend scoring uses the current reviewer."""
-POLICY_VERSION = "front-v46-restored-20260908"
+POLICY_VERSION = "front-v46-observe-20260908"
 
 def bind(reviewer):
     from .reviewer import FrontReviewer

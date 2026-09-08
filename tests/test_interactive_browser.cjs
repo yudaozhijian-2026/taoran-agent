@@ -375,3 +375,15 @@ test('restored V4.6 does not display either opinion for an old input version', a
   assert.equal(h.nodes.finalPanel.hidden,true);
   assert.equal(h.nodes.ack.hidden,true);
 });
+
+test('semantic observation shows confirmation and remains a completed returnable result', async () => {
+  const text='【AI反馈意见】\n本次拜访分析：当前不足以判断客户认可。\n需确认事项：请核对实际确认方。';
+  const h=harness([{...completed(),input_hash:'version-a',final_feedback_text:text,
+    preview_feedback_text:'原文未说明确认方，需确认实际确认方。',preview_status:'completed'}],undefined,
+    {...restored,frontPolicy:'front-v46-observe-20260908'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.finalContent.textContent,text);
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.doesNotMatch(h.nodes.status.textContent,/失败|未完成/);
+});
