@@ -16,9 +16,9 @@ import urllib.request
 from pathlib import Path
 
 BASE = Path("/TAORAN agent")
-VERSION = "0.27.13rc1-transport-probe-20260908"
-OLD = "0.27.12rc1-saved-preview-20260908"
-EXPECTED_IMAGE = "sha256:aca888cbd2fef49e21360fb1c553a456f6048b806091784c582577c4952c5ab5"
+VERSION = "0.27.13rc2-transport-probe-20260908"
+OLD = "0.27.13rc1-transport-probe-20260908"
+EXPECTED_IMAGE = "sha256:fe8816b7d49893337c038589af355b2cd2eae98a18a126b24ae5a7d311f7dafb"
 RELEASE = BASE / "releases" / VERSION
 BACKUP = BASE / "backups" / ("before-" + VERSION)
 CONTAINER = "dsm-taoran-v2-agent"
@@ -148,7 +148,7 @@ def main(mode):
     os.umask(0o077)
     if mode in {"preflight", "switch"}:
         assert inspect()["Config"]["Labels"].get("org.opencontainers.image.revision") == (
-            "bb70e41abc72fd8900967f4982414d9c7317c7cd"
+            "cf7cccbde2ecdfec243776094a29ec0548f61096"
         ), "Server deployment commit changed; synchronize before deployment"
     if mode == "preflight":
         assert inspect()["Config"]["Image"] == "dsm-taoran-v2:" + OLD
@@ -159,7 +159,7 @@ def main(mode):
         assert (RELEASE / "git-commit.txt").read_text().strip() == (
             RELEASE / "remote-main.txt"
         ).read_text().strip(), "Candidate is not remote main"
-        assert health()["release_version"] == "0.27.12rc1"
+        assert health()["release_version"] == "0.27.13rc1"
         baseline = verify_source(RELEASE / "baseline-manifest.json")
         idle = activity()
         BACKUP.mkdir(mode=0o700, exist_ok=False)
@@ -241,7 +241,7 @@ def main(mode):
         print("TAORAN-only replacement started")
     elif mode == "verify":
         h = health()
-        assert h["release_version"] == "0.27.13rc1" and h["prewarm"]["status"] == "ready"
+        assert h["release_version"] == "0.27.13rc2" and h["prewarm"]["status"] == "ready"
         assert inspect()["State"]["Health"]["Status"] == "healthy"
         assert inspect()["Config"]["Image"] == "dsm-taoran-v2:" + VERSION
         assert inspect()["RestartCount"] == 0, "Unexpected restarts"

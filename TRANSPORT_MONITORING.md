@@ -9,3 +9,21 @@
 底层事件参考：https://www.encode.io/httpcore/extensions/#trace 。锁定依赖httpcore 1.0.9。监控仅针对此前50秒慢请求所在的frontend_final路径，实时Preview与后端深度评分保持现有监控；不将本次日志写入销售可见AI意见。
 
 上线需使用release_transport_probe.py完成备份、版本防覆盖、空闲队列校验及仅TAORAN容器更新，再针对BFJL2026082500026进行新请求复测。
+
+## 2026-09-08 发布结果
+
+- 源码提交：cf7cccbde2ecdfec243776094a29ec0548f61096，已合并远端main。
+- 发布标签：0.27.13rc1-transport-probe-20260908；包含已上线0.27.12rc1实时建议改动。
+- 镜像：sha256:fe8816b7d49893337c038589af355b2cd2eae98a18a126b24ae5a7d311f7dafb。
+- 408项Python测试、50项浏览器逻辑测试、Ruff、Compose及离线构建通过。
+- 首次发布检查发现模型请求活跃，等待空闲后才备份切换，未中断模型请求。
+- 97项源码哈希一致，数据库完整，983项评价任务及各表内容摘要不变；配置哈希、其他容器状态不变，容器重启次数0；内外健康与管理页正常。
+- 发布清单：/TAORAN agent/releases/0.27.13rc1-transport-probe-20260908/deployment.json。
+- 回滚：/TAORAN agent/backups/before-0.27.13rc1-transport-probe-20260908/rollback.sh（回到0.27.12rc1）。
+- 本次未修改简道云插件配置。
+
+## rc1复测与rc2日志口径修正
+
+原第14条BFJL2026082500026在rc1首次复测：实时首段2.667秒、实时完整4.733秒、最终完整20.511秒；TCP80毫秒、TLS22毫秒、请求体发送完成103毫秒、响应头/首内容7883毫秒、完整生成17871毫秒。响应ID为20260908173100beba7152ebfa455f；供应商未返回头部请求ID。未复用缓存，未提交或回写记录。
+
+发现httpcore在收到SSE结束标记后主动关闭生成器也报告receive_response_body.failed/GeneratorExit。rc2将该事件记为stream_reader_closed，不误记failed_phase；真实传输异常仍保留failed_phase。409项Python测试、50项浏览器逻辑测试、Ruff和Compose通过。该修正只影响私有监控字段，不改变检测内容。

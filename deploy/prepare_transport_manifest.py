@@ -6,7 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 DEST = ROOT / "build/transport-probe"
-BASE = "bb70e41abc72fd8900967f4982414d9c7317c7cd"
+BASE = "cf7cccbde2ecdfec243776094a29ec0548f61096"
 
 
 def git(*args):

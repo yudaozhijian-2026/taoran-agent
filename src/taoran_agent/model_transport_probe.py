@@ -28,6 +28,9 @@ class TransportProbe:
         # Never retain info: it may contain authorization headers or exception bodies.
         try:
             event, state = name.rsplit(".", 1)
+            if state == "failed" and isinstance(info.get("exception"), GeneratorExit):
+                self.data["stream_reader_closed"] = True
+                return  # SSE [DONE] closes the generator before transport EOF; not a failure.
             now = monotonic()
             if state == "started":
                 self.starts[event] = now

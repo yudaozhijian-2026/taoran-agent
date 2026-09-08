@@ -45,3 +45,10 @@ def test_disk_failure_does_not_fail_request(tmp_path):
     blocker.write_text('not a directory')
     p = TransportProbe(SimpleNamespace(database_path=str(tmp_path/'db')), {})
     assert p.save() is None
+
+
+def test_sse_done_generator_close_is_not_failure(tmp_path):
+    p = TransportProbe(SimpleNamespace(database_path=str(tmp_path/'db')), {})
+    p.trace('http11.receive_response_body.failed', {'exception': GeneratorExit()})
+    assert p.data['stream_reader_closed'] is True
+    assert 'failed_phase' not in p.data
