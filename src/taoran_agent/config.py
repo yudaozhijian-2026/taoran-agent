@@ -67,6 +67,23 @@ class TenantConfigRegistry(BaseModel):
         return tenants
 
 
+class FeishuAlertRoute(BaseModel):
+    webhook_url: SecretStr
+    signing_secret: SecretStr | None = None
+
+    @field_validator("webhook_url")
+    @classmethod
+    def validate_webhook(cls, value):
+        url = urlsplit(value.get_secret_value())
+        if (url.scheme != "https" or url.hostname != "open.feishu.cn"
+                or url.port not in (None, 443) or url.username or url.password
+                or not url.path.startswith("/open-apis/bot/v2/hook/")
+                or not url.path.removeprefix("/open-apis/bot/v2/hook/")
+                or url.query or url.fragment):
+            raise ValueError("需要飞书自定义机器人 HTTPS webhook 地址")
+        return value
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="DSM_TAORAN_",
@@ -77,6 +94,9 @@ class Settings(BaseSettings):
 
     environment: str = "development"
     database_path: str = str(Path("data") / "taoran_agent.db")
+    feishu_alerts_enabled: bool = False
+    feishu_alert_routes: dict[str, FeishuAlertRoute] = Field(default_factory=dict)
+    feishu_alert_poll_seconds: float = Field(default=5, ge=1, le=60)
     admin_enabled: bool = False
     admin_api_key: SecretStr | None = None
     admin_audit_path: str = str(Path("data") / "tenant_admin_audit.jsonl")

@@ -34,6 +34,7 @@ FIELDS = (
     "knowledge_basis",
     "stream_token_until",
     "source",
+    "return_failure",
 )
 
 

@@ -45,6 +45,32 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   };
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
+test('reopened completed preview shows final waiting until matching final arrives', async () => {
+  const h = harness([
+    {check_id:'qc_test',input_hash:'v1',status:'processing',preview_status:'completed',preview_feedback_text:'实时正文'},
+    {check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',final_feedback_text:'【AI反馈意见】\n本次拜访分析：最终正文'},
+  ], undefined, {taskVersion:'v1',frontPolicy:'front-v46-suggestion-contract-20260908'});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.equal(h.nodes.finalContent.textContent,'正在生成最终AI反馈意见');
+  assert.equal(h.nodes.ack.hidden,true);
+  h.source.emit('stage',{text:'模型处理中'});
+  assert.equal(h.nodes.status.textContent,'正在生成最终AI反馈意见');
+  await h.tick();
+  assert.equal(h.nodes.content.textContent,'实时正文');
+  assert.equal(h.nodes.finalContent.textContent,'本次拜访分析：最终正文');
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
+test('duplicate heading is display-only and acknowledgement keeps original feedback', async () => {
+  const text='【AI反馈意见】\n本次拜访分析：正文中引用【AI反馈意见】应保留。';
+  const h=harness([{check_id:'qc_test',final_feedback_text:text}]);
+  h.source.emit('preview_complete',{status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:text});
+  assert.equal(h.nodes.finalContent.textContent,'本次拜访分析：正文中引用【AI反馈意见】应保留。');
+  await h.nodes.ack.click();
+  assert.equal(h.messages[0][0].pluginMessage.feedback_text,text);
+});
 test('active versioned polling displays incremental text every second', async () => {
   const responses = ['第一句。','第一句。第二句。','第一句。第二句。第三句。'].map(text => ({
     check_id:'qc_test',input_hash:'v1',status:'processing',preview_status:'processing',preview_feedback_text:text,
@@ -181,7 +207,11 @@ const hangingBody = (_, {signal}) => Promise.resolve({ok: true, status: 200,
   }),
 });
 test('hung ack body times out, preserves Final and allows safe retry', async () => {
-  const h = harness([hangingBody, completed()]);
+  const h = harness([hangingBody, (url, options) => {
+    assert.match(url,/\/return-failure\?stream_token=/);
+    assert.equal(options.method,'POST');
+    return {ok:true,status:200,json:async()=>({recorded:true})};
+  }, completed()]);
   h.source.emit('final_completed', {check_id: 'qc_test', feedback_text: '真实Final'});
   const click = h.nodes.ack.click();
   await new Promise(resolve => setImmediate(resolve));
@@ -292,7 +322,8 @@ test('completed Preview remains unchanged after Final and return', async () => {
   h.source.emit('preview_complete', {status: 'completed'});
   h.source.emit('preview_delta', {text: '迟到内容不应追加'});
   assert.equal(h.nodes.content.textContent, '客户已明确采购计划。');
-  assert.equal(h.nodes.finalPanel.hidden, true);
+  assert.equal(h.nodes.finalPanel.hidden, false);
+  assert.equal(h.nodes.finalContent.textContent, '正在生成最终AI反馈意见');
   h.source.emit('final_completed', {check_id: 'qc_test', feedback_text: '正式反馈'});
   assert.equal(h.nodes.content.textContent, '客户已明确采购计划。');
   assert.equal(h.nodes.previewLabel.textContent, 'AI实时分析');
@@ -359,7 +390,7 @@ test('completed AI replaces waiting status only for the matching version', async
     {initialBasic:'基础检查',taskVersion:'version-a'});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.content.textContent,'真实Final');
-  assert.equal(h.nodes.previewLabel.textContent,'AI实时分析');
+  assert.equal(h.nodes.previewLabel.textContent,'AI最终反馈意见');
   assert.equal(h.nodes.versionNote.textContent, '');
 });
 
@@ -425,7 +456,7 @@ test('semantic observation shows confirmation and remains a completed returnable
     preview_feedback_text:'原文未说明确认方，需确认实际确认方。',preview_status:'completed'}],undefined,
     {...restored,frontPolicy:'front-v46-observe-20260908'});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.nodes.finalContent.textContent,text);
+  assert.equal(h.nodes.finalContent.textContent,text.replace('【AI反馈意见】\n',''));
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.finalPanel.hidden,false);
   assert.doesNotMatch(h.nodes.status.textContent,/失败|未完成/);

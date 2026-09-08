@@ -1,4 +1,4 @@
-// experimental: transport/UX only. Final text is never rewritten here.
+// Transport/UX only: omit the duplicate heading for display, preserve returned feedback.
 const params = new URLSearchParams(location.search);
 const checkId = params.get('check_id'), token = sessionToken;
 // A per-opening nonce is not a form field or cache identity.
@@ -33,7 +33,8 @@ let finalDone = false, finalFailed = false;
 const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
 const restartText = '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
-const waitingText = 'AI正在分析，请稍候；可关闭后重新打开查看进度。';
+const waitingText = 'AI正在分析，请稍候。';
+const finalWaitingText = '正在生成最终AI反馈意见';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 if (versionedMode) {
@@ -56,7 +57,18 @@ function applyVersion(task) {
 const allowedParents = new Set(['https://www.jiandaoyun.com', 'https://jiandaoyun.com']);
 let parentOrigin = '';
 try { parentOrigin = new URL(document.referrer).origin; } catch (_) { /* fail closed */ }
-function stage(text) { if (!disposed) status.textContent = text; }
+function stage(text) {
+  if (!disposed) status.textContent = previewSucceeded && !finalDone ? finalWaitingText : text;
+}
+function showFinalWaiting() {
+  if (disposed || finalDone || !previewSucceeded) return;
+  finalContent.textContent = finalWaitingText;
+  finalPanel.hidden = false;
+  stage(finalWaitingText);
+}
+function finalDisplayText(text) {
+  return text.replace(/^\s*【AI反馈意见】\s*/, '');
+}
 function stopTransport() {
   if (source) source.close();
   clearTimeout(pollTimer);
@@ -75,9 +87,14 @@ function previewSnapshot(text, state) {
   previewSucceeded = state === 'completed';
   if (previewSucceeded) markVisible('preview_complete_visible_ms');
   previewComplete = state === 'completed' || state === 'unavailable' || state === 'failed';
+  showFinalWaiting();
   if ((!content.textContent || content.textContent === waitingText) && previewComplete) content.textContent = '正在生成完整分析。';
   if (finalDone && !finalFailed) {
-    if (previewComplete && !previewSucceeded && versionedMode) { content.textContent = finalContent.textContent; finalPanel.hidden = true; }
+    if (previewComplete && !previewSucceeded && versionedMode) {
+      content.textContent = finalContent.textContent;
+      if (previewLabel) previewLabel.textContent = 'AI最终反馈意见';
+      finalPanel.hidden = true;
+    }
     stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
   }
   settle();
@@ -87,6 +104,7 @@ function fail(code, message, terminal = false) {
   if (terminal) { done = true; stopTransport(); }
   finalDone = true;
   finalFailed = true;
+  if (finalContent.textContent === finalWaitingText) { finalContent.textContent = ''; finalPanel.hidden = true; }
   ack.hidden = true;
   ack.disabled = true;
   // Content-mode retries must capture the current form and effective versions.
@@ -102,12 +120,12 @@ function finish(text) {
   if (finalDone || disposed) return;
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   finalDone = true;
-  finalContent.textContent = text;
+  finalContent.textContent = finalDisplayText(text);
   markVisible('final_visible_ms');
   markVisible('first_text_visible_ms');
   if (versionedMode && (!dualMode || (previewComplete && !previewSucceeded))) {
-    content.textContent = text;
-    if (previewLabel) previewLabel.textContent = 'AI实时分析';
+    content.textContent = finalDisplayText(text);
+    if (previewLabel) previewLabel.textContent = 'AI最终反馈意见';
     finalPanel.hidden = true;
   } else finalPanel.hidden = false;
   stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
@@ -155,7 +173,7 @@ async function poll() {
     }
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);
-    else stage(dualMode && previewSucceeded ? '实时分析已生成，最终反馈仍在后台生成，可重新打开查看。' : 'AI任务正在后台运行，可关闭后重新打开查看；请等待分析结果。');
+    else stage(dualMode && previewSucceeded ? finalWaitingText : 'AI任务正在运行，请等待分析结果。');
   } catch (_) { stage('连接暂时中断，正在查询原任务；后台生成不会因此取消。'); }
   finally {
     polling = false;
@@ -192,6 +210,7 @@ source.addEventListener('preview_complete', event => decode(event, data => {
   previewComplete = true;
   previewSucceeded = data.status === 'completed';
   if (previewSucceeded) markVisible('preview_complete_visible_ms');
+  showFinalWaiting();
   if (!finalDone) stage(data.status === 'unavailable'
     ? '实时预览暂不可用，仍在生成最终检测结果…'
     : 'AI实时分析已生成，正在完成最终检测…'
@@ -282,6 +301,8 @@ ack.addEventListener('click', async () => {
     ack.disabled = false;
     stage('最终反馈未能返回。' + restartText);
     status.className = 'status error';
+    // Best-effort failure reporting; a notification outage must not block retry.
+    requestJson(base + '/return-failure' + query, {method:'POST'}).catch(() => {});
   }
 });
 

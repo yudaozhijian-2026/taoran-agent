@@ -134,10 +134,16 @@ from .writeback import JiandaoyunWritebackError, writeback_evaluation
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     prewarm_runtime()
+    from .feishu_alerts import start_monitor
+    alert_monitor = start_monitor(get_settings(), get_store())
     recover_background_jobs()
     from .evaluation_operations import recover_operations
     recover_operations()
-    yield
+    try:
+        yield
+    finally:
+        if alert_monitor:
+            alert_monitor.close()
 
 app = FastAPI(
     title="DSM TAORAN 拜访智能体",
@@ -807,6 +813,8 @@ def health() -> dict[str, Any]:
             "failure_reasons": list(_prewarm_state["failure_reasons"]),
         }
     monitoring = _monitoring_snapshot()
+    from .feishu_alerts import notification_status
+    monitoring['feishu_alerts'] = notification_status(get_settings(), get_store())
     if isinstance(agent.semantic_reviewer, ChatModelReviewer):
         monitoring["model_capacity"] = agent.semantic_reviewer.model_capacity.snapshot()
     return {
@@ -2965,6 +2973,20 @@ def resume_interactive_quick_check_task(check_id: str, stream_token: str = Query
         return _quick_check_task_response(task)
 
 
+@app.post("/api/v1/quick-check/tasks/{check_id}/return-failure")
+def report_interactive_return_failure(
+    check_id: str, stream_token: str = Query(min_length=32, max_length=256),
+) -> dict[str, Any]:
+    task = _quick_check_task(check_id, stream_token)
+    result = _quick_check_task_response(task)
+    if result.get('superseded') or result['status'] != 'completed':
+        raise HTTPException(status_code=409, detail='该任务不能报告反馈交付失败')
+    with _quick_check_lock:
+        task['return_failure'] = True
+        _quick_check_persist(task)
+    return {'check_id': check_id, 'recorded': True}
+
+
 @app.post("/api/v1/quick-check/tasks/{check_id}/acknowledge")
 def acknowledge_interactive_quick_check_task(
     check_id: str,
@@ -2977,6 +2999,8 @@ def acknowledge_interactive_quick_check_task(
         raise HTTPException(status_code=409,detail="该意见属于旧记录版本，请打开最新版本的分析")
     if result["status"] != "completed" or "final_feedback_text" not in result:
         raise HTTPException(status_code=409, detail="AI检测尚未完成")
+    if task.pop('return_failure', None):
+        _quick_check_persist(task)
     if client_timings is not None:
         task["client_timings"] = {"basis": "popup_open_relative_ms", "reported_by": "browser",
                                   **client_timings.model_dump(exclude_none=True)}
@@ -3035,11 +3059,12 @@ def interactive_quick_check_page(
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>TAORAN AI检测</title>
 <style>body{font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#172033;background:#fff}main{padding:22px;max-width:760px;margin:auto}h1{font-size:20px;margin:0 0 12px}.status{color:#15803d;font-weight:700;margin:8px 0 16px}.panel{background:#f5f8fa;border-radius:10px;padding:14px;white-space:pre-wrap;line-height:1.65;min-height:68px}.label{font-weight:600;margin:16px 0 8px}button{margin-top:18px;background:#0b9e95;color:#fff;border:0;border-radius:7px;padding:10px 20px;font-size:15px;cursor:pointer}button[disabled]{opacity:.55;cursor:default}.error{color:#b42318}</style></head><body><main>
-<h1>TAORAN AI检测（experimental）</h1><p id="sourceNote">__TAORAN_SOURCE_NOTE__</p><div id="status" class="status">正在连接检测任务…</div>
+<h1>TAORAN AI检测（experimental）</h1>
 <p id="returnNotice" role="note" style="background:#fff7e6;padding:12px;border-radius:7px;line-height:1.6">分析完成后，请点击“已读并返回”，可将 AI 最终反馈带回拜访记录填写页面。直接关闭弹窗不会同步反馈。</p>
+<div id="status" class="status">正在连接检测任务…</div>
 <button id="resume" hidden type="button">恢复本次分析</button>
-<div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel">AI正在分析，请稍候；可关闭后重新打开查看进度。</div>
-<section id="finalPanel" hidden><div class="label">AI反馈意见</div><div id="finalContent" class="panel"></div></section>
+<div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel">AI正在分析，请稍候。</div>
+<section id="finalPanel" hidden><div class="label">AI最终反馈意见</div><div id="finalContent" class="panel" aria-live="polite"></div></section>
 <button id="ack" hidden disabled>已读并返回</button></main><script>
 const publicPath=__TAORAN_PUBLIC_PATH__;
 const sessionToken=__TAORAN_SESSION_TOKEN__;
@@ -3053,8 +3078,6 @@ __TAORAN_INTERACTIVE_SCRIPT__
         '__TAORAN_PUBLIC_PATH__':public_path_json,
         '__TAORAN_SESSION_TOKEN__':json.dumps(task['session_token']),
         '__TAORAN_INTERACTIVE_SCRIPT__':files('taoran_agent').joinpath('interactive_quick_check.js').read_text(encoding='utf-8'),
-        '__TAORAN_SOURCE_NOTE__':('本次检测已保存记录。页面上尚未保存的修改不会被读取。'
-            if task.get('source')=='saved_current_record' else '本次检测按钮传入的当前页面数据；不会自动保存记录。'),
     }
     # One template pass: source text containing template markers stays data.
     import re
