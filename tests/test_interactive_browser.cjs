@@ -45,6 +45,32 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   };
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
+test('active versioned polling displays incremental text every second', async () => {
+  const responses = ['第一句。','第一句。第二句。','第一句。第二句。第三句。'].map(text => ({
+    check_id:'qc_test',input_hash:'v1',status:'processing',preview_status:'processing',preview_feedback_text:text,
+  }));
+  const h = harness(responses, undefined, {taskVersion:'v1',frontPolicy:'front-v46-complete-20260908'});
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,'第一句。');
+  await h.tick(1000);
+  assert.equal(h.nodes.content.textContent,'第一句。第二句。');
+  await h.tick(1000);
+  assert.equal(h.nodes.content.textContent,'第一句。第二句。第三句。');
+  assert.equal(h.nodes.ack.hidden,true);
+});
+test('live snapshots display prose immediately and reset failed attempts before Final', () => {
+  const h = harness([], undefined, {taskVersion:'v1',frontPolicy:'front-v46-complete-20260908'});
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'第一段客户事实。',status:'processing'});
+  assert.equal(h.nodes.content.textContent,'第一段客户事实。');
+  assert.equal(h.nodes.ack.hidden,true);
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'第一段客户事实。第二段分析。',status:'processing'});
+  assert.equal(h.nodes.content.textContent,'第一段客户事实。第二段分析。');
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'',status:'processing'});
+  assert.match(h.nodes.content.textContent,/AI正在分析/);
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'修复后的分析。',status:'completed'});
+  assert.equal(h.nodes.content.textContent,'修复后的分析。');
+  assert.equal(h.nodes.ack.hidden,true);
+});
 test('content-mode acknowledgement carries this modal opening identity', async () => {
   const h = harness([{check_id:'qc_test',final_feedback_text:'完整反馈'}], undefined, {openingId:'o'.repeat(32)});
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:'完整反馈'});

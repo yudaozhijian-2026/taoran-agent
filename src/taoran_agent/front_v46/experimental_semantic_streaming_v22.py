@@ -142,6 +142,21 @@ def _feedback_body(raw: str) -> str:
     return raw.split(_OPEN, 1)[1].split(_CLOSE, 1)[0]
 
 
+def _stream_feedback_body(raw: str, *, interactive: bool) -> str:
+    """Expose plain prose as it arrives; tolerate split legacy wrapper tags."""
+    text = raw.lstrip()
+    if _OPEN.startswith(text):
+        return ""
+    if text.startswith(_OPEN):
+        text = text[len(_OPEN):].split(_CLOSE, 1)[0]
+        # A provider can split the closing marker between arbitrary tokens.
+        for size in range(min(len(text), len(_CLOSE) - 1), 0, -1):
+            if text.endswith(_CLOSE[:size]):
+                return text[:-size]
+        return text
+    return raw if interactive else _feedback_body(raw)
+
+
 def _flushable_length(text: str, emitted: int, *, final: bool) -> int:
     available = text[emitted:]
     if final:
@@ -289,7 +304,7 @@ def _stream_semantic_preview_once(
                 if received_bytes > _MAX_OUTPUT_BYTES:
                     raise ValueError("output_truncated")
                 raw += content
-                preview = _feedback_body(raw)
+                preview = _stream_feedback_body(raw, interactive=interactive)
                 boundary = _flushable_length(preview, emitted, final=_CLOSE in raw)
                 if boundary > emitted:
                     emit_piece(preview[emitted:boundary])
@@ -302,8 +317,9 @@ def _stream_semantic_preview_once(
         outside = raw.replace(_OPEN + _feedback_body(raw) + _CLOSE, "").strip() if _OPEN in raw and _CLOSE in raw else ""
         if not feedback or placeholder in {"分析与必要核对事项", "AI实时分析", "需确认事项", "分析正文"} or outside:
             raise ValueError("invalid_preview_format")
-        if emitted < len(feedback):
-            emit_piece(feedback[emitted:])
+        stream_body = _stream_feedback_body(raw, interactive=interactive)
+        if emitted < len(stream_body):
+            emit_piece(stream_body[emitted:])
         feedback = "".join(displayed).strip()
         from ..semantic_observation import observe
         findings = observe(boundary_issues, feedback, snapshot, scope="preview")
@@ -341,17 +357,32 @@ def _stream_semantic_preview_once(
             "semantic_complete_ms": int((monotonic() - started) * 1000)}
 
 
-def stream_semantic_preview_v22(settings, visit, emit, *, interactive=False):
-    """Publish only a complete candidate; repair transport/content once, never semantics."""
+def stream_semantic_preview_v22(
+    settings, visit, emit, *, interactive=False, live=False, reset=None,
+):
+    """Stream live prose when the consumer can retract failed attempts.
+
+    Legacy consumers retain atomic delivery. The popup opts into live delivery
+    with a reset event, so format repair never concatenates two candidates.
+    """
+    if live and (not interactive or reset is None):
+        raise ValueError("live_preview_requires_interactive_reset")
     started = monotonic()
     attempts = []
     for attempt in range(2):
         chunks = []
-        result = _stream_semantic_preview_once(settings, visit, chunks.append, interactive=interactive, repair=attempt > 0)
+        def publish(piece, chunks=chunks):
+            chunks.append(piece)
+            if live:
+                emit(piece)
+        result = _stream_semantic_preview_once(settings, visit, publish, interactive=interactive, repair=attempt > 0)
         attempts.append(dict(result))
         if result["status"] == "completed":
-            emit("".join(chunks))
+            if not live:
+                emit("".join(chunks))
             break
+        if live:
+            reset()
         if result.get("failure_category") not in {"invalid_preview_format", "output_truncated"}:
             break
     return {**result, "attempt_count": len(attempts), "model_attempts": attempts,

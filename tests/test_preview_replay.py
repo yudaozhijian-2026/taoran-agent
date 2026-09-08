@@ -49,6 +49,7 @@ def test_v46_mode_restores_independent_preview_and_final(monkeypatch):
     from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as preview
     calls=[]
     def generate(settings, visit, emit, **kwargs):
+        assert kwargs['live'] is True and callable(kwargs['reset'])
         calls.append('preview')
         emit('V4.6实时意见')
         return {'status':'completed'}
@@ -76,3 +77,38 @@ def test_snapshots_are_task_isolated():
     a['events'].put({'type': 'preview_delta', 'text': 'A客户'})
     assert api._quick_check_task_response(a)['preview_feedback_text'] == 'A客户'
     assert api._quick_check_task_response(b)['preview_feedback_text'] == ''
+
+
+def test_live_reset_replaces_failed_attempt_for_all_readers():
+    t = task({'status': 'processing'})
+    t['future'] = Future()
+    t['events'].put({'type': 'preview_delta', 'text': '旧尝试部分文字'})
+    assert api._quick_check_preview_snapshot(t)['text'] == '旧尝试部分文字'
+    t['events'].put({'type': 'preview_reset'})
+    assert api._quick_check_preview_snapshot(t) == {'text': '', 'status': 'processing'}
+    t['events'].put({'type': 'preview_delta', 'text': '新尝试正文'})
+    t['events'].put({'type': 'preview_complete', 'status': 'completed'})
+    assert api._quick_check_preview_snapshot(t) == {'text': '新尝试正文', 'status': 'completed'}
+    assert api._quick_check_preview_snapshot(t)['text'] == '新尝试正文'
+
+
+def test_sse_delivers_partial_snapshot_while_final_is_pending():
+    t = task({'status': 'processing'})
+    t['future'] = Future()
+
+    async def run():
+        stream = api._interactive_quick_check_events(Request(), t)
+        await anext(stream)  # started
+        await anext(stream)  # stage
+        t['events'].put({'type': 'preview_delta', 'text': '第一段。'})
+        first = await anext(stream)
+        assert '第一段。' in first and 'processing' in first
+        assert not t['future'].done()
+        await anext(stream)  # keepalive
+        t['events'].put({'type': 'preview_delta', 'text': '第二段。'})
+        second = await anext(stream)
+        assert '第一段。第二段。' in second
+        assert not t['future'].done()
+        await stream.aclose()
+
+    asyncio.run(run())

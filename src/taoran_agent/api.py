@@ -2537,6 +2537,8 @@ def _quick_check_run(
                 canonical_request.visit,
                 lambda text: events.put({"type": "preview_delta", "text": text}),
                 interactive=True,
+                live=True,
+                reset=lambda: events.put({"type": "preview_reset"}),
             )
         except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
             preview = {"status": "failed", "failure_category": "preview_service_error"}
@@ -2574,6 +2576,8 @@ def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
                 break
             if event["type"] == "preview_delta" and state["status"] == "processing":
                 state["text"] += event["text"]
+            elif event["type"] == "preview_reset":
+                state.update(text="", status="processing")
             elif event["type"] == "preview_complete":
                 state["status"] = "completed" if event.get("status") == "completed" else "unavailable"
         preview = outcome.get("preview", {})

@@ -56,8 +56,9 @@ function settle() {
 }
 function previewSnapshot(text, state) {
   if ((versionedMode && !dualMode) || previewComplete) return;
-  if (typeof text === 'string' && (text || !dualMode)) {
-    content.textContent = text;
+  if (typeof text === 'string') {
+    // An empty snapshot can retract an incomplete attempt before format retry.
+    content.textContent = text || (dualMode ? waitingText : '');
     if (dualMode && previewLabel) previewLabel.textContent = 'AI实时分析';
   }
   previewSucceeded = state === 'completed';
@@ -129,6 +130,9 @@ async function poll() {
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
     previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
+    // Healthy active previews refresh each second; only failures/finished
+    // previews back off, otherwise several generated sentences arrive at once.
+    if (dualMode && !previewComplete) retryDelay = 1000;
     if (task.status === 'completed') {
       finish(task.final_feedback_text);
       if (resume) resume.hidden = !task.recoverable;
