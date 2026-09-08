@@ -2513,6 +2513,32 @@ def _quick_check_run_final_once(
         )
 
 
+def _quick_check_run_preview(visit, settings, events):
+    """Shared live wording channel; failures never discard the formal result."""
+    from .front_v46.experimental_semantic_streaming_v22 import stream_semantic_preview_v22
+
+    lease = None
+    try:
+        reviewer = get_agent(settings).semantic_reviewer
+        if isinstance(reviewer, ChatModelReviewer):
+            lease = reviewer.model_capacity.acquire("frontend", settings.frontend_model_timeout_seconds)
+            if lease is None:
+                raise TimeoutError("preview_queue_timeout")
+        preview = stream_semantic_preview_v22(
+            settings, visit,
+            lambda text: events.put({"type": "preview_delta", "text": text}),
+            interactive=True, live=True,
+            reset=lambda: events.put({"type": "preview_reset"}),
+        )
+    except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
+        preview = {"status": "failed", "failure_category": "preview_service_error"}
+    finally:
+        if lease is not None:
+            lease.release()
+    events.put({"type": "preview_complete", **preview})
+    return preview
+
+
 def _quick_check_run(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -2520,35 +2546,12 @@ def _quick_check_run(
     knowledge_basis: dict | None = None,
 ) -> dict[str, Any]:
     from .content_cache import run_with_knowledge_basis
-    from .front_v46.experimental_semantic_streaming_v22 import stream_semantic_preview_v22
     final_future = _quick_check_final_executor.submit(
         run_with_knowledge_basis, _quick_check_run_final, canonical_request, settings, knowledge_basis,
     )
-    def run_preview() -> dict[str, Any]:
-        lease = None
-        try:
-            reviewer = get_agent(settings).semantic_reviewer
-            if isinstance(reviewer, ChatModelReviewer):
-                lease = reviewer.model_capacity.acquire("frontend", settings.frontend_model_timeout_seconds)
-                if lease is None:
-                    raise TimeoutError("preview_queue_timeout")
-            preview = stream_semantic_preview_v22(
-                settings,
-                canonical_request.visit,
-                lambda text: events.put({"type": "preview_delta", "text": text}),
-                interactive=True,
-                live=True,
-                reset=lambda: events.put({"type": "preview_reset"}),
-            )
-        except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
-            preview = {"status": "failed", "failure_category": "preview_service_error"}
-        finally:
-            if lease is not None:
-                lease.release()
-        events.put({"type": "preview_complete", **preview})
-        return preview
-
-    preview_future = _quick_check_preview_executor.submit(run_preview)
+    preview_future = _quick_check_preview_executor.submit(
+        _quick_check_run_preview, canonical_request.visit, settings, events,
+    )
     try:
         final = final_future.result()
     except Exception:  # noqa: BLE001 - worker failures become a traceable Final state

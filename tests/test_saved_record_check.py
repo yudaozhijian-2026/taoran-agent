@@ -81,6 +81,8 @@ def test_saved_modal_uses_saved_record_not_page(env, monkeypatch):
     monkeypatch.setattr(saved, "find_jiandaoyun_record_by_field", lambda *args: server)
     enqueue = Mock(return_value=SimpleNamespace(job_id="job1", input_snapshot_hash="a" * 64))
     monkeypatch.setattr(api, "_enqueue_jiandaoyun_record", enqueue)
+    preview = Mock(side_effect=AssertionError("Completed saved results must not call AI again"))
+    monkeypatch.setattr(api, "_quick_check_run_preview", preview)
     result = api.create_interactive_quick_check_task({
         "saved_record_check": True, "record_code": "code-1", "data_id": "wrong-id",
         "form_snapshot": {"process": "unsaved facts"},
@@ -88,9 +90,11 @@ def test_saved_modal_uses_saved_record_not_page(env, monkeypatch):
     assert enqueue.call_args.args[0].data_id == "actual-id"
     assert enqueue.call_args.args[1] == server
     task = api._quick_check_tasks[result["check_id"]]
-    task["future"].result(timeout=2)
+    task["future"].result(timeout=2)["preview_future"].result(timeout=2)
     complete = api._quick_check_task_response(task)
     assert complete["final_feedback_text"] == latest["response"]["ai_opinion"]
+    assert complete["preview_feedback_text"] == latest["response"]["ai_opinion"]
+    preview.assert_not_called()
     api._quick_check_cleanup(task["expires_at"] + 1)
 
 
@@ -114,3 +118,69 @@ def test_update_webhook_does_not_enqueue(env, monkeypatch):
     assert result.status_code == 202
     assert result.json()["status"] == "ignored"
     enqueue.assert_not_called()
+
+
+@pytest.mark.parametrize("preview_fails", [False, True])
+def test_saved_live_preview_independent_of_final_and_reopened(env, monkeypatch, preview_fails):
+    from threading import Event
+
+    from taoran_agent import saved_record_check as saved
+    from taoran_agent.front_v46 import POLICY_VERSION
+
+    _, store, _, mapping, create, _ = env
+    request, _ = create()
+    latest = store.latest_source_job(request)
+    latest["status"] = "running"
+    latest["response"]["semantic_facts"]["status"] = "completed"
+    latest["response"]["writeback"]["status"] = "succeeded"
+    monkeypatch.setattr(api, "_require_interactive_quick_check", lambda _: None)
+    monkeypatch.setattr(store, "get_evaluation", lambda *args: latest)
+    mapping["record_fields"] = {"visit_record_code": {"widget_id": "code"}}
+    monkeypatch.setattr(api, "tenant_mapping", lambda *args: mapping)
+    monkeypatch.setattr(saved, "find_jiandaoyun_record_by_field", lambda *args: {"_id": "actual-id"})
+    monkeypatch.setattr(api, "_enqueue_jiandaoyun_record", Mock(
+        return_value=SimpleNamespace(job_id="live-test", input_snapshot_hash="b" * 64)))
+    started, release = Event(), Event()
+    calls = []
+
+    def preview(visit, settings, events):
+        calls.append(visit)
+        events.put({"type": "preview_delta", "text": "客户已确认四张办公桌。"})
+        started.set()
+        assert release.wait(3)
+        state = "failed" if preview_fails else "completed"
+        events.put({"type": "preview_complete", "status": state})
+        return {"status": state}
+
+    monkeypatch.setattr(api, "_quick_check_run_preview", preview)
+    payload = {"saved_record_check": True, "record_code": "live-code", "user_id": "live-user",
+               "form_snapshot": {"process_description": "must not be used"}}
+    result = api.create_interactive_quick_check_task(payload, "a", "key-a")
+    task = api._quick_check_tasks[result["check_id"]]
+    try:
+        assert started.wait(2)
+        state = api._quick_check_task_response(task)
+        assert state["preview_feedback_text"] == "客户已确认四张办公桌。"
+        assert state["status"] == "processing"
+        assert state["front_policy"] == POLICY_VERSION
+        assert calls[0] == request.visit
+        again = api.create_interactive_quick_check_task(payload, "a", "key-a")
+        assert again["check_id"] == result["check_id"]
+        assert again["reused"] is True
+        assert len(calls) == 1
+        latest["status"] = "completed"
+        outcome = task["future"].result(timeout=2)
+        # Final is ready while the separate preview is still generating.
+        assert outcome["final"]["status"] == "completed"
+        assert not outcome["preview_future"].done()
+        release.set()
+        outcome["preview_future"].result(timeout=2)
+        final = api._quick_check_task_response(task)
+        assert final["final_feedback_text"] == latest["response"]["ai_opinion"]
+        assert final["status"] == "completed"
+        assert final["preview_status"] == ("unavailable" if preview_fails else "completed")
+    finally:
+        release.set()
+        latest["status"] = "completed"
+        task["future"].result(timeout=2)
+        api._quick_check_cleanup(task["expires_at"] + 1)
