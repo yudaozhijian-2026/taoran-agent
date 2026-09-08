@@ -20,7 +20,7 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   }
   const context = {
     ...initial, URL, URLSearchParams, AbortController, publicPath: '/taoran-027', sessionToken: 'session-token',
-    location: {search: '?check_id=qc_test&stream_token=' + 'x'.repeat(32)},
+    location: {search: '?check_id=qc_test&stream_token=' + 'x'.repeat(32) + (initial.openingId ? '&opening_id=' + initial.openingId : '')},
     document: {referrer, querySelector: selector => nodes[selector.slice(1)]},
     window: {parent, addEventListener: (name, fn) => { handlers[name] = fn; }},
     EventSource: Source,
@@ -45,6 +45,18 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   };
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
+test('content-mode acknowledgement carries this modal opening identity', async () => {
+  const h = harness([{check_id:'qc_test',final_feedback_text:'完整反馈'}], undefined, {openingId:'o'.repeat(32)});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:'完整反馈'});
+  await h.nodes.ack.click();
+  assert.equal(h.messages[0][0].pluginMessage.opening_id,'o'.repeat(32));
+});
+test('content-mode failure directs current-form recheck rather than stale resume', async () => {
+  const h = harness([{check_id:'qc_test',status:'failed'}], undefined, {openingId:'o'.repeat(32)});
+  h.source.emit('error');await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.resume.hidden,true);
+  assert.match(h.nodes.status.textContent,/重新点击/);
+});
 test('Final first does not close the stream or block later Preview', () => {
   const h = harness();
   h.source.emit('preview_snapshot', {check_id: 'qc_test', text: '', status: 'processing'});

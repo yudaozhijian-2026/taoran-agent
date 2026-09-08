@@ -59,7 +59,7 @@ def test_failed_task_survives_restart_and_resumes_same_identity(recovery, monkey
     settings, store, request, task = recovery
     calls = []
 
-    def run(request, settings, events):
+    def run(request, settings, events, knowledge_basis=None):
         calls.append(request)
         return {
             "preview": {"status": "completed"},
@@ -155,7 +155,7 @@ def test_running_task_reuses_but_interrupted_task_can_restart_from_form(
     monkeypatch.setattr(
         api,
         "_canonicalize_interactive_quick_check",
-        lambda *args: (request, settings, "TEST", "same-version", "user-a", True),
+        lambda *args: (request, settings, "TEST", "same-version", "user-a", True, None),
     )
     pending = Future()
     calls = []
@@ -250,7 +250,7 @@ def test_form_click_starts_new_attempt_after_failure_and_reuses_new_running_task
     settings.quick_check_interactive_enabled = True
     monkeypatch.setattr(api, "_quick_check_idempotency", {})
     monkeypatch.setattr(api, "_canonicalize_interactive_quick_check",
-        lambda *args: (request, settings, "TEST", "same-version", "user-a", False))
+        lambda *args: (request, settings, "TEST", "same-version", "user-a", False, None))
     monkeypatch.setattr(api, "_quick_check_run", lambda *args: {
         "preview": {"status": "failed"},
         "final": {"status": "failed", "failure_category": "timeout"}})

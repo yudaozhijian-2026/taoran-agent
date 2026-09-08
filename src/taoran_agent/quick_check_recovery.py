@@ -29,6 +29,8 @@ FIELDS = (
     "basic_feedback",
     "front_policy",
     "retention_until",
+    "cache_until",
+    "knowledge_basis",
     "stream_token_until",
     "source",
 )

@@ -1,6 +1,8 @@
 // experimental: transport/UX only. Final text is never rewritten here.
 const params = new URLSearchParams(location.search);
 const checkId = params.get('check_id'), token = sessionToken;
+// A per-opening nonce is not a form field or cache identity.
+const openingId = params.get('opening_id') || '';
 const status = document.querySelector('#status'), content = document.querySelector('#content');
 const finalPanel = document.querySelector('#finalPanel'), finalContent = document.querySelector('#finalContent');
 const ack = document.querySelector('#ack');
@@ -74,7 +76,8 @@ function fail(code, message, terminal = false) {
   finalFailed = true;
   ack.hidden = true;
   ack.disabled = true;
-  if (resume) resume.hidden = terminal;
+  // Content-mode retries must capture the current form and effective versions.
+  if (resume) resume.hidden = terminal || Boolean(openingId);
   const expired = code === 'task_or_token_expired' || code === 'task_expired';
   stage(expired
     ? '检测链接已失效或任务已过期。' + restartText
@@ -242,6 +245,7 @@ ack.addEventListener('click', async () => {
     }
     window.parent.postMessage({pluginMessage: {
       type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: data.final_feedback_text,
+      opening_id: openingId,
       ...(versionedMode ? {input_hash:taskVersion,generated_at:data.generated_at} : {}),
     }}, parentOrigin);
     feedbackHandedOff = true;

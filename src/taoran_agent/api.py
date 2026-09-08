@@ -511,6 +511,9 @@ def _fetch_live_knowledge_snapshot(
     timeout_seconds: float,
 ) -> TaoranKnowledgeSnapshot:
     """短时缓存并合并同时取数，避免多人点击对知识API发起重复请求。"""
+    from .content_cache import knowledge_basis, pinned_snapshot
+    if knowledge_basis.get() is not None:
+        return pinned_snapshot('live')
     secret = settings.knowledge_api_key
     if secret is None:
         raise ValueError("knowledge_api_not_configured")
@@ -1978,7 +1981,9 @@ def _execute_rule_button_feedback(
     mapping_path = settings.jiandaoyun_mapping_path_for(
         canonical_request.context.tenant_id
     )
-    local_snapshot = load_taoran_knowledge_snapshot(settings.knowledge_snapshot_path)
+    from .content_cache import knowledge_basis, pinned_snapshot
+    local_snapshot = (pinned_snapshot('local') if knowledge_basis.get() is not None
+                      else load_taoran_knowledge_snapshot(settings.knowledge_snapshot_path))
     local_rule_request, _ = _with_live_purpose_policy(
         canonical_request,
         settings,
@@ -2310,7 +2315,7 @@ def _canonicalize_interactive_quick_check(
     request: dict[str, Any],
     x_tenant_id: str | None,
     x_api_key: str | None,
-) -> tuple[PrecheckRequest, Settings, str, str, str, bool]:
+) -> tuple[PrecheckRequest, Settings, str, str, str, bool, dict]:
     """Validate a browser's unsaved snapshot without reading Jiandaoyun."""
     if not x_tenant_id or not x_tenant_id.strip() or not x_api_key or not x_api_key.strip():
         raise HTTPException(status_code=401, detail="Missing tenant credentials")
@@ -2321,7 +2326,7 @@ def _canonicalize_interactive_quick_check(
     force = bool(raw.pop("force", False))
     client_hash = raw.pop("input_hash", None)
     snapshot = raw.pop("form_snapshot", None)
-    if raw or not record_code or not isinstance(snapshot, dict):
+    if raw or not isinstance(snapshot, dict):
         raise HTTPException(status_code=422, detail="当前表单快照格式不正确，请重新打开AI检测。")
     canonical_request, settings = _canonicalize_button_request(
         {
@@ -2340,13 +2345,42 @@ def _canonicalize_interactive_quick_check(
         x_tenant_id,
         x_api_key,
     )
-    input_hash = _quick_check_snapshot_hash(canonical_request, record_code)
+    from .content_cache import fingerprint, implementation_digest
+    local = load_taoran_knowledge_snapshot(settings.knowledge_snapshot_path)
+    live = None
+    try:
+        live = _fetch_live_knowledge_snapshot(settings, settings.knowledge_fetch_budget_seconds)
+        live_hash = live.snapshot_hash
+    except Exception:  # noqa: BLE001 - unavailable knowledge is isolated, never cached as success
+        # Unknown current knowledge must never hit a prior success cache.
+        live_hash = 'unavailable'
+        force = True
+    config = settings.model_dump(mode='json')
+    config['model_credential_digest'] = hashlib.sha256(
+        (settings.llm_api_key.get_secret_value() if settings.llm_api_key else '').encode()
+    ).hexdigest()
+    input_hash = fingerprint(
+        snapshot, canonical_request.visit.model_dump(mode='json'),
+        tenant=canonical_request.context.tenant_id, credential=x_api_key.strip(), user=user_id,
+        settings=config, mapping=tenant_mapping(settings, canonical_request.context.tenant_id),
+        local_knowledge_hash=local.snapshot_hash, live_knowledge_hash=live_hash,
+    )
+    # Internal content namespace is not a field, business ID, or writeback target.
+    record_code = 'content:' + input_hash
+    canonical_request = canonical_request.model_copy(update={
+        'context': canonical_request.context.model_copy(update={
+            'form_revision': 'content-v1:' + input_hash,
+        }),
+    })
     if client_hash is not None and (
         not isinstance(client_hash, str)
         or not hmac.compare_digest(client_hash, input_hash)
     ):
         raise HTTPException(status_code=422, detail="当前表单快照校验不一致，请重新点击AI检测。")
-    return canonical_request, settings, record_code, input_hash, user_id, force
+    basis = {'local': local.model_dump(mode='json'),
+             'live': live.model_dump(mode='json') if live is not None else None,
+             'implementation': implementation_digest()}
+    return canonical_request, settings, record_code, input_hash, user_id, force, basis
 
 
 def _quick_check_persist(task):
@@ -2376,7 +2410,7 @@ def _quick_check_schedule(task, canonical_request, settings):
     def work():
         task['phase_timings']['worker_queue_ms'] = int((monotonic()-queued)*1000)
         _quick_check_persist(task)
-        return _quick_check_run(canonical_request, settings, task['events'])
+        return _quick_check_run(canonical_request, settings, task['events'], task.get('knowledge_basis'))
     task['future'] = _quick_check_executor.submit(work)
     def completed(_future):
         with _quick_check_lock:
@@ -2483,10 +2517,12 @@ def _quick_check_run(
     canonical_request: PrecheckRequest,
     settings: Settings,
     events: Queue[dict[str, Any]],
+    knowledge_basis: dict | None = None,
 ) -> dict[str, Any]:
+    from .content_cache import run_with_knowledge_basis
     from .front_v46.experimental_semantic_streaming_v22 import stream_semantic_preview_v22
     final_future = _quick_check_final_executor.submit(
-        _quick_check_run_final, canonical_request, settings,
+        run_with_knowledge_basis, _quick_check_run_final, canonical_request, settings, knowledge_basis,
     )
     def run_preview() -> dict[str, Any]:
         lease = None
@@ -2635,7 +2671,9 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
     result['front_policy'] = task.get('front_policy')
     result['preview_kind'] = 'ai' if task.get('front_policy') else ('basic' if task.get('basic_feedback') else 'ai')
     result['generated_at'] = (outcome or {}).get('final',{}).get('generated_at')
-    latest=get_store(task.get('_settings')).latest_quick_check(task['tenant_id'],task['record_code']) if task.get('request_snapshot') else None
+    # Shared content computations are not record revisions. The plugin guards
+    # explicit writeback using a per-opening nonce, task ID and content hash.
+    latest=get_store(task.get('_settings')).latest_quick_check(task['tenant_id'],task['record_code']) if task.get('request_snapshot') and not task.get('knowledge_basis') else None
     result['superseded'] = bool(latest and latest.get('input_hash') != task['input_hash'] and latest.get('created_at','') > task.get('created_at',''))
     result['retention_until'] = task.get('retention_until')
     _quick_check_persist(task)
@@ -2648,7 +2686,7 @@ def create_interactive_quick_check_task(
     x_tenant_id: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None),
 ) -> dict[str, Any]:
-    canonical_request, settings, record_code, input_hash, user_id, force = (
+    canonical_request, settings, record_code, input_hash, user_id, force, basis = (
         _canonicalize_interactive_quick_check(request, x_tenant_id, x_api_key)
     )
     _require_interactive_quick_check(settings)
@@ -2664,13 +2702,15 @@ def create_interactive_quick_check_task(
                 from .quick_check_recovery import load
                 restored=load(saved['check_id'],get_store(settings))
                 if restored:
+                    restored['_settings'] = settings
                     existing_id=restored['check_id'];_quick_check_tasks[existing_id]=restored
                     _quick_check_idempotency[key]=existing_id
         if existing_id:
             existing = _quick_check_tasks.get(existing_id)
             if existing is not None:
-                _quick_check_resolve(existing)
-            if existing is not None and existing.get('status') in {'failed', 'expired'}:
+                from .content_cache import reuse_allowed
+                existing_response = _quick_check_task_response(existing)
+            if existing is not None and not reuse_allowed(existing, existing_response, now):
                 # An explicit click on the form can start again after failure.
                 # Active/successful tasks still deduplicate; keep the failed audit.
                 existing = None
@@ -2682,8 +2722,10 @@ def create_interactive_quick_check_task(
                     existing["stream_token_expires_at"] = (
                         now + settings.quick_check_stream_token_ttl_seconds
                     )
+                    _quick_check_persist(existing)
                 return {
                     **_quick_check_task_response(existing),
+                    "opening_id": secrets.token_urlsafe(24),
                     "stream_token": existing["stream_token"],
                     "reused": True,
                     "expires_in_seconds": max(0, int(existing["stream_token_expires_at"] - now)),
@@ -2712,11 +2754,13 @@ def create_interactive_quick_check_task(
             "user_id": user_id,
             "record_code": record_code,
             "input_hash": input_hash,
+            "knowledge_basis": basis,
             "idempotency_key": key,
             "check_sequence": max(previous, default=0) + 1,
             "status": "processing",
             "created_at": datetime.now(UTC).isoformat(),
             "expires_at": now + settings.quick_check_recovery_ttl_seconds,
+            "cache_until": datetime.now(UTC).timestamp() + settings.quick_check_task_ttl_seconds,
             "retention_until": datetime.now(UTC).timestamp() + settings.quick_check_recovery_ttl_seconds,
             "stream_token_until": datetime.now(UTC).timestamp() + settings.quick_check_stream_token_ttl_seconds,
             "stream_token": stream_token,
@@ -2728,6 +2772,7 @@ def create_interactive_quick_check_task(
         _quick_check_idempotency[key] = check_id
     return {
         **_quick_check_task_response(task),
+        "opening_id": secrets.token_urlsafe(24),
         "stream_token": stream_token,
         "reused": False,
         "expires_in_seconds": settings.quick_check_stream_token_ttl_seconds,
@@ -2894,6 +2939,8 @@ def resume_interactive_quick_check_task(check_id: str, stream_token: str = Query
             raise HTTPException(status_code=409,detail='该任务属于旧记录版本，请分析最新记录')
         if not result.get('recoverable'):
             return result  # Idempotent for active and already-completed tasks.
+        if task.get('knowledge_basis'):
+            raise HTTPException(status_code=409, detail='请关闭弹窗后重新点击AI检测，将按当前内容及生效配置重新分析。')
         if not task.get('request_snapshot'):
             raise HTTPException(status_code=409, detail='原任务没有可恢复的输入快照')
         task.setdefault('attempt_history',[]).append({'attempt':task.get('attempt',1),
