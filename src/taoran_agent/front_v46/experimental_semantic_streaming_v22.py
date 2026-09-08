@@ -263,6 +263,7 @@ def _stream_semantic_preview_once(
         "temperature": 0,
         "stream": True,
     }
+    body["messages"][0]["content"] += "内部字段及真假值仅用于评分和日志；面向用户只用中文业务说明，不输出字段键、布尔值或内部枚举。保留原文中的产品名和型号。"
     if repair:
         body["messages"][0]["content"] += "上次返回的正文不完整。请重新依据本次原文输出实际分析，不要标题、占位句或标签，不把说明写在正文之外。"
     if (settings.llm_model or "").lower().startswith("glm-"):
@@ -273,6 +274,8 @@ def _stream_semantic_preview_once(
     displayed = []
     recommendation_repairs = []
     def emit_piece(piece):
+        from ..business_wording import business_wording
+        piece = business_wording(piece)
         displayed.append(piece)
         emit(piece)
     first_text_ms: int | None = None

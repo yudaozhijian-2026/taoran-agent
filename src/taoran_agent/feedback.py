@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
+from .business_wording import business_wording
 from .field_labels import display_field_name, display_form_field_name
 from .models import (
     FrontVisitAnalysisSection,
@@ -268,7 +269,7 @@ def build_precheck_feedback(
     else:
         lines.extend(["", "优先修改建议：当前未发现需要优先补充的规范性问题。"])
     lines.append("提交成功后，系统将自动进行深度评价并回写正式评分与反馈意见。")
-    return "\n".join(lines)
+    return business_wording("\n".join(lines))
 
 
 def build_front_ai_suggestions_with_model(
@@ -343,7 +344,7 @@ def build_front_ai_suggestions_with_model(
         footer = "提交后，系统将自动生成正式评分和反馈意见。"
         body = "需确认事项：\n" + "\n".join(f"{i}. {text}" for i, text in enumerate(wording.confirmation_items, 1))
         result = result.replace(footer, body + "\n\n" + footer) if footer in result else result + "\n\n" + body
-    return result
+    return business_wording(result)
 
 
 def build_front_ai_suggestions(
@@ -524,12 +525,12 @@ def _front_ai_suggestions(
         notice = "；".join(_unique(system_advice)).rstrip("，。；： ")
         lines.append("系统提示：" + notice + "。")
     lines.append("提交后，系统将自动生成正式评分和反馈意见。")
-    return "\n".join(lines)
+    return business_wording("\n".join(lines))
 
 
 def _clean_experimental_front_text(value: str) -> str:
     """Experimental: preserve business tokens; translate only known field paths."""
-    text = value or ""
+    text = business_wording(value)
     def replace_field(match: re.Match[str]) -> str:
         field = match.group(0)
         return display_form_field_name(field) or field
@@ -540,7 +541,7 @@ def _clean_experimental_front_text(value: str) -> str:
 
 def _clean_front_text(value: str) -> str:
     """Remove internal identifiers while preserving Chinese business wording."""
-    text = _normalize_opportunity_stage_wording(value or "")
+    text = business_wording(_normalize_opportunity_stage_wording(value or ""))
     text = re.sub(r"'([^'\n]{1,100})'", r"“\1”", text)
     text = re.sub(
         r"(?:原文|填写内容(?:为|是)?)\s*(“[^”\n]{1,120}”)",
@@ -692,12 +693,12 @@ def build_evaluation_feedback(
         )
     else:
         analysis_text = _normalize_opportunity_stage_wording(
-            semantic_facts.reason.strip() or "本次拜访未形成可展示的分析结论。"
+            business_wording(semantic_facts.reason.strip()) or "本次拜访未形成可展示的分析结论。"
         )
     lines.extend(["", "本次拜访分析：" + analysis_text])
     if semantic_facts.provider.startswith("llm-") and not model_completed:
         # Do not present heuristic fallback advice as completed AI analysis.
-        return "\n".join(lines)
+        return business_wording("\n".join(lines))
     advice_items = _build_post_advice(
         issues,
         semantic_facts,
@@ -715,7 +716,7 @@ def build_evaluation_feedback(
         semantic_facts.quality_audit["final_review"] = final_feedback_observations(
             analysis_text, advice_items, context,
         )
-    return result
+    return business_wording(result)
 
 
 def _build_post_advice(
@@ -834,7 +835,7 @@ def _merge_similar_advice(candidates: list[str]) -> str:
 
 def _clean_post_text(value: str) -> str:
     """Post-only rendering: preserve product names/units, translate known keys."""
-    text = _normalize_opportunity_stage_wording(value or "")
+    text = business_wording(_normalize_opportunity_stage_wording(value or ""))
     def translate(match: re.Match[str]) -> str:
         token = match.group(0)
         if token.lower() in {"true", "false"}:
@@ -994,7 +995,7 @@ def _section_standard_and_status(name: str, status: str | None) -> str:
     lines = [label, "检查标准：" + _precheck_standard(name)]
     if explanation:
         lines.append("检查说明：" + explanation)
-    return "\n".join(lines)
+    return business_wording("\n".join(lines))
 
 
 def _precheck_issues_for_section(
