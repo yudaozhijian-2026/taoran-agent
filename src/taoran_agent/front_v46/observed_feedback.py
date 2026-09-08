@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..field_labels import display_field_name
 from ..model_failure_evidence import save_failure_evidence
+from ..model_transport_probe import TransportProbe
 from ..models import FrontVisitAnalysisEvidence, KnowledgeWordingItem, KnowledgeWordingResult
 from ..semantic_observation import GUIDANCE, observe
 
@@ -126,6 +127,7 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
     raw = None
     telemetry = {"model_queue_ms": 0, "model_first_byte_ms": None, "model_complete_ms": None}
     lease = None
+    probe = None
     try:
         lease = reviewer.model_capacity.acquire("frontend", timeout)
         if lease is None:
@@ -137,12 +139,15 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
         if (reviewer.settings.llm_model or "").lower().startswith("glm-"):
             body["thinking"] = {"type": "disabled"}
         request_started = monotonic()
+        probe = TransportProbe(reviewer.settings, source)
         with reviewer._client.stream("POST", reviewer.settings.llm_api_url, json=body,
                 headers={"Authorization": f"Bearer {reviewer.settings.llm_api_key.get_secret_value()}"},
-                timeout=timeout) as response:
+                timeout=timeout, extensions={"trace": probe.trace}) as response:
+            probe.headers(response)
             response.raise_for_status()
             envelope, first, last = _read_chat_response(response, started=request_started,
                                                        timeout=timeout, max_bytes=32768)
+            probe.completed(envelope, first, last)
         telemetry.update(model_first_byte_ms=first, model_complete_ms=last)
         choice = envelope["choices"][0]
         if choice.get("finish_reason") == "length":
@@ -170,6 +175,8 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             model_attempts=[{"attempt": 1, "failure_reason": reason, **telemetry,
                 "validation_errors": errors, "diagnostic_evidence_id": evidence_id}])
     finally:
+        if probe is not None:
+            probe.save()
         if lease is not None:
             lease.release()
 
