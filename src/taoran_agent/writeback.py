@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
+from time import sleep
 from typing import Any
 
 import httpx
@@ -18,7 +20,7 @@ from .source_revision import business_revision, source_lock
 
 
 class JiandaoyunWritebackError(RuntimeError):
-    pass
+    retryable = False
 
 
 def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
@@ -63,7 +65,30 @@ def _blocked_rule_feedback(response: EvaluationResponse) -> str:
     )
 
 
-def writeback_evaluation(
+def writeback_evaluation(settings, request, response, *, store=None):
+    """Retry delivery only, rechecking source/version before every attempt."""
+    for attempt in range(3):
+        try:
+            result = _writeback_once(settings, request, response, store=store)
+            retryable = result.error_message == "WRITEBACK_SOURCE_READ_FAILED"
+            if not retryable or attempt == 2:
+                return result
+        except JiandaoyunWritebackError as exc:
+            if not exc.retryable or attempt == 2:
+                raise
+        sleep(0.25 * (2 ** attempt))
+
+
+def _same_output(actual, expected):
+    if isinstance(expected, (int, float)) and not isinstance(expected, bool):
+        try:
+            return Decimal(str(actual)) == Decimal(str(expected))
+        except InvalidOperation:
+            return False
+    return actual == expected
+
+
+def _writeback_once(
     settings: Settings,
     request: PostEvaluationRequest,
     response: EvaluationResponse,
@@ -116,7 +141,25 @@ def writeback_evaluation(
             return blocked("WRITEBACK_SOURCE_READ_FAILED")
         if business_revision(current, mapping) != request.context.form_revision:
             return blocked("WRITEBACK_SOURCE_CHANGED")
-        return _writeback_current_evaluation(settings, request, response)
+        result = _writeback_current_evaluation(settings, request, response)
+        if result.status != "succeeded":
+            return result
+        try:
+            confirmed = get_jiandaoyun_record(settings, request.context.tenant_id,
+                target.app_id, target.entry_id, target.data_id)
+        except JiandaoyunReadError:
+            return blocked("WRITEBACK_VERIFY_READ_FAILED")
+        if business_revision(confirmed, mapping) != request.context.form_revision:
+            return blocked("WRITEBACK_SOURCE_CHANGED")
+        expected = evaluation_writeback_values(response)
+        for name, spec in mapping.get("output_fields", {}).items():
+            widget = _output_widget_id(spec)
+            if widget in result.written_fields and not _same_output(
+                confirmed.get(widget), expected[name] if isinstance(expected[name], (int, float))
+                else _format_widget_value(expected[name], spec)
+            ):
+                return blocked("WRITEBACK_VERIFY_MISMATCH")
+        return result
 
 
 def _writeback_current_evaluation(settings, request, response) -> WritebackResult:
@@ -231,7 +274,11 @@ def _writeback_current_evaluation(settings, request, response) -> WritebackResul
         if not isinstance(returned, dict) or str(returned.get("_id", "")) != target.data_id:
             raise JiandaoyunWritebackError("简道云回写响应未确认目标记录，请核对后重试")
     except (httpx.HTTPError, ValueError) as exc:
-        raise JiandaoyunWritebackError("简道云评价回写请求失败") from exc
+        error = JiandaoyunWritebackError("简道云评价回写请求失败")
+        error.retryable = isinstance(exc, httpx.TransportError) or (
+            isinstance(exc, httpx.HTTPStatusError) and
+            (exc.response.status_code == 429 or exc.response.status_code >= 500))
+        raise error from exc
     return WritebackResult(
         status="failed" if official_writeback_blocked else "succeeded",
         target_data_id=target.data_id,

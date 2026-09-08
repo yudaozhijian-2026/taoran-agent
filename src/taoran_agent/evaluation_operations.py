@@ -90,6 +90,7 @@ def recovery_summary(record, store):
         "status": record["status"], "model_status": model_status,
         "visit_record_code": request.visit_record_code,
         "writeback_status": writeback.get("status"),
+        "workflow_status": record.get("workflow_status"),
         "issue": issue, "actions": actions,
         "created_at": record["created_at"], "updated_at": record["updated_at"],
         "phase_latency_ms": result.get("phase_latency_ms", {}),

@@ -202,9 +202,9 @@
       runtime,
       "提交后评分",
       evaluation.total_count
-        ? `最近：${evaluationStatusText(latestEvaluation?.status)}`
+        ? `最近：${evaluationStatusText(latestEvaluation?.workflow_status || latestEvaluation?.status)}`
         : "尚未收到提交事件",
-      latestEvaluation?.status === "completed",
+      latestEvaluation?.workflow_status === "succeeded",
     );
     addTenantRuntime(
       runtime,
@@ -378,9 +378,9 @@
       "3",
       "提交后评价",
       evaluation.total_count
-        ? `共 ${evaluation.total_count} 次；最近状态：${evaluationStatusText(latestEvaluation?.status)}`
+        ? `共 ${evaluation.total_count} 次；最近状态：${evaluationStatusText(latestEvaluation?.workflow_status || latestEvaluation?.status)}`
         : "尚未收到表单提交事件",
-      latestEvaluation?.status === "completed",
+      latestEvaluation?.workflow_status === "succeeded",
     );
     addRuntimeStage(
       progress,
@@ -460,7 +460,7 @@
   }
 
   function evaluationStatusText(status) {
-    return ({ queued: "等待中", running: "处理中", completed: "已完成", failed: "失败" })[status] || status || "未知";
+    return ({ analyzing: "分析生成中", analysis_failed: "分析失败，可恢复", awaiting_writeback: "分析完成，待回写", writeback_failed: "回写失败，可恢复", succeeded: "评分及反馈回写成功", superseded: "原记录已更新", queued: "等待中", running: "处理中", completed: "处理结束", failed: "失败" })[status] || status || "未知";
   }
 
   function writebackStatusText(status) {
@@ -1269,7 +1269,7 @@
       const rows = data.items.map((job) => {
         const row = jobText("article", "", "evaluation-job-row");
         row.append(jobText("strong", job.visit_record_code), jobText("p", job.job_id, "hint"));
-        row.append(jobText("p", `评价：${evaluationStatusText(job.status)} · 回写：${writebackStatusText(job.writeback_status)}`));
+        row.append(jobText("p", `评价：${evaluationStatusText(job.workflow_status || job.status)} · 回写：${writebackStatusText(job.writeback_status)}`));
         if (job.issue) row.append(jobText("p", job.issue));
         if (job.phase_latency_ms?.total != null) row.append(jobText("p", `本次处理耗时：${(job.phase_latency_ms.total / 1000).toFixed(1)}秒`, "hint"));
         const operations = job.operations || [];

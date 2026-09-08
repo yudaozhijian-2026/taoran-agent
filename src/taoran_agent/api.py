@@ -612,40 +612,49 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
     store = get_store()
     started = monotonic()
     phases: dict[str, int] = {}
+    persisted = store.get_evaluation(request.context.tenant_id, job_id) or {}
     store.mark_evaluation_running(request.context.tenant_id, job_id)
     try:
-        mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
-        evaluation_started = monotonic()
-        with use_field_mapping(mapping_path):
-            response = get_agent().evaluate(request, job_id)
-        phases["formal_evaluation"] = int((monotonic() - evaluation_started) * 1000)
-        phases["model"] = response.semantic_facts.latency_ms
-        post_feedback_request = PrecheckRequest(
-            context=request.context.model_copy(
-                update={"request_id": f"{request.context.request_id}__post_feedback"}
-            ),
-            visit=request.visit,
-            feedback_mode=FeedbackMode.RULE,
-        )
-        knowledge_started = monotonic()
-        unified_feedback = _execute_post_submit_rule_enrichment(
-            post_feedback_request,
-            get_settings(),
-        )
-        phases["knowledge_and_rules"] = int((monotonic() - knowledge_started) * 1000)
-        response = response.model_copy(
-            update={
-                "ai_opinion": merge_evaluation_with_knowledge(
-                    request.visit,
-                    response.q33_score,
-                    response.q34_score,
-                    response.total_score,
-                    response.issues,
-                    response.semantic_facts,
-                    unified_feedback,
+        saved = persisted.get("response") or {}
+        if persisted.get("status") in {"queued", "running"} and (saved.get("semantic_facts") or {}).get("status") == "completed":
+            response = EvaluationResponse.model_validate(saved)
+            phases.update(response.phase_latency_ms)
+        else:
+            mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
+            evaluation_started = monotonic()
+            with use_field_mapping(mapping_path):
+                response = get_agent().evaluate(request, job_id)
+            phases["formal_evaluation"] = int((monotonic() - evaluation_started) * 1000)
+            phases["model"] = response.semantic_facts.latency_ms
+            post_feedback_request = PrecheckRequest(
+                context=request.context.model_copy(
+                    update={"request_id": f"{request.context.request_id}__post_feedback"}
                 ),
-            }
-        )
+                visit=request.visit,
+                feedback_mode=FeedbackMode.RULE,
+            )
+            knowledge_started = monotonic()
+            unified_feedback = _execute_post_submit_rule_enrichment(
+                post_feedback_request,
+                get_settings(),
+            )
+            phases["knowledge_and_rules"] = int((monotonic() - knowledge_started) * 1000)
+            response = response.model_copy(
+                update={
+                    "ai_opinion": merge_evaluation_with_knowledge(
+                        request.visit,
+                        response.q33_score,
+                        response.q34_score,
+                        response.total_score,
+                        response.issues,
+                        response.semantic_facts,
+                        unified_feedback,
+                    ),
+                }
+            )
+        if response.semantic_facts.status == "completed":
+            response = response.model_copy(update={"phase_latency_ms": phases})
+            store.checkpoint_evaluation(response)
         writeback_started = monotonic()
         try:
             writeback = writeback_evaluation(get_settings(), request, response, store=store)

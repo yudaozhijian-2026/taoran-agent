@@ -58,6 +58,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(delivery, "get_jiandaoyun_record", lambda *args: deepcopy(raw))
     def post(*args, **kwargs):
         calls.append(kwargs)
+        raw.update({key: value["value"] for key, value in kwargs["json"]["data"].items()})
         return httpx.Response(200, json={"data": raw}, request=httpx.Request("POST", args[0]))
     monkeypatch.setattr(delivery.httpx, "post", post)
     return settings, store, raw, mapping, create, calls

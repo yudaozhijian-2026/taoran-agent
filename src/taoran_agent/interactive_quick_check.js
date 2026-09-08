@@ -16,7 +16,7 @@ const base = publicPath + '/api/v1/quick-check/tasks/' + encodeURIComponent(chec
 const query = '?stream_token=' + encodeURIComponent(token);
 let done = false, source, pollTimer, retryDelay = 1000, polling = false, returning = false;
 let disposed = false, returnTimer, lifecycle = 0;
-let previewComplete = false;
+let previewComplete = false, previewSucceeded = false;
 let finalDone = false, finalFailed = false;
 const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
@@ -58,9 +58,13 @@ function previewSnapshot(text, state) {
     content.textContent = text;
     if (dualMode && previewLabel) previewLabel.textContent = 'AI实时分析';
   }
+  previewSucceeded = state === 'completed';
   previewComplete = state === 'completed' || state === 'unavailable' || state === 'failed';
-  if ((!content.textContent || content.textContent === waitingText) && previewComplete) content.textContent = '本次AI实时分析未生成成功。';
-  if (finalDone && !finalFailed) stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
+  if ((!content.textContent || content.textContent === waitingText) && previewComplete) content.textContent = '正在生成完整分析。';
+  if (finalDone && !finalFailed) {
+    if (previewComplete && !previewSucceeded && versionedMode) { content.textContent = finalContent.textContent; finalPanel.hidden = true; }
+    stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
+  }
   settle();
 }
 function fail(code, message, terminal = false) {
@@ -83,7 +87,7 @@ function finish(text) {
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   finalDone = true;
   finalContent.textContent = text;
-  if (versionedMode && !dualMode) {
+  if (versionedMode && (!dualMode || (previewComplete && !previewSucceeded))) {
     content.textContent = text;
     if (previewLabel) previewLabel.textContent = 'AI实时分析';
     finalPanel.hidden = true;
@@ -125,7 +129,7 @@ async function poll() {
     if (task.status === 'completed') finish(task.final_feedback_text);
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);
-    else stage(dualMode && previewComplete ? '实时分析已生成，最终反馈仍在后台生成，可重新打开查看。' : 'AI任务正在后台运行，可关闭后重新打开查看；请等待分析结果。');
+    else stage(dualMode && previewSucceeded ? '实时分析已生成，最终反馈仍在后台生成，可重新打开查看。' : 'AI任务正在后台运行，可关闭后重新打开查看；请等待分析结果。');
   } catch (_) { stage('连接暂时中断，正在查询原任务；后台生成不会因此取消。'); }
   finally {
     polling = false;
@@ -159,6 +163,7 @@ source.addEventListener('preview_delta', event => decode(event, data => {
 }));
 source.addEventListener('preview_complete', event => decode(event, data => {
   previewComplete = true;
+  previewSucceeded = data.status === 'completed';
   if (!finalDone) stage(data.status === 'unavailable'
     ? '实时预览暂不可用，仍在生成最终检测结果…'
     : 'AI实时分析已生成，正在完成最终检测…'
@@ -181,7 +186,7 @@ if (resume) resume.addEventListener('click', async () => {
   try {
     const response = await requestJson(base + '/resume' + query, {method:'POST'});
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
-    done = false; finalDone = false; finalFailed = false; previewComplete = false;
+    done = false; finalDone = false; finalFailed = false; previewComplete = false; previewSucceeded = false;
     content.textContent = versionedMode ? waitingText : ''; finalContent.textContent = ''; finalPanel.hidden = true;
     if (versionedMode) { previewComplete = !dualMode; if (previewLabel) previewLabel.textContent = 'AI实时分析'; }
     resume.hidden = true; status.className = 'status';

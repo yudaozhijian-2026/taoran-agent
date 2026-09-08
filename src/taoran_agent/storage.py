@@ -16,6 +16,7 @@ from .models import (
     Q40BatchResult,
 )
 from .source_revision import source_lock
+from .workflow_status import workflow_status
 
 
 class IdempotencyConflictError(ValueError):
@@ -371,6 +372,16 @@ class AgentStore:
                 ),
             )
 
+    def checkpoint_evaluation(self, response: EvaluationResponse) -> None:
+        """Persist validated analysis before attempting external delivery."""
+        with self._lock, self._connection:
+            self._connection.execute(
+                "UPDATE evaluation_jobs SET response_json = ?, updated_at = ? "
+                "WHERE tenant_id = ? AND job_id = ? AND status = 'running'",
+                (response.model_dump_json(), datetime.now(UTC).isoformat(),
+                 response.tenant_id, response.job_id),
+            )
+
     def mark_evaluation_running(self, tenant_id: str, job_id: str) -> None:
         with self._lock, self._connection:
             self._connection.execute(
@@ -467,11 +478,12 @@ class AgentStore:
                 latest_evaluation = {
                     "job_id": row["job_id"],
                     "status": row["status"],
+                    "workflow_status": workflow_status(row["status"], response),
                     "created_at": row["created_at"],
                     "updated_at": row["updated_at"],
-                    "total_score": response.get("total_score"),
-                    "q33_score": response.get("q33_score"),
-                    "q34_score": response.get("q34_score"),
+                    "total_score": response.get("total_score") if semantic.get("status") == "completed" else None,
+                    "q33_score": response.get("q33_score") if semantic.get("status") == "completed" else None,
+                    "q34_score": response.get("q34_score") if semantic.get("status") == "completed" else None,
                     "semantic_model": semantic.get("model"),
                     "semantic_provider": semantic.get("provider"),
                     "failure_reason": semantic.get("failure_reason"),
@@ -671,7 +683,10 @@ class AgentStore:
 
     @staticmethod
     def _evaluation_record(row: sqlite3.Row) -> dict[str, Any]:
+        response = json.loads(row["response_json"]) if row["response_json"] else None
         return {
+            "workflow_status": workflow_status(row["status"], response),
+            "formal_score": response.get("total_score") if response and (response.get("semantic_facts") or {}).get("status") == "completed" else None,
             "job_id": row["job_id"],
             "tenant_id": row["tenant_id"],
             "request_id": row["request_id"],

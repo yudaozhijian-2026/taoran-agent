@@ -426,3 +426,11 @@ test('closing completed popup without return never hands off feedback', () => {
   h.handlers.pagehide();
   assert.equal(h.messages.length,0);
 });
+
+test('unavailable Preview degrades to exact Final without claiming Preview success', async () => {
+  const h = harness([{check_id:'qc_test', input_hash:'v1', status:'completed', preview_status:'unavailable', final_feedback_text:'完整最终分析'}], undefined, {taskVersion:'v1',frontPolicy:'front-v46-observe-20260908'});
+  await h.tick();
+  assert.equal(h.nodes.content.textContent, '完整最终分析');
+  assert.equal(h.nodes.ack.disabled, false);
+  assert.equal(h.nodes.finalPanel.hidden, true);
+});

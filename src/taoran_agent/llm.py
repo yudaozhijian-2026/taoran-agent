@@ -438,7 +438,7 @@ class _PrecheckPayload(BaseModel):
 class _AdviceBasis(BaseModel):
     model_config = ConfigDict(extra="forbid")
     fields: list[str] = Field(min_length=1)
-    existing_content: str = Field(min_length=1, max_length=220)
+    existing_content: str = Field(max_length=220)
     missing_detail: str = Field(min_length=1, max_length=160)
     decision_impact: str = Field(min_length=1, max_length=160)
     gap_kind: Literal["missing_value", "insufficient_specificity", "fact_source_unclear", "inconsistency", "policy_mismatch"]
@@ -468,7 +468,8 @@ def _validation_errors(exc: Exception) -> list[ModelValidationIssue]:
         return []
     allowed = {
         "sections", "facts", "code", "verdict", "field_paths", "reason", "suggestion",
-        "evidence", "field", "quote", *_FactsPayload.model_fields,
+        "evidence", "field", "quote", "advice_basis", "goal_reviews",
+        *_FactsPayload.model_fields, *_AdviceBasis.model_fields,
     }
     return [
         ModelValidationIssue(

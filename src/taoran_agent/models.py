@@ -325,7 +325,7 @@ class KnowledgeWordingItem(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: Literal["C", "T", "A1", "O_KR", "R", "A2", "N"]
-    suggestion: str = Field(default="", max_length=160)
+    suggestion: str = Field(default="", max_length=2000)
     features: FrontSpecificityFeatures | None = None
     evidence: list[FrontSpecificityEvidence] = Field(default_factory=list, max_length=16)
     specific: bool | None = None
@@ -368,7 +368,7 @@ class KnowledgeWordingResult(BaseModel):
     _experimental_repair_context: dict[str, Any] = PrivateAttr(default_factory=dict)
     status: Literal["completed", "unavailable", "timeout"]
     items: list[KnowledgeWordingItem] = Field(default_factory=list, max_length=4)
-    visit_analysis: str = Field(default="", max_length=300)
+    visit_analysis: str = Field(default="", max_length=16000)
     visit_analysis_sections: list[FrontVisitAnalysisSection] = Field(
         default_factory=list,
         max_length=4,

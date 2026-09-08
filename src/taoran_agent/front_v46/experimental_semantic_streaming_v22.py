@@ -251,6 +251,7 @@ def stream_semantic_preview_v22(
     if (settings.llm_model or "").lower().startswith("glm-"):
         body["thinking"] = {"type": "disabled"}
     raw = ""
+    finish_reason = None
     emitted = received_bytes = 0
     displayed = []
     recommendation_repairs = []
@@ -275,6 +276,7 @@ def stream_semantic_preview_v22(
                 choices = event.get("choices") if isinstance(event, dict) else None
                 if not isinstance(choices, list) or not choices:
                     continue
+                finish_reason = choices[0].get("finish_reason") or finish_reason
                 content = (choices[0].get("delta") or {}).get("content")
                 if not isinstance(content, str) or not content:
                     continue
@@ -289,10 +291,11 @@ def stream_semantic_preview_v22(
                 if boundary > emitted:
                     emit_piece(preview[emitted:boundary])
                     emitted = boundary
-        if not (_OPEN in raw and _CLOSE in raw):
+        if finish_reason == "length" or ((_OPEN in raw) != (_CLOSE in raw)):
             raise ValueError("output_truncated")
-        feedback = _feedback_body(raw).strip()
-        if not (20 <= len(feedback) <= 500) or "<" in feedback or ">" in feedback:
+        # Wrapper tags are transport formatting, not a requirement on business text.
+        feedback = (_feedback_body(raw) if _OPEN in raw else raw).strip()
+        if not feedback:
             raise ValueError("invalid_preview_format")
         if emitted < len(feedback):
             emit_piece(feedback[emitted:])
@@ -314,6 +317,16 @@ def stream_semantic_preview_v22(
         category = str(exc)
         if category not in {"output_truncated", "invalid_preview_format", "unsupported_preview_fact"}:
             category = "invalid_preview_format"
-        return {"status": "failed", "failure_category": category}
+        from ..model_failure_evidence import save_failure_evidence
+        evidence_id = save_failure_evidence(settings, stage="frontend_preview_format",
+            candidate={"text": raw}, details={"failure_reason": category,
+                "feedback_length": len(_feedback_body(raw)), "has_open": _OPEN in raw,
+                "has_close": _CLOSE in raw})
+        return {"status": "failed", "failure_category": category,
+            "first_real_ai_text_ms": first_text_ms,
+            "semantic_complete_ms": int((monotonic() - started) * 1000),
+            "diagnostic_evidence_id": evidence_id}
     except (httpx.HTTPError, OSError):
-        return {"status": "failed", "failure_category": "upstream_service_error"}
+        return {"status": "failed", "failure_category": "upstream_service_error",
+            "first_real_ai_text_ms": first_text_ms,
+            "semantic_complete_ms": int((monotonic() - started) * 1000)}
