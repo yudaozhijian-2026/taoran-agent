@@ -317,7 +317,8 @@ def build_front_ai_suggestions_with_model(
         explicit_advice=[(advice_labels.get(item.code, "填写核对"), item.suggestion)
                         for item in wording.items if item.code != "C" and item.suggestion.strip()] if experimental else None,
         specificity_by_section=specificity_by_section,
-        natural_completion=(natural.get("C").suggestion if natural.get("C") else ""),
+        natural_completion=("\n".join(item.suggestion for item in wording.items if item.code == "C")
+                            if experimental else natural.get("C").suggestion if natural.get("C") else ""),
         visit_analysis=wording.visit_analysis,
         visit_analysis_sections=[] if experimental else wording.visit_analysis_sections,
         recommendation_labels={"过程事实与结果": "目标核对建议"} if experimental and any(
@@ -333,7 +334,7 @@ def build_front_ai_suggestions_with_model(
         if wording.suggestion_status == "no_change_needed":
             result = result.replace(empty_message, "本次无需额外补充填写。" + _clean_front_text(wording.suggestion_reason))
         elif wording.suggestion_status == "needs_confirmation":
-            result = result.replace(empty_message, "请核对下方需确认事项，无需重复补充相同内容。")
+            result = result.replace(empty_message, "请核对下方需确认事项。")
         elif wording.suggestion_status == "incomplete":
             notice = "填写建议完整性核对未完成，不能据此认定无需补充。"
             if empty_message in result:

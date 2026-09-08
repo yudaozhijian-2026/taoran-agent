@@ -326,7 +326,7 @@ class FrontSpecificityEvidence(BaseModel):
 class KnowledgeWordingItem(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
-    code: Literal["C", "T", "A1", "O_KR", "R", "A2", "N"]
+    code: Literal["C", "T", "A1", "O_KR", "R", "A2", "N", "UNMAPPED"]
     suggestion: str = ""
     features: FrontSpecificityFeatures | None = None
     evidence: list[FrontSpecificityEvidence] = Field(default_factory=list)

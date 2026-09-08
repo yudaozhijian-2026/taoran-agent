@@ -45,7 +45,7 @@ def test_final_shape_recovery_retains_analysis_and_diagnostics(tmp_path, monkeyp
         result = reviewer.verbalize_knowledge_issues([{'code': 'R'}],
             taoran_snapshot={'visit_analysis_context': {'process_description': '客户表示预算尚未批准'}}, experimental=True)
         assert result.status == ('unavailable' if mode == 'persistent' else 'completed')
-        assert len(calls) == (2 if mode in {'repair', 'persistent'} else 1)
+        assert len(calls) == (2 if mode in {'repair', 'persistent', 'unknown'} else 1)
         if mode in {'repair', 'persistent'}:
             assert 'format_errors' in json.loads(calls[1]['messages'][1]['content'])
             evidence = result.model_attempts[0]['diagnostic_evidence_id']
@@ -53,7 +53,10 @@ def test_final_shape_recovery_retains_analysis_and_diagnostics(tmp_path, monkeyp
             assert saved['details']['validation_errors'][0]['location'] == 'analysis_points'
         if mode == 'long':
             assert result.visit_analysis == good['analysis_points'][0]['text'].rstrip('。')
-        if mode != 'persistent':
+        if mode == 'unknown':
+            assert result.suggestion_status == 'incomplete'
+            assert result.items[0].suggestion == '未知建议'
+        elif mode != 'persistent':
             assert result.items == []
     finally:
         reviewer.close()

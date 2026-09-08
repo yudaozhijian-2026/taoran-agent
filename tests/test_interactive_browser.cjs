@@ -506,3 +506,27 @@ test('ack reports visible durations for async-observation policy without changin
   assert.equal(sent.acknowledge_clicked_ms,15000);
   assert.equal(h.messages[0][0].pluginMessage.feedback_text,'完整意见');
 });
+
+test('ack reports visible durations for suggestion-contract policy without changing feedback', async () => {
+  let now = 0, sent;
+  const h = harness([
+    {check_id:'qc_test',input_hash:'v1',status:'processing',preview_status:'processing',preview_feedback_text:''},
+    {check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',preview_feedback_text:'实时分析',final_feedback_text:'完整意见'},
+    async (url, options) => { sent = JSON.parse(options.body); return {ok:true,status:200,json:async()=>({check_id:'qc_test',final_feedback_text:'完整意见'})}; },
+  ], undefined, {taskVersion:'v1',frontPolicy:'front-v46-suggestion-contract-20260908',performance:{now:()=>now}});
+  await new Promise(resolve=>setImmediate(resolve));
+  now = 1200;
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'客户已记录反馈。',status:'processing'});
+  now = 4000;
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'客户已记录反馈。分析完成。',status:'completed'});
+  now = 12000;
+  h.source.emit('final_completed',{check_id:'qc_test',input_hash:'v1',feedback_text:'完整意见'});
+  await new Promise(resolve=>setImmediate(resolve));
+  now = 15000;
+  await h.nodes.ack.click();
+  assert.equal(sent.first_text_visible_ms,1200);
+  assert.equal(sent.preview_complete_visible_ms,4000);
+  assert.equal(sent.final_visible_ms,12000);
+  assert.equal(sent.acknowledge_clicked_ms,15000);
+  assert.equal(h.messages[0][0].pluginMessage.feedback_text,'完整意见');
+});

@@ -34,7 +34,7 @@ const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
 const restartText = '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候；可关闭后重新打开查看进度。';
-const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908'].includes(frontPolicy);
+const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 if (versionedMode) {
   content.textContent = waitingText;
