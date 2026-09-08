@@ -1761,7 +1761,7 @@ def _enhance_front_suggestions(
     )
     store = get_store(settings)
     if experimental:
-        cache_key = canonical_hash({"experimental_final_version": "front-v46-complete-20260908", "key": cache_key})
+        cache_key = canonical_hash({"experimental_final_version": "front-v46-no-output-cap-20260908", "key": cache_key})
     persisted = store.get_feedback_artifact(
         response.tenant_id,
         _FRONT_WORDING_ARTIFACT_TYPE,

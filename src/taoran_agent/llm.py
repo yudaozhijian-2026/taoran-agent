@@ -274,7 +274,7 @@ def _read_chat_response(
     *,
     started: float,
     timeout: float | None,
-    max_bytes: int,
+    max_bytes: int | None,
     progress=None,
 ) -> tuple[dict, int, int]:
     """Read JSON or SSE chat output and measure the first generated character."""
@@ -293,7 +293,7 @@ def _read_chat_response(
             chunks.extend(chunk)
             if timeout is not None and monotonic() - started > timeout:
                 raise ModelCallError("timeout")
-            if len(chunks) > max_bytes:
+            if max_bytes is not None and len(chunks) > max_bytes:
                 raise ModelCallError("output_too_large")
         complete_ms = int((monotonic() - started) * 1000)
         if progress:
@@ -317,7 +317,7 @@ def _read_chat_response(
         # SSE repeats a JSON envelope for every small token. Limit that transport
         # overhead separately, while applying the original output limit only to
         # actual model-generated content/tool arguments.
-        if received_bytes > max_bytes * 32:
+        if max_bytes is not None and received_bytes > max_bytes * 32:
             raise ModelCallError("output_too_large")
         if timeout is not None and monotonic() - started > timeout:
             raise ModelCallError("timeout")
@@ -348,7 +348,7 @@ def _read_chat_response(
         content = delta.get("content")
         if content:
             generated_bytes += len(str(content).encode("utf-8"))
-            if generated_bytes > max_bytes:
+            if max_bytes is not None and generated_bytes > max_bytes:
                 raise ModelCallError("output_too_large")
             if first_character_ms is None:
                 first_character_ms = int((monotonic() - started) * 1000)
@@ -373,7 +373,7 @@ def _read_chat_response(
             arguments = function.get("arguments")
             if arguments:
                 generated_bytes += len(str(arguments).encode("utf-8"))
-                if generated_bytes > max_bytes:
+                if max_bytes is not None and generated_bytes > max_bytes:
                     raise ModelCallError("output_too_large")
                 if first_character_ms is None:
                     first_character_ms = int((monotonic() - started) * 1000)

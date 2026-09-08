@@ -327,9 +327,9 @@ class KnowledgeWordingItem(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     code: Literal["C", "T", "A1", "O_KR", "R", "A2", "N"]
-    suggestion: str = Field(default="", max_length=2000)
+    suggestion: str = ""
     features: FrontSpecificityFeatures | None = None
-    evidence: list[FrontSpecificityEvidence] = Field(default_factory=list, max_length=16)
+    evidence: list[FrontSpecificityEvidence] = Field(default_factory=list)
     specific: bool | None = None
 
 
@@ -355,7 +355,7 @@ class FrontVisitAnalysisEvidence(BaseModel):
         "next_contact_at",
         "confirmed_findings",
     ]
-    quote: str = Field(min_length=1, max_length=120)
+    quote: str = Field(min_length=1)
 
 
 class FrontVisitAnalysisSection(BaseModel):
@@ -371,15 +371,14 @@ class KnowledgeWordingResult(BaseModel):
     status: Literal["completed", "unavailable", "timeout"]
     items: list[KnowledgeWordingItem] = Field(default_factory=list, max_length=16)
     suggestion_status: Literal["has_suggestions", "no_change_needed", "needs_confirmation", "incomplete"] | None = None
-    suggestion_reason: str = Field(default="", max_length=1000)
-    visit_analysis: str = Field(default="", max_length=16000)
+    suggestion_reason: str = ""
+    visit_analysis: str = ""
     visit_analysis_sections: list[FrontVisitAnalysisSection] = Field(
         default_factory=list,
         max_length=4,
     )
     visit_analysis_evidence: list[FrontVisitAnalysisEvidence] = Field(
         default_factory=list,
-        max_length=14,
     )
     provider: str = "structured-knowledge"
     model: str | None = None
