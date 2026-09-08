@@ -14,7 +14,7 @@ RUN uv sync --frozen --no-dev --no-editable --no-cache \
 ENV DSM_TAORAN_ENVIRONMENT=production
 ENV DSM_TAORAN_DATABASE_PATH=/data/taoran_agent.db
 ENV PATH="/app/.venv/bin:$PATH"
-LABEL top.yudaozhijian.taoran.release="0.27.5rc2-v47-20260907"
+LABEL top.yudaozhijian.taoran.release="0.27.6rc1-front-v46-20260908"
 USER 10001:10001
 EXPOSE 8030
 CMD ["uvicorn", "taoran_agent.api:app", "--host", "0.0.0.0", "--port", "8030", "--workers", "1", "--limit-concurrency", "48", "--timeout-graceful-shutdown", "75", "--no-access-log"]

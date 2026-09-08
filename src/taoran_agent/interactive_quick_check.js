@@ -29,11 +29,12 @@ let previewComplete = false;
 let finalDone = false, finalFailed = false;
 const activeRequests = new Set();
 const basicMode = typeof initialBasic === 'string';
+const dualMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-restored-20260908';
 const versionNode = document.querySelector('#versionNote');
 const previewLabel = document.querySelector('#previewLabel');
 if (basicMode) {
   content.textContent = initialBasic;
-  previewComplete = true;
+  previewComplete = !dualMode;
   if (previewLabel) previewLabel.textContent = '基础检查';
   if (versionNode) versionNode.textContent = '记录版本：' + taskVersion.slice(0,12);
 }
@@ -62,8 +63,11 @@ function settle() {
   if (finalDone && previewComplete) { done = true; stopTransport(); }
 }
 function previewSnapshot(text, state) {
-  if (basicMode || previewComplete) return;
-  if (typeof text === 'string') content.textContent = text;
+  if ((basicMode && !dualMode) || previewComplete) return;
+  if (typeof text === 'string' && (text || !dualMode)) {
+    content.textContent = text;
+    if (dualMode && previewLabel) previewLabel.textContent = 'AI实时分析';
+  }
   previewComplete = state === 'completed' || state === 'unavailable' || state === 'failed';
   if (!content.textContent && previewComplete) content.textContent = '本次AI实时分析未生成成功。';
   if (finalDone && !finalFailed) stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
@@ -86,7 +90,7 @@ function finish(text) {
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   finalDone = true;
   finalContent.textContent = text;
-  if (basicMode) {
+  if (basicMode && !dualMode) {
     content.textContent = text;
     if (previewLabel) previewLabel.textContent = 'AI实时分析';
     finalPanel.hidden = true;
@@ -129,7 +133,7 @@ async function poll() {
     if (task.status === 'completed') finish(task.final_feedback_text);
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);
-    else stage('AI任务正在后台运行，可关闭后重新打开查看；当前显示基础检查。');
+    else stage(dualMode && previewComplete ? '实时分析已生成，最终反馈仍在后台生成，可重新打开查看。' : 'AI任务正在后台运行，可关闭后重新打开查看；当前显示基础检查。');
   } catch (_) { stage('连接暂时中断，正在查询原任务；基础检查仍可查看，后台生成不会因此取消。'); }
   finally {
     polling = false;
@@ -186,7 +190,7 @@ if (resume) resume.addEventListener('click', async () => {
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
     done = false; finalDone = false; finalFailed = false; previewComplete = false;
     content.textContent = basicMode ? initialBasic : ''; finalContent.textContent = ''; finalPanel.hidden = true;
-    if (basicMode) { previewComplete = true; if (previewLabel) previewLabel.textContent = '基础检查'; }
+    if (basicMode) { previewComplete = !dualMode; if (previewLabel) previewLabel.textContent = '基础检查'; }
     resume.hidden = true; status.className = 'status';
     stage('正在恢复本次记录的分析，检测编号保持不变…');
     retryDelay = 1000; recover();

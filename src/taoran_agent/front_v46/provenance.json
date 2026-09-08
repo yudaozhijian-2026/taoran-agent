@@ -1,0 +1,28 @@
+{
+  "source_commit": "225e089529aaad616a3543ddc5f63c5e911810a3",
+  "methods": [
+    "verbalize_knowledge_issues",
+    "_experimental_audit_wording"
+  ],
+  "source_sha256": {
+    "llm": "452e59d8199aa73dbd9861a99a8fe22f85f0540e2f7154de0e2f336ae4b6ae16",
+    "experimental_assessment": "e26efa58fc7288c61a6853f10ea4909bb9bafd4910d80d508634823be7465b6b",
+    "experimental_attribution": "f0398a7f0a788b1630e23824845cc2427996d8d0bf8d20d266355cbeef5fc789",
+    "experimental_business_semantic_state": "42e58519f8c45b939269fcf913d713c8e0f447a9357eeef83db5624d896c2d62",
+    "experimental_final_consistency": "e6c43f4aecc761758aa726ae094a0a692592839b5a5bfbbe4fbe244a6b0e1681",
+    "experimental_final_diagnostics": "3153984338071821973f45ec40fb6f571c10f52ac98a024adf0930cb47ca6a36",
+    "experimental_front_repairs": "fe45fdd7fdd809dc06e6c9297aabb8289aa52a62ecc492e174391a0532cc9906",
+    "experimental_goal_guidance": "7731fe0063cd0b3c5d093696d03b822444f297cf26bdcccdb8573dedfa113f0b",
+    "experimental_receipt_role": "7f5d4c22b5954200596bafaca80d3f0e3e92d028c7a114cef342182a0ffb74f6",
+    "experimental_record_state": "8fb4c677831bbe841b4f68cdaff4dacd231dabdad8375a01b3ff772ed2e5c648",
+    "experimental_rendering_binding": "049b5e123cc7788af93033ad1541893c924a0b4c28302d264dc579a8409781bc",
+    "experimental_rendering_guidance": "eaf53d96b23234b67b7f8fc86646f3088964eef1a3f2d3db398228fc95f6a07f",
+    "experimental_semantic_audit": "3e59b33ce592c03dfbd75c23bb99c45d2e709a70d27610e416afab24ca851bca",
+    "experimental_semantic_invariants": "7ae2306866fed7a61860f1be733d3144b63321a1571a0290c6358a01827254c0",
+    "experimental_semantic_streaming_v22": "5c34e888227e5b052d0c1d38b22ca71dd245f5cbdf6cd14b57874aaf4a8ac102"
+  },
+  "method_ast_sha256": {
+    "verbalize_knowledge_issues": "f915828dede29fdddf04afd48dfaa4f5da511f5df39f6c4efce8c9f09cd69179",
+    "_experimental_audit_wording": "a1ec91781f68b8c1dfde3a678c6baf66bc646fb66a81b9be5f8b459722b620ff"
+  }
+}

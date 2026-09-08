@@ -45,15 +45,21 @@ def test_multiple_readers_receive_same_snapshot_without_consuming_it():
     assert all(r['preview_feedback_text'] == '同一份建议' for r in results)
 
 
-def test_basic_mode_uses_one_ai_call_without_speculative_preview(monkeypatch):
+def test_v46_mode_restores_independent_preview_and_final(monkeypatch):
+    from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as preview
     calls=[]
-    def forbidden(*args,**kwargs):raise AssertionError('No second AI generation')
-    monkeypatch.setattr(api,'stream_semantic_preview_v22',forbidden)
-    monkeypatch.setattr(api,'_quick_check_run_final',lambda *args: calls.append(1) or {'status':'completed','feedback_text':'AI意见'})
-    outcome=api._quick_check_run(SimpleNamespace(visit=None),None,task()['events'])
-    assert calls==[1]
-    assert outcome['preview']=={'status':'completed','kind':'basic'}
-    assert outcome['final']['feedback_text']=='AI意见'
+    def generate(settings, visit, emit, **kwargs):
+        calls.append('preview')
+        emit('V4.6实时意见')
+        return {'status':'completed'}
+    monkeypatch.setattr(preview,'stream_semantic_preview_v22',generate)
+    monkeypatch.setattr(api,'_quick_check_run_final',lambda *args: calls.append('final') or {'status':'completed','feedback_text':'最终意见'})
+    events=task()['events']
+    outcome=api._quick_check_run(SimpleNamespace(visit=None),None,events)
+    assert outcome['preview_future'].result()['status']=='completed'
+    assert sorted(calls)==['final','preview']
+    assert outcome['final']['feedback_text']=='最终意见'
+    assert events.get()['text']=='V4.6实时意见'
 
 
 def test_failed_final_does_not_remove_preview():

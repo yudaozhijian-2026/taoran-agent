@@ -1517,6 +1517,80 @@ def _knowledge_model_context(
         "standard_provenance": standards,
     }
 
+def _v46_knowledge_model_context(
+    request: PrecheckRequest,
+    snapshot: TaoranKnowledgeSnapshot,
+    *,
+    experimental: bool = False,
+) -> dict[str, Any]:
+    """生成不含完整知识正文的最小TAORAN拜访快照。"""
+    visit = request.visit.model_dump(mode="json")
+    text_limits = {
+        "other_purpose": 120,
+        "expected_key_result": 160,
+        "process_description": 300,
+        "customer_feedback": 160,
+        "deviation_reason": 120,
+        "next_action_purpose": 120,
+        "next_action_other_purpose": 120,
+        "next_action_expected_result": 160,
+    }
+    visit_fields = [
+        "visit_date",
+        "customer_type_ii",
+        "opportunity_stage",
+        "visit_method",
+        "is_appointment",
+        "purpose_code",
+        "other_purpose",
+        "expected_key_result",
+        "process_description",
+        "customer_feedback",
+        "self_assessment",
+        "deviation_reason",
+        "next_action_purpose",
+        "next_action_other_purpose",
+        "next_action_expected_result",
+        "next_contact_at",
+    ]
+    visit_snapshot: dict[str, Any] = {}
+    for field in visit_fields:
+        value = visit.get(field)
+        if not experimental and isinstance(value, str) and field in text_limits:
+            value = value[: text_limits[field]]
+        visit_snapshot[field] = value
+    visit_snapshot["opportunity_stages"] = [
+        item.get("current_stage")
+        for item in visit.get("opportunities", [])
+        if item.get("current_stage")
+    ][:3]
+
+    standards: list[dict[str, Any]] = []
+    for record in snapshot.records:
+        item: dict[str, Any] = {
+            "id": record.id,
+            "version": record.version,
+            "content_hash": record.content_hash,
+        }
+        if record.id == "DSM-BS-01-06":
+            policy = request.visit.purpose_policy
+            item["structured_mapping"] = {
+                "customer_type": (
+                    policy.customer_type.value
+                    if policy is not None and policy.customer_type is not None
+                    else None
+                ),
+                "opportunity_stages": policy.opportunity_stages if policy is not None else [],
+                "allowed_purposes": policy.allowed_purposes if policy is not None else [],
+                "excluded_purposes": ["P6", "争取客户满意"],
+            }
+        standards.append(item)
+    return {
+        "snapshot_version": "TAORAN-LIGHT-SNAPSHOT-V2",
+        "visit_snapshot": visit_snapshot,
+        "standard_provenance": standards,
+    }
+
 
 _KNOWLEDGE_CONTEXT_FIELDS = {
     "T": {"customer_type_ii", "purpose_code", "other_purpose", "opportunity_stages"},
@@ -1618,7 +1692,7 @@ def _enhance_front_suggestions(
     )
     analysis_fields = (
         "customer_type_ii", "opportunity_stage", "visit_method", "is_appointment",
-        "opportunity_stages", "visit_date", "_record_contract",
+        "opportunity_stages",
         "purpose_code", "other_purpose",
         "expected_key_result", "process_description", "customer_feedback",
         "self_assessment", "deviation_reason", "next_action_purpose",
@@ -1674,7 +1748,7 @@ def _enhance_front_suggestions(
     )
     store = get_store(settings)
     if experimental:
-        cache_key = canonical_hash({"experimental_final_version": "record-contract-goal-review-v47-20260907", "key": cache_key})
+        cache_key = canonical_hash({"experimental_final_version": "front-v46-restored-20260908", "key": cache_key})
     persisted = store.get_feedback_artifact(
         response.tenant_id,
         _FRONT_WORDING_ARTIFACT_TYPE,
@@ -1915,6 +1989,9 @@ def _execute_knowledge_button_feedback(
     base_context = canonical_request.context
     mapping_path = settings.jiandaoyun_mapping_path_for(base_context.tenant_id)
     reviewer = get_agent().semantic_reviewer
+    if experimental and isinstance(reviewer, ChatModelReviewer):
+        from .front_v46 import bind
+        reviewer = bind(reviewer)
     # Current product setting prioritizes data-grounded AI wording. There is no
     # short UI cutoff; only the provider connection safety limit remains.
     phase_latency_ms: dict[str, int] = {}
@@ -1970,7 +2047,7 @@ def _execute_knowledge_button_feedback(
                     reviewer,
                     settings,
                     knowledge_wording_budget,
-                    _knowledge_model_context(live_request, live_snapshot, experimental=experimental),
+                    (_v46_knowledge_model_context if experimental else _knowledge_model_context)(live_request, live_snapshot, experimental=experimental),
                     experimental=experimental,
                 )
         else:
@@ -2276,7 +2353,9 @@ def _quick_check_schedule(task, canonical_request, settings):
     task.pop('completed_at', None)
     from .async_opinion import basic_feedback
     task['basic_feedback'] = basic_feedback(canonical_request.visit)
-    task['preview_snapshot'] = {'text':task['basic_feedback'],'status':'completed','kind':'basic'}
+    from .front_v46 import POLICY_VERSION
+    task['front_policy'] = POLICY_VERSION
+    task['preview_snapshot'] = {'text':'','status':'processing','kind':'ai'}
     task['events'] = Queue()
     queued = monotonic()
     _quick_check_persist(task)  # Durable source precedes dispatch.
@@ -2316,16 +2395,74 @@ def _quick_check_cleanup(now: float) -> None:
             _quick_check_idempotency.pop(key, None)
 
 
-def _quick_check_run_final(
+def _quick_check_run_final(canonical_request, settings):
+    """Keep bounded transient retries around the restored V4.6 policy."""
+    from time import sleep
+    attempts = []
+    for index in range(3):
+        result = _quick_check_run_final_once(canonical_request, settings)
+        attempts.append(result.get("phase_timings", {}))
+        reason = (result.get("diagnostics") or {}).get("failure_reason")
+        if result.get("status") == "completed" or reason not in {
+            "timeout", "queue_timeout", "queue_full", "rate_limited",
+            "invalid_response_or_network_error", "wording_experimental_audit_upstream",
+        } or index == 2:
+            result["transport_attempt_count"] = index + 1
+            result["recoverable"] = result.get("status") != "completed"
+            result["phase_timings"] = {
+                **result.get("phase_timings", {}),
+                "attempts": [item for timing in attempts for item in timing.get("attempts", [])],
+            }
+            return result
+        sleep(index + 1)
+
+
+def _quick_check_run_final_once(
     canonical_request: PrecheckRequest,
     settings: Settings,
 ) -> dict[str, Any]:
-    """AI work outlives the browser; semantics are observations, never gates."""
-    from .async_opinion import generate
-    reviewer=get_agent(settings).semantic_reviewer
-    if not isinstance(reviewer,ChatModelReviewer):
-        return {'status':'failed','failure_category':'model_unavailable','recoverable':True}
-    return generate(reviewer,canonical_request.visit,settings)
+    """Run candidate-only Final presentation on validated model wording."""
+    from .front_v46.experimental_final_diagnostics import audit as experimental_final_audit
+    from .front_v46.experimental_final_diagnostics import category as experimental_failure_category
+    from .quick_check_recovery import phase_timings
+    started = monotonic()
+    request_id = canonical_request.context.request_id
+    try:
+        result = _execute_unified_button_feedback(canonical_request, settings, experimental=True)
+        final = UnifiedButtonPrecheckResponse.from_precheck(
+            result,
+            latency_ms=int((monotonic() - started) * 1000),
+        )
+        if final.semantic_review.status != "completed" or "本次拜访分析：" not in final.feedback_text:
+            diagnostics = experimental_final_audit(final.semantic_review)
+            _logger.warning("experimental_final_failed request_ref=%s diagnostics=%s", hashlib.sha256(request_id.encode()).hexdigest()[:16], json.dumps(diagnostics))
+            return {"status": "failed", "failure_category": experimental_failure_category(diagnostics["failure_reason"]),
+                    "full_feedback_ms": int((monotonic() - started) * 1000), "diagnostics": diagnostics,
+                    "phase_timings": phase_timings(result.semantic_review, int((monotonic()-started)*1000))}
+        return {
+            "status": "completed",
+            "generated_at": datetime.now(UTC).isoformat(),
+            "phase_timings": phase_timings(result.semantic_review, int((monotonic()-started)*1000)),
+            "feedback_text": final.feedback_text,
+            "final_feedback_hash": hashlib.sha256(final.feedback_text.encode()).hexdigest(),
+            "provider_first_byte_ms": result.semantic_review.model_first_byte_ms,
+            "provider_complete_ms": result.semantic_review.model_complete_ms,
+            "full_feedback_ms": int((monotonic() - started) * 1000),
+            "knowledge_cache_hit": result.semantic_review.cache_hit,
+            "model_attempt_count": result.semantic_review.attempt_count,
+            "diagnostics": experimental_final_audit(result.semantic_review),
+            "recovered_after_retry": result.semantic_review.recovered_after_retry,
+        }
+    except Exception as exc:  # noqa: BLE001 - report only the safe exception class
+        _logger.warning("interactive_quick_check_final_failed class=%s", type(exc).__name__)
+        return {"status": "failed", "failure_category": "final_service_error"}
+    finally:
+        # _execute_unified_button_feedback uses normal precheck infrastructure.
+        # Remove its transient request rows so unsaved browser text is not kept.
+        get_store(settings).delete_prechecks_by_request_ids(
+            canonical_request.context.tenant_id,
+            [request_id, f"{request_id}__enrichment"],
+        )
 
 
 def _quick_check_run(
@@ -2333,10 +2470,40 @@ def _quick_check_run(
     settings: Settings,
     events: Queue[dict[str, Any]],
 ) -> dict[str, Any]:
-    # Basic feedback is deterministic and already persisted before dispatch.
-    # A single AI request replaces it; there is no second speculative model call.
-    return {'preview':{'status':'completed','kind':'basic'},
-        'final':_quick_check_run_final(canonical_request,settings)}
+    from .front_v46.experimental_semantic_streaming_v22 import stream_semantic_preview_v22
+    final_future = _quick_check_final_executor.submit(
+        _quick_check_run_final, canonical_request, settings,
+    )
+    def run_preview() -> dict[str, Any]:
+        lease = None
+        try:
+            reviewer = get_agent(settings).semantic_reviewer
+            if isinstance(reviewer, ChatModelReviewer):
+                lease = reviewer.model_capacity.acquire("frontend", settings.frontend_model_timeout_seconds)
+                if lease is None:
+                    raise TimeoutError("preview_queue_timeout")
+            preview = stream_semantic_preview_v22(
+                settings,
+                canonical_request.visit,
+                lambda text: events.put({"type": "preview_delta", "text": text}),
+                interactive=True,
+            )
+        except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
+            preview = {"status": "failed", "failure_category": "preview_service_error"}
+        finally:
+            if lease is not None:
+                lease.release()
+        events.put({"type": "preview_complete", **preview})
+        return preview
+
+    preview_future = _quick_check_preview_executor.submit(run_preview)
+    try:
+        final = final_future.result()
+    except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
+        final = {"status": "failed", "failure_category": "final_service_error"}
+    # Final remains available immediately; Preview keeps running independently.
+    preview = preview_future.result() if preview_future.done() else {"status": "processing"}
+    return {"preview": preview, "final": final, "preview_future": preview_future}
 
 
 def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
@@ -2446,7 +2613,8 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
         'generation_ms':max(0,total-first) if isinstance(first,int) and isinstance(total,int) else None,
         'total_ms':total, 'status':preview_timing.get('status','processing')}
     result['basic_feedback'] = task.get('basic_feedback','')
-    result['preview_kind'] = 'basic' if task.get('basic_feedback') else 'ai'
+    result['front_policy'] = task.get('front_policy')
+    result['preview_kind'] = 'ai' if task.get('front_policy') else ('basic' if task.get('basic_feedback') else 'ai')
     result['generated_at'] = (outcome or {}).get('final',{}).get('generated_at')
     latest=get_store(task.get('_settings')).latest_quick_check(task['tenant_id'],task['record_code']) if task.get('request_snapshot') else None
     result['superseded'] = bool(latest and latest.get('input_hash') != task['input_hash'] and latest.get('created_at','') > task.get('created_at',''))
@@ -2465,6 +2633,7 @@ def create_interactive_quick_check_task(
         _canonicalize_interactive_quick_check(request, x_tenant_id, x_api_key)
     )
     _require_interactive_quick_check(settings)
+    from .front_v46 import POLICY_VERSION
     key = (canonical_request.context.tenant_id, user_id, record_code, input_hash)
     now = monotonic()
     with _quick_check_lock:
@@ -2472,7 +2641,7 @@ def create_interactive_quick_check_task(
         existing_id = _quick_check_idempotency.get(key)
         if not existing_id:
             saved=get_store(settings).find_quick_check(key[0],key[1],record_code,input_hash)
-            if saved:
+            if saved and saved.get('front_policy') == POLICY_VERSION:
                 from .quick_check_recovery import load
                 restored=load(saved['check_id'],get_store(settings))
                 if restored:
@@ -2482,7 +2651,7 @@ def create_interactive_quick_check_task(
             existing = _quick_check_tasks.get(existing_id)
             if existing is not None:
                 _quick_check_resolve(existing)
-            if existing is not None:
+            if existing is not None and existing.get('front_policy') == POLICY_VERSION:
                 if now > float(existing["stream_token_expires_at"]):
                     existing["stream_token"] = secrets.token_urlsafe(32)
                     existing["stream_token_until"] = datetime.now(UTC).timestamp() + settings.quick_check_stream_token_ttl_seconds
@@ -2773,11 +2942,13 @@ const publicPath=__TAORAN_PUBLIC_PATH__;
 const sessionToken=__TAORAN_SESSION_TOKEN__;
 const taskVersion=__TAORAN_TASK_VERSION__;
 const initialBasic=__TAORAN_BASIC_JSON__;
+const frontPolicy=__TAORAN_FRONT_POLICY__;
 __TAORAN_INTERACTIVE_SCRIPT__
 </script></body></html>"""
     from html import escape
     basic=task.get('basic_feedback','基础检查：任务输入已接收，正在查询状态；本信息不是AI分析或正式评分。')
     replacements={
+        '__TAORAN_FRONT_POLICY__':json.dumps(task.get('front_policy')),
         '__TAORAN_BASIC_HTML__':escape(basic),
         '__TAORAN_BASIC_JSON__':json.dumps(basic).replace('<','\\u003c'),
         '__TAORAN_TASK_VERSION__':json.dumps(task['input_hash']),

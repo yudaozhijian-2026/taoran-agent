@@ -340,3 +340,38 @@ test('superseded task cannot be returned as the latest result', async () => {
   assert.equal(h.nodes.ack.hidden,true);
   assert.notEqual(h.nodes.content.textContent,'真实Final');
 });
+
+const restored = {initialBasic:'基础检查：记录原文',taskVersion:'version-a',frontPolicy:'front-v46-restored-20260908'};
+test('restored V4.6 retains basic feedback offline and never claims AI success', async () => {
+  const h=harness([new Error('offline')],undefined,restored);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,restored.initialBasic);
+  assert.equal(h.nodes.ack.hidden,true);
+});
+test('restored V4.6 displays independent Preview and Final after reopening', async () => {
+  const h=harness([{...completed(),input_hash:'version-a',preview_feedback_text:'V4.6实时意见',preview_status:'completed'}],undefined,restored);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,'V4.6实时意见');
+  assert.equal(h.nodes.finalContent.textContent,'真实Final');
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.equal(h.nodes.ack.disabled,false);
+});
+test('restored V4.6 Final first remains usable while Preview completes later', async () => {
+  const h=harness([
+    {...completed(),input_hash:'version-a',preview_feedback_text:'',preview_status:'processing'},
+    {...completed(),input_hash:'version-a',preview_feedback_text:'稍后完成的实时意见',preview_status:'completed'},
+  ],undefined,restored);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.finalContent.textContent,'真实Final');
+  assert.equal(h.nodes.content.textContent,restored.initialBasic);
+  await h.tick(1000);
+  assert.equal(h.nodes.content.textContent,'稍后完成的实时意见');
+  assert.equal(h.nodes.finalContent.textContent,'真实Final');
+});
+test('restored V4.6 does not display either opinion for an old input version', async () => {
+  const h=harness([{...completed(),input_hash:'old-version',preview_feedback_text:'旧意见',preview_status:'completed'}],undefined,restored);
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,restored.initialBasic);
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal(h.nodes.ack.hidden,true);
+});

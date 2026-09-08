@@ -27,6 +27,7 @@ FIELDS = (
     "phase_timings",
     "preview_snapshot",
     "basic_feedback",
+    "front_policy",
     "retention_until",
     "stream_token_until",
     "source",
