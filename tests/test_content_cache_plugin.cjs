@@ -37,11 +37,11 @@ test('new unsaved record launches; rich text and subtables are passed',async()=>
 });
 test('close without acknowledgement never writes; late messages ignored',async()=>{
   const h=start();await tick();h.close();
-  await assert.rejects(h.promise,/未返回反馈/);
+  assert.deepEqual(await h.promise, {resText:''});
   ack(h); // Must not close another modal or return a result after disposal.
 });
 test('same cached task in a new opening rejects previous opening message',async()=>{
-  const old=start();await tick();old.close();await assert.rejects(old.promise);
+  const old=start();await tick();old.close();assert.deepEqual(await old.promise, {resText:''});
   const current=start(launch('qc_same','y'.repeat(32)));await tick();
   let finished=false;current.promise.then(()=>{finished=true;});
   ack(current);await tick();assert.equal(finished,false);
@@ -59,7 +59,7 @@ test('plugin fails closed against old server without content contract',async()=>
   assert.equal(h.modal,undefined);
 });
 test('backend accepts empty code; forwards snapshot only without temporary ID',async()=>{
-  const h=start();await tick();h.close();await assert.rejects(h.promise);
+  const h=start();await tick();h.close();assert.deepEqual(await h.promise, {resText:''});
   let sent;
   const result=await back(name=>{assert.equal(name,'axios');return async request=>{
     sent=request.data;return {data:{check_id:'qc_same',stream_token:'t'.repeat(32),opening_id:'x'.repeat(32),input_hash:hash,status:'processing'}};
@@ -75,7 +75,7 @@ test('editing a saved record sends current unsaved values instead of requesting 
   const conf={tenant_id:'test',api_key:'test-only',endpoint_url:'https://taoran.yudaozhijian.top/api/v1/quick-check/tasks',public_base_url:'https://taoran.yudaozhijian.top'};
   for(const process_description of ['原内容','客户提出试用，尚未确认时间','']) {
     const h=start(launch(),{visit_record_code:'BFJL-existing',data_id:'existing-id',process_description});
-    await tick();h.close();await assert.rejects(h.promise);
+    await tick();h.close();assert.deepEqual(await h.promise, {resText:''});
     const response=await back(()=>async request=>{
       sent.push(request.data);
       return {data:{check_id:'qc_current',stream_token:'t'.repeat(32),opening_id:'x'.repeat(32),input_hash:hash,status:'processing'}};
@@ -100,4 +100,47 @@ test('saved record with malformed page snapshot fails closed without falling bac
     assert.equal(result.quick_check_launch_url,'');
   }
   assert.equal(calls,0);
+});
+
+test('same platform instance: cancel twice then acknowledge; no cancelled output or stale handler',async()=>{
+  let close, calls=0, oldHandler;
+  const inputs=[];
+  const g={ui:{},utils:{
+    callFunction:async args=>{
+      inputs.push(args.data);
+      calls++;
+      return {result:launch(calls===3?'qc_changed':'qc_same',String(calls).repeat(32),calls===3?'b'.repeat(64):hash)};
+    },
+    openModal:()=>new Promise(resolve=>{close=resolve;}),
+    closeModal:()=>close(),
+  }};
+  let existing='原有AI意见';
+  for(let i=1;i<=3;i++){
+    const p=front(g,{existing_feedback:existing,snapshot_contract:'experimental_current_page_v1',process_description:i===3?'修改后的客户事实':'原客户事实'},URL);
+    await tick();
+    if(i===1)oldHandler=g.ui.onmessage;
+    if(i<3)close();
+    else {
+      oldHandler({type:'taoran_quick_check_acknowledged',check_id:'qc_same',opening_id:'1'.repeat(32),input_hash:hash,feedback_text:'过期意见'});
+      g.ui.onmessage({type:'taoran_quick_check_acknowledged',check_id:'qc_changed',opening_id:'3'.repeat(32),input_hash:'b'.repeat(64),feedback_text:'最新客户事实建议'});
+    }
+    const output=await p;
+    if(Object.hasOwn(output,'resText'))existing=output.resText;
+    assert.equal(existing,i===3?'最新客户事实建议':'原有AI意见');
+    if(i<3)assert.deepEqual(output,{resText:'原有AI意见'});
+  }
+  assert.equal(calls,3);
+  assert.equal(inputs[0].page_snapshot_json,inputs[1].page_snapshot_json);
+  assert.notEqual(inputs[1].page_snapshot_json,inputs[2].page_snapshot_json);
+  for(const input of inputs) {
+    assert.equal(input.existing_feedback,undefined);
+    assert.equal(JSON.parse(input.page_snapshot_json).existing_feedback,undefined);
+  }
+});
+
+test('modal failures still reject and remove listener; next invocation can succeed',async()=>{
+  const g={ui:{},utils:{callFunction:async()=>({result:launch()}),openModal:async()=>{throw new Error('platform failure');}}};
+  await assert.rejects(front(g,{},URL),/platform failure/);
+  assert.doesNotThrow(()=>g.ui.onmessage({}));
+  const h=start();await tick();ack(h);assert.ok((await h.promise).resText);
 });

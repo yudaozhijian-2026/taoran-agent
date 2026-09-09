@@ -36,7 +36,7 @@ let pendingInputHash = '';
 let returnedFeedback = '';
 let acceptingFeedback = false;
 
-$g.ui.onmessage = (message) => {
+const onFeedbackMessage = (message) => {
   if (!acceptingFeedback || returnedFeedback) return;
   const payload = message && typeof message === 'object' && message.pluginMessage
     ? message.pluginMessage
@@ -66,14 +66,19 @@ if (!/^[A-Za-z0-9_-]{32}$/.test(pendingOpeningId) || !/^[a-f0-9]{64}$/.test(pend
 }
 pendingCheckId = launch.quick_check_id;
 acceptingFeedback = true;
+$g.ui.onmessage = onFeedbackMessage;
 try {
   await $g.utils.openModal({ title: 'AI检查', url: launch.quick_check_launch_url });
 } finally {
   acceptingFeedback = false;
+  // Dispose only this opening's listener; never clear a newer opening's handler.
+  if ($g.ui.onmessage === onFeedbackMessage) $g.ui.onmessage = () => {};
 }
 
 if (!returnedFeedback) {
-  throw new Error('本次AI检查未返回反馈。可关闭后重新点击AI检查。');
+  // Jiandaoyun clears mapped fields for {} and does not settle undefined.
+  // Preserve the current page value on cancel; never send it to the model.
+  return { resText: draft.existing_feedback == null ? '' : draft.existing_feedback };
 }
 
 return { resText: returnedFeedback, quick_check_id: pendingCheckId };
