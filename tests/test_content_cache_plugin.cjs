@@ -69,3 +69,35 @@ test('backend accepts empty code; forwards snapshot only without temporary ID',a
   assert.equal(Object.keys(sent.form_snapshot).length,21);
   assert.equal(new URL(result.quick_check_launch_url).searchParams.get('input_hash'),hash);
 });
+
+test('editing a saved record sends current unsaved values instead of requesting saved scoring',async()=>{
+  const sent=[];
+  const conf={tenant_id:'test',api_key:'test-only',endpoint_url:'https://taoran.yudaozhijian.top/api/v1/quick-check/tasks',public_base_url:'https://taoran.yudaozhijian.top'};
+  for(const process_description of ['原内容','客户提出试用，尚未确认时间','']) {
+    const h=start(launch(),{visit_record_code:'BFJL-existing',data_id:'existing-id',process_description});
+    await tick();h.close();await assert.rejects(h.promise);
+    const response=await back(()=>async request=>{
+      sent.push(request.data);
+      return {data:{check_id:'qc_current',stream_token:'t'.repeat(32),opening_id:'x'.repeat(32),input_hash:hash,status:'processing'}};
+    },conf,h.input,URL);
+    assert.equal(response.quick_check_id,'qc_current');
+  }
+  assert.deepEqual(sent.map(r=>r.form_snapshot.process_description),['原内容','客户提出试用，尚未确认时间','']);
+  for(const request of sent){
+    assert.equal(request.saved_record_check,undefined);
+    assert.equal(request.record_code,'BFJL-existing');
+    assert.equal(request.data_id,'existing-id');
+    assert.equal(Object.keys(request.form_snapshot).length,21);
+  }
+});
+
+test('saved record with malformed page snapshot fails closed without falling back to saved data',async()=>{
+  let calls=0;
+  const conf={tenant_id:'test',api_key:'test-only',endpoint_url:'https://taoran.yudaozhijian.top/api/v1/quick-check/tasks',public_base_url:'https://taoran.yudaozhijian.top'};
+  for(const page_snapshot_json of [undefined,'{}','not-json']){
+    const result=await back(()=>async()=>{calls++;},conf,{visit_record_code:'BFJL-existing',snapshot_mode:'experimental_current_page_v1',page_snapshot_json},URL);
+    assert.equal(result.quick_check_status,'unavailable');
+    assert.equal(result.quick_check_launch_url,'');
+  }
+  assert.equal(calls,0);
+});

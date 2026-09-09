@@ -15,7 +15,6 @@ const recordCode = String(draft.visit_record_code || '').trim();
 
 if (draft.snapshot_mode !== 'experimental_current_page_v1') return unavailable('页面快照协议不匹配。');
 let snapshot = {};
-if (!recordCode) {
 try { snapshot = JSON.parse(draft.page_snapshot_json); } catch (_) { return unavailable('完整页面快照格式错误。'); }
 const fields = ['visit_date','employee_id','customer_id','customer_type_ii','visit_method','is_appointment','purpose_code','other_purpose','expected_key_result','process_description','self_assessment','next_action_purpose','next_action_other_purpose','next_action_expected_result','next_contact_at','actual_start_at','actual_end_at','duration_minutes','evidence_ids','participants','opportunities'];
 if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot) || Object.keys(snapshot).length !== fields.length || fields.some(f => !Object.prototype.hasOwnProperty.call(snapshot,f))) return unavailable('当前页面快照不完整。');
@@ -29,10 +28,8 @@ try {
     if (!Array.isArray(snapshot[field]) || snapshot[field].some(row => !row || typeof row !== 'object' || Array.isArray(row))) return unavailable('页面子表格式不正确。');
   }
 } catch (_) { return unavailable('页面复杂字段格式不正确。'); }
-}
 const body = {record_code: recordCode, user_id: String(draft.user_id || 'jiandaoyun-user'), form_snapshot: snapshot};
-// 编码仅在提交后生成：已提交记录手动检测读取服务端保存值。
-if (recordCode) body.saved_record_check = true;
+// 新建与编辑统一使用本次页面快照；记录编码只作身份信息，不能切换到已保存值。
 if (draft.data_id) body.data_id = String(draft.data_id);
 try {
   const response = await axios({method: 'post', url: endpoint.toString(), headers: {'Content-Type':'application/json','X-Tenant-Id':tenant,'X-API-Key':apiKey}, data:body, timeout:10000, maxRedirects:0, validateStatus:status=>status===202});
