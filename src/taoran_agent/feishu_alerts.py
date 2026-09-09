@@ -23,7 +23,7 @@ def failures(kind, item):
         if item.get("status") == "completed":
             problems = []
             if item.get("return_failure"):
-                problems.append("点击已读并返回后，最终反馈交付失败")
+                problems.append("点击已读并返回修改后，最终反馈交付失败")
             if not str(final.get("feedback_text") or "").strip():
                 problems.append("AI最终反馈正文为空")
             preview = outcome.get("preview") or {}
