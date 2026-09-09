@@ -492,7 +492,7 @@ def _front_ai_suggestions(
             )
             natural = problem + suggestion
         advice.append(f"{label}：{natural}")
-    lines = ["【AI反馈意见】"]
+    lines = []
     rendered_sections = []
     section_labels = {
         "visit_context": "拜访概况",
@@ -664,7 +664,7 @@ def build_evaluation_feedback(
     # 分数、六项规则明细继续作为结构化字段保存并回写评分；这里仅保留供销售
     # 代表阅读的本次分析和可执行改善建议。
     del visit, q33_score, q34_score, total_score
-    lines = ["【AI反馈意见】"]
+    lines = []
     required_model_sections = {"T", "A1", "O_KR", "R", "A2", "N"}
     completed_sections = {
         section.code

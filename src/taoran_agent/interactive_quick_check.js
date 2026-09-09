@@ -286,7 +286,7 @@ ack.addEventListener('click', async () => {
       throw new Error('invalid_final');
     }
     window.parent.postMessage({pluginMessage: {
-      type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: data.final_feedback_text,
+      type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: data.final_feedback_text.replace(/^\s*【AI反馈意见】\s*/, ''),
       opening_id: openingId,
       ...(versionedMode ? {input_hash:taskVersion,generated_at:data.generated_at} : {}),
     }}, parentOrigin);

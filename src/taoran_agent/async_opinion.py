@@ -127,7 +127,7 @@ def render_opinion(result, data, catalog):
     by_id = {s["id"]: s for s in catalog}
     by_goal = {g.goal_id: g for g in goals(data)}
     observations = []
-    lines = ["【AI反馈意见】", "本次拜访分析："]
+    lines = ["本次拜访分析："]
     used = []
     for item in result.goals:
         goal = by_goal.get(item.goal_id)

@@ -62,14 +62,14 @@ test('reopened completed preview shows final waiting until matching final arrive
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.status.textContent,'AI检测完成');
 });
-test('duplicate heading is display-only and acknowledgement keeps original feedback', async () => {
+test('cached heading is removed from acknowledgement without changing quoted body', async () => {
   const text='【AI反馈意见】\n本次拜访分析：正文中引用【AI反馈意见】应保留。';
   const h=harness([{check_id:'qc_test',final_feedback_text:text}]);
   h.source.emit('preview_complete',{status:'completed'});
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:text});
   assert.equal(h.nodes.finalContent.textContent,'本次拜访分析：正文中引用【AI反馈意见】应保留。');
   await h.nodes.ack.click();
-  assert.equal(h.messages[0][0].pluginMessage.feedback_text,text);
+  assert.equal(h.messages[0][0].pluginMessage.feedback_text,text.replace(/^【AI反馈意见】\n/,''));
 });
 test('active versioned polling displays incremental text every second', async () => {
   const responses = ['第一句。','第一句。第二句。','第一句。第二句。第三句。'].map(text => ({

@@ -98,7 +98,7 @@ def test_saved_modal_uses_saved_record_not_page(env, monkeypatch):
     api._quick_check_cleanup(task["expires_at"] + 1)
 
 
-def test_update_webhook_does_not_enqueue(env, monkeypatch):
+def test_update_webhook_routes_to_automatic_comparison(env, monkeypatch):
     import hashlib
     import json
 
@@ -107,7 +107,7 @@ def test_update_webhook_does_not_enqueue(env, monkeypatch):
     from taoran_agent.config import Settings
 
     monkeypatch.setattr(Settings, "jiandaoyun_webhook_secret_for", lambda *args: "secret")
-    enqueue = Mock()
+    enqueue = Mock(return_value={"status": "ignored", "reason": "taoran_inputs_unchanged"})
     monkeypatch.setattr(api, "_enqueue_jiandaoyun_record", enqueue)
     body = json.dumps({"op": "data_update", "data": {"_id": "record"}}).encode()
     signature = hashlib.sha1(b"nonce:" + body + b":secret:1").hexdigest()
@@ -117,7 +117,44 @@ def test_update_webhook_does_not_enqueue(env, monkeypatch):
     )
     assert result.status_code == 202
     assert result.json()["status"] == "ignored"
-    enqueue.assert_not_called()
+    enqueue.assert_called_once()
+    assert enqueue.call_args.args[0].request_id.startswith("auto_saved_")
+
+
+@pytest.mark.parametrize("status", ["queued", "running", "completed", "failed"])
+def test_automatic_unchanged_never_restarts_even_failed_job(env, monkeypatch, status):
+    request, _ = env[4]()
+    latest = env[1].latest_source_job(request)
+    latest["status"] = status
+    monkeypatch.setattr(env[1], "latest_source_job", lambda _: latest)
+    submit = Mock()
+    monkeypatch.setattr(api, "submit_evaluation", submit)
+    request.visit.metadata["updateTime"] = "new audit timestamp"
+    result = api._submit_saved_analysis(request, BackgroundTasks(), "a", "key-a", automatic=True)
+    assert result["reason"] == "taoran_inputs_unchanged"
+    submit.assert_not_called()
+
+
+def test_automatic_relevant_change_creates_analysis(env, monkeypatch):
+    request, _ = env[4]()
+    request.visit.process_description = "客户已确认交付日期为下周三"
+    submit = Mock(return_value="new-analysis")
+    monkeypatch.setattr(api, "submit_evaluation", submit)
+    assert api._submit_saved_analysis(request, BackgroundTasks(), "a", "key-a", automatic=True) == "new-analysis"
+    submit.assert_called_once()
+
+
+def test_legacy_writeback_removes_only_leading_feedback_heading(env):
+    from taoran_agent.models import EvaluationResponse
+    from taoran_agent.writeback import evaluation_writeback_values
+
+    request, _ = env[4]()
+    latest = env[1].latest_source_job(request)
+    response = EvaluationResponse.model_validate(latest["response"])
+    response.ai_opinion = "【AI反馈意见】\n\n本次拜访分析：正文引用【AI反馈意见】保留。"
+    assert evaluation_writeback_values(response)["ai_opinion"] == (
+        "本次拜访分析：正文引用【AI反馈意见】保留。"
+    )
 
 
 @pytest.mark.parametrize("preview_fails", [False, True])

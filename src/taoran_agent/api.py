@@ -5106,12 +5106,16 @@ def _enqueue_jiandaoyun_record(
         }
     )
     canonical = adapt_jiandaoyun_evaluation_request(request, mapping)
+    if event.request_id and event.request_id.startswith("auto_saved_"):
+        return _submit_saved_analysis(
+            canonical, background_tasks, x_tenant_id, x_api_key, automatic=True
+        )
     if event.request_id and event.request_id.startswith("manual_saved_"):
         return _submit_saved_analysis(canonical, background_tasks, x_tenant_id, x_api_key)
     return submit_evaluation(canonical, background_tasks, x_tenant_id, x_api_key)
 
 
-def _submit_saved_analysis(request, background_tasks, x_tenant_id, x_api_key):
+def _submit_saved_analysis(request, background_tasks, x_tenant_id, x_api_key, *, automatic=False):
     """Compare before analysis only. Failed attempts never count as a success."""
     authorize(request.context.tenant_id, x_tenant_id, x_api_key)
     with source_lock(request.context.tenant_id, request.writeback_target):
@@ -5119,6 +5123,11 @@ def _submit_saved_analysis(request, background_tasks, x_tenant_id, x_api_key):
         if latest and analysis_input_revision(PostEvaluationRequest.model_validate(
             latest["request"]
         )) == analysis_input_revision(request):
+            if automatic:
+                # Output-only webhook echoes and unrelated edits must never
+                # restart even a failed analysis; explicit retry stays manual.
+                return {"status": "ignored", "reason": "taoran_inputs_unchanged",
+                        "job_id": latest["job_id"]}
             response = latest.get("response") or {}
             usable = latest["status"] in {"queued", "running"} or (
                 latest["status"] == "completed"
@@ -5179,7 +5188,7 @@ async def receive_jiandaoyun_visit_webhook(
         raise HTTPException(status_code=400, detail="invalid webhook body")
     operation = str(body.get("op", ""))
     record = body.get("data")
-    if operation != "data_create" or not isinstance(record, dict):
+    if operation not in {"data_create", "data_update"} or not isinstance(record, dict):
         return {
             "status": "ignored",
             "operation": operation or "connection_test",
@@ -5201,6 +5210,7 @@ async def receive_jiandaoyun_visit_webhook(
         app_id=app_id,
         entry_id=entry_id,
         user_id="jiandaoyun-webhook",
+        request_id=("auto_saved_" + uuid4().hex) if operation == "data_update" else None,
     )
     # The signed webhook itself authenticates Jiandaoyun; tenant authorization is
     # still enforced internally with the configured tenant key.

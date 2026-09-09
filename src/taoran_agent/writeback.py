@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 from time import sleep
@@ -30,7 +31,7 @@ def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
         "overall_percentage": response.overall_percentage,
         "effectiveness_level": response.effectiveness_level,
         "effective_visit_recommendation": response.count_as_effective_visit_recommendation,
-        "ai_opinion": response.ai_opinion,
+        "ai_opinion": re.sub(r"^\s*【AI反馈意见】\s*", "", response.ai_opinion),
         "ai_suggestions": "\n".join(response.manager_coaching_suggestions),
         "rule_version": response.rule_version,
         "agent_version": response.agent_version,
@@ -203,7 +204,7 @@ def _writeback_current_evaluation(settings, request, response) -> WritebackResul
     if official_writeback_blocked:
         # 不回写分数；唯一反馈字段保留明确异常和当次综合检查，避免展示过期结论。
         canonical_values = {
-            "ai_opinion": _blocked_rule_feedback(response) + "\n\n" + response.ai_opinion,
+            "ai_opinion": _blocked_rule_feedback(response) + "\n\n" + canonical_values["ai_opinion"],
         }
     values = {
         widget_id: _format_widget_value(canonical_values[name], output_fields[name])
