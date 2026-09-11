@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from .token_usage import usage_scope
+
 from datetime import UTC, datetime
 from time import monotonic
 from uuid import uuid4
@@ -59,6 +61,7 @@ class TaoranAgent:
             normalized_text(value) for value in self.catalog["vague_exact_phrases"]
         }
 
+    @usage_scope("frontend_final")
     def precheck(self, request: PrecheckRequest) -> PrecheckResponse:
         """提交前按钮检查：只给修改建议，任何结果都不阻断简道云提交。"""
         started = monotonic()
@@ -379,6 +382,7 @@ class TaoranAgent:
             )
         return updated
 
+    @usage_scope("backend")
     def evaluate(self, request: PostEvaluationRequest, job_id: str) -> EvaluationResponse:
         """提交后深度评价：Q33与Q34各50分，总分100分。"""
         boundary = require_evaluation_input(request.visit)

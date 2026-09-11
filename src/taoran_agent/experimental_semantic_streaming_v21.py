@@ -12,6 +12,7 @@ from time import monotonic
 from typing import Any
 
 import httpx
+from .token_usage import UsageClient
 
 from .config import Settings
 from .models import VisitDraftInput
@@ -223,7 +224,7 @@ def stream_semantic_preview_v21(
     emitted = received_bytes = 0
     first_text_ms: int | None = None
     try:
-        with httpx.Client(follow_redirects=False) as client, client.stream(
+        with UsageClient(settings, follow_redirects=False) as client, client.stream(
             "POST", settings.llm_api_url,
             headers={"Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}", "Content-Type": "application/json"},
             json=body, timeout=settings.frontend_model_timeout_seconds,

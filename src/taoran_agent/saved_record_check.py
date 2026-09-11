@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, HTTPException
 
 from .jiandaoyun_api import JiandaoyunReadError, find_jiandaoyun_record_by_field
+from .token_usage import attribution
 from .models import JiandaoyunSubmittedEvent, PostEvaluationRequest
 
 
@@ -87,8 +88,9 @@ def launch(request, tenant_id, api_key):
                 task["events"].put({"type": "preview_delta", "text": result["ai_opinion"]})
                 task["events"].put({"type": "preview_complete", "status": "completed"})
                 return {"status": "completed"}
-            visit = PostEvaluationRequest.model_validate(saved["request"]).visit
-            return api._quick_check_run_preview(visit, settings, task["events"])
+            canonical = PostEvaluationRequest.model_validate(saved["request"])
+            with attribution(canonical, "frontend_preview"):
+                return api._quick_check_run_preview(canonical.visit, settings, task["events"])
         except Exception:  # noqa: BLE001 - preview cannot block scoring or writeback
             task["events"].put({"type": "preview_complete", "status": "failed"})
             return {"status": "failed", "failure_category": "preview_service_error"}

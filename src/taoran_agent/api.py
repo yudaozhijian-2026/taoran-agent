@@ -8,7 +8,8 @@ import logging
 import re
 import secrets
 from collections.abc import AsyncIterator, Callable
-from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import Future
+from .token_usage import UsageExecutor as ThreadPoolExecutor, usage_scope, usage_stage
 from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, date, datetime
@@ -618,6 +619,7 @@ def tenant_mapping(settings: Settings, tenant_id: str) -> dict[str, Any]:
     return load_jiandaoyun_mapping(mapping_path)
 
 
+@usage_scope("backend")
 def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
     store = get_store()
     started = monotonic()
@@ -1192,6 +1194,7 @@ def _with_live_purpose_policy(
     return request.model_copy(update={"visit": visit}), snapshot
 
 
+@usage_scope("frontend_final")
 def _execute_precheck_with_agent(
     request: PrecheckRequest,
     agent: TaoranAgent,
@@ -1960,6 +1963,7 @@ def _apply_knowledge_wording(
     return enhanced
 
 
+@usage_scope("frontend_final")
 def _execute_two_feedback(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -2125,6 +2129,7 @@ def _execute_knowledge_button_feedback(
     return result
 
 
+@usage_scope("frontend_final")
 def _execute_unified_button_feedback(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -2525,6 +2530,7 @@ def _quick_check_run_final_once(
         )
 
 
+@usage_stage("frontend_preview")
 def _quick_check_run_preview(visit, settings, events):
     """Shared live wording channel; failures never discard the formal result."""
     from .front_v46.experimental_semantic_streaming_v22 import stream_semantic_preview_v22
@@ -2551,6 +2557,7 @@ def _quick_check_run_preview(visit, settings, events):
     return preview
 
 
+@usage_scope("frontend_final")
 def _quick_check_run(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -3171,6 +3178,7 @@ def _require_experimental_jdy_record_launch(
             _experimental_jdy_record_launches.pop(record_launch_token, None)
 
 
+@usage_scope("frontend_final")
 def _experimental_run_quick_check(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -3572,6 +3580,7 @@ def _require_experimental_semantic_record_launch(
             _experimental_semantic_record_launches.pop(token, None)
 
 
+@usage_scope("frontend_final")
 def _experimental_run_semantic_quick_check(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -3877,6 +3886,7 @@ def _experimental_semantic_v21_cleanup(now: float) -> None:
         _experimental_semantic_v21_tasks.pop(check_id, None)
 
 
+@usage_scope("frontend_final")
 def _experimental_run_semantic_v21(
     canonical_request: PrecheckRequest,
     settings: Settings,
@@ -4133,6 +4143,7 @@ def _require_experimental_semantic_v22_review_access(
         _require_experimental_semantic_v22_review_launch(review_launch_token or "")
 
 
+@usage_scope("frontend_final")
 def _experimental_run_semantic_v22(
     canonical_request: PrecheckRequest, settings: Settings, started_at: float, deltas: Queue[str],
 ) -> dict[str, Any]:

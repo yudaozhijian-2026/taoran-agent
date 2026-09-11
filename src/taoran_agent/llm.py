@@ -6,7 +6,7 @@ import codecs
 import json
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
+from .token_usage import UsageClient, UsageExecutor as ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from time import monotonic
 from typing import Literal
@@ -794,7 +794,7 @@ class ChatModelReviewer(SemanticReviewer):
         self._executor = ThreadPoolExecutor(
             max_workers=settings.llm_max_concurrency, thread_name_prefix="taoran-model"
         )
-        self._client = httpx.Client(
+        self._client = UsageClient(settings,
             transport=transport,
             follow_redirects=False,
             limits=httpx.Limits(

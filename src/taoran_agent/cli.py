@@ -104,7 +104,24 @@ def main() -> None:
     )
     knowledge_parser.add_argument("--apply", action="store_true", help="审核后写入快照和Markdown")
 
+    usage_parser = subparsers.add_parser("export-token-usage", help="只读导出每位销售每日Token统计")
+    usage_parser.add_argument("--tenant-id", required=True)
+    usage_parser.add_argument("--start", required=True, help="开始日期 YYYY-MM-DD（北京时间）")
+    usage_parser.add_argument("--end", required=True, help="结束日期 YYYY-MM-DD（含当天）")
+    usage_parser.add_argument("--database", type=Path, help="省略时使用服务配置的数据库")
+    usage_parser.add_argument("--directory", type=Path, required=True, help="已核实的销售姓名、公司及测试排除名录")
+    usage_parser.add_argument("--output", type=Path, required=True)
+
     args = parser.parse_args()
+    if args.command == "export-token-usage":
+        from .token_usage_report import export_usage
+        try:
+            result = export_usage(args.database or get_settings().database_path, args.output,
+                                  args.tenant_id, args.start, args.end, args.directory)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return
     if args.command in {"model-status", "test-model"}:
         settings = get_settings()
         if args.command == "model-status":
