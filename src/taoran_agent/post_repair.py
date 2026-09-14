@@ -17,10 +17,12 @@ def targets_for_error(code, details):
 
 
 def merge_repair(original, patch, targets):
-    if not isinstance(patch, dict) or set(patch) != {"sections", "facts_reason"}:
+    action_repair = "facts.next_action_logic_ok" in targets
+    keys = {"sections", "facts_reason"} | ({"next_action_logic_ok"} if action_repair else set())
+    if not isinstance(patch, dict) or set(patch) != keys:
         raise ValueError("invalid_repair_patch")
     sections = patch["sections"]
-    expected = set(targets) - {"facts.reason"}
+    expected = set(targets) - {"facts.reason", "facts.next_action_logic_ok"}
     if not isinstance(sections, list) or any(not isinstance(s, dict) for s in sections):
         raise ValueError("invalid_repair_patch")
     codes = [s.get("code") for s in sections]
@@ -31,6 +33,10 @@ def merge_repair(original, patch, targets):
     if "facts.reason" not in targets and patch["facts_reason"]:
         raise ValueError("invalid_repair_scope")
     result = deepcopy(original)
+    if action_repair:
+        if not isinstance(patch["next_action_logic_ok"], bool):
+            raise ValueError("invalid_repair_patch")
+        result["facts"]["next_action_logic_ok"] = patch["next_action_logic_ok"]
     updates = {s["code"]: s for s in sections}
     result["sections"] = [updates.get(s["code"], s) for s in result["sections"]]
     if "facts.reason" in targets:
@@ -64,6 +70,16 @@ def repair_messages(original_messages, original, targets, details):
     system += "本次必须返回的section代码为" + json.dumps([t for t in targets if t != 'facts.reason']) + "。"
     if 'facts.reason' not in targets:
         system += '本次facts_reason必须严格输出空字符串""；不得重复或改写原总述。'
+    if "facts.next_action_logic_ok" in targets:
+        system = system.replace("不重新判断或修改冻结的facts事实", "仅允许重新判断next_action_logic_ok，其余facts冻结")
+        system = system.replace("只有sections和facts_reason两个键", "只有sections、facts_reason和next_action_logic_ok三个键")
+        system += (
+            "\n本次额外返回布尔值next_action_logic_ok，仅根据下一步行动内容的衔接和具体性重新判断。"
+            "时间缺失或跨期不符只影响日期检查，不能作为此布尔值为false的原因。"
+            "若行动内容另有缺口则保留false，并在N.advice_basis.fields及原因中准确指出对应行动字段。"
+            "N整体仍需满足程序时间门槛，不能因行动内容合理把缺日期的N改成达标。"
+            "facts.next_action_logic_ok是事实修复目标，不是sections代码；sections仅返回被指定的六项代码。"
+        )
     user = {"original_input": json.loads(original_messages[1]["content"]),
             "untrusted_previous_output": original, "repair_targets": targets,
             "validation_details": details}

@@ -713,6 +713,10 @@ def build_evaluation_feedback(
     result = "\n".join(lines)
     context = semantic_facts.quality_audit.get("authoritative_checks")
     if context:
+        from .contact_policy import contact_policy_hits
+        policy = context.get("next_contact_policy")
+        if policy and contact_policy_hits({"facts": {"reason": result}}, policy):
+            raise ValueError("post_contact_policy_final_conflict")
         from .semantic_observation import final_feedback_observations
         semantic_facts.quality_audit["final_review"] = final_feedback_observations(
             analysis_text, advice_items, context,

@@ -6,7 +6,6 @@ import codecs
 import json
 import logging
 import re
-from .token_usage import UsageClient, UsageExecutor as ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from time import monotonic
 from typing import Literal
@@ -96,6 +95,8 @@ from .post_trace import PostStreamTrace
 from .recommendation_repairs import repair_r_recommendation
 from .rules import normalized_text
 from .semantic import HeuristicSemanticReviewer, SemanticReviewer
+from .token_usage import UsageClient
+from .token_usage import UsageExecutor as ThreadPoolExecutor
 
 PROMPT_VERSION = "TAORAN-LLM-FACTS-V4.7"
 PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.4"
@@ -841,6 +842,9 @@ class ChatModelReviewer(SemanticReviewer):
             data.pop("participants", None)
         data["_record_contract"] = contract
         data["_authoritative_checks"] = quality_context(visit, self.snapshot)
+        if not precheck:
+            from .contact_policy import contact_policy
+            data["_authoritative_checks"]["next_contact_policy"] = contact_policy(visit)
         return data
 
     def _messages(
@@ -1444,6 +1448,24 @@ class ChatModelReviewer(SemanticReviewer):
                     'category':item.get('category','system_fact')})
             section['evidence']=evidence
         parsed=_EvaluationPayload.model_validate(candidate)
+        # Canonical missing-date advice is limited to the date-only N gap;
+        # retain any separate action-content or consensus improvement advice.
+        policy = data.get('_authoritative_checks', {}).get('next_contact_policy')
+        if policy and policy['customer_type'] == 'opportunity' and policy['date_state'] == 'missing':
+            for section in candidate.get('sections', []):
+                basis = section.get('advice_basis') or {}
+                if section.get('code') == 'N' and basis.get('fields') == ['next_contact_at']:
+                    section['suggestion'] = '请补充下一次联系客户时间安排，商机客户建议与客户达成下一次拜访时间共识。'
+            parsed = _EvaluationPayload.model_validate(candidate)
+        from .contact_policy import contact_policy_hits
+        policy = data.get('_authoritative_checks', {}).get('next_contact_policy')
+        if policy:
+            hits = contact_policy_hits(candidate, policy)
+            if hits:
+                raise ModelCallError('post_feedback_conflict', details={
+                    'hits': hits, 'next_contact_policy': policy,
+                    'contact_policy_only': True,
+                })
         # Deterministic scoring remains in the scoring engine; no base feedback
         # or observer verdict can replace the model's current structured facts.
         try:self._validate(candidate,data,False)
@@ -1635,7 +1657,7 @@ class ChatModelReviewer(SemanticReviewer):
                         raise ModelCallError("input_too_large") from None
                     continue
                 targets = targets_for_error(_failure_reason(exc), details) if not precheck else []
-                if targets:
+                if targets and not details.get("contact_policy_only"):
                     from .post_quality import collect_repair_hits
                     collected = collect_repair_hits(payload, data, SECTION_FIELDS)
                     details["additional_conflicts"] = collected
@@ -3035,12 +3057,15 @@ class ChatModelReviewer(SemanticReviewer):
         )
 
     def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
+        from .contact_policy import contact_policy
         started = monotonic()
         attempts: list[ModelAttemptAudit] = []
         try:
             parsed, quoted = self._analyze(visit, False, attempts)
             return Q34SemanticFacts(
-                quality_audit={"authoritative_checks":quality_context(visit,self.snapshot),
+                quality_audit={"authoritative_checks": {
+                    **quality_context(visit,self.snapshot),
+                    "next_contact_policy": contact_policy(visit)},
                     "fact_grounding_reassessed": any(a.failure_reason == "post_fact_grounding_conflict" for a in attempts),
                     "goal_reviews": [g.model_dump() for g in parsed.goal_reviews],
                     "semantic_gate": parsed._semantic_gate,

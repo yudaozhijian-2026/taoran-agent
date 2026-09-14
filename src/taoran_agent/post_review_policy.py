@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 
-POLICY_VERSION = "TAORAN-POST-REVIEW-20260907-V4.7"
+POLICY_VERSION = "TAORAN-POST-REVIEW-20260914-CONTACT-V1"
 from .record_contract import GUIDANCE as RECORD_GUIDANCE
 
 POLICY = RECORD_GUIDANCE + (
@@ -17,6 +17,10 @@ POLICY = RECORD_GUIDANCE + (
     "自评固定选项与独立判断的原目标达成程度比较；一致且依据清楚时不因文字不详细要求修改自评。"
     "目的与客户类型阶段是否匹配、日期先后及跨月跨季度关系均使用程序结果，模型不能覆盖。"
     "商机客户的下一步需客户明确共识，日期晚于本次；目标客户需跨自然月，潜力客户需跨自然季度，后二者不额外强制客户承诺。"
+    "authoritative_checks.next_contact_policy由程序按当前客户类型生成，日期为空也适用；时间标准必须严格使用该项，不自行选周期。"
+    "next_action_logic_ok只判断下一步目的、期望结果与本次事实的衔接和具体性，不包含日期或客户共识；日期缺失不能单独使其为false。"
+    "客户共识单独通过customer_consensus_met判断；N整体仍包含程序时间门槛、行动内容及适用的共识要求。"
+    "商机客户意见表达使用next_contact_policy.feedback_guidance，不在意见中提出跨期、固定间隔或日期先后限制，评分程序仍保持原门槛。"
     "下一步同主题但不具体时承认主题联系，只指出真实缺口，不笼统判无衔接。"
     "T只解释类型阶段目的映射，O_KR只判断原定目标具体性，不重复要求修改已允许的目的。"
     "advice_basis.gap_kind的missing_value仅限整个字段为空；有值但不具体使用insufficient_specificity，来源歧义使用fact_source_unclear并明确影响的结论。"
