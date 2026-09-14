@@ -14,7 +14,7 @@ import sys
 import tarfile
 import urllib.request
 from contextlib import closing
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE = Path('/TAORAN agent')
@@ -186,7 +186,7 @@ def main(mode):
         # No synthetic model calls or synthetic sales rows enter production data.
         code = "from taoran_agent.config import get_settings; from taoran_agent.token_usage import UsageLedger; import sqlite3,json; p=get_settings().database_path; UsageLedger(p)._write('SELECT 1'); c=sqlite3.connect('file:'+p+'?mode=ro',uri=True); print(json.dumps({'ledger_rows':c.execute('select count(*) from model_token_usage').fetchone()[0]}))"
         ledger = {'unchanged': True}
-        report = {'release': VERSION, 'verified_at': datetime.now(UTC).isoformat(), 'image_id': c['Image'],
+        report = {'release': VERSION, 'verified_at': datetime.now(timezone.utc).isoformat(), 'image_id': c['Image'],  # noqa: UP017 - deployment host Python 3.8
                   'commit': c['Config']['Labels']['org.opencontainers.image.revision'], 'source': check_source,
                   'health': 'ok', 'public_health': 'ok', 'other_containers_unchanged': True,
                   'configuration_unchanged': True, 'business_tables_unchanged': True, 'pages': pages,
