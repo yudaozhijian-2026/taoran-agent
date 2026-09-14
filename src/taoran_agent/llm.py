@@ -845,6 +845,12 @@ class ChatModelReviewer(SemanticReviewer):
         if not precheck:
             from .contact_policy import contact_policy
             data["_authoritative_checks"]["next_contact_policy"] = contact_policy(visit)
+            data["_authoritative_checks"]["contact_feedback_contract"] = (
+                "下列next_contact_policy是后端时间意见的唯一口径。N-02仅为评分内部规则，"
+                "商机客户的reason、suggestion及facts.reason不得照搬日期先后要求。"
+                "客户事实、行动共识、时间约定和日期字段是否填写分开说明；"
+                "日期缺失不证明没有共识。结论与改善建议必须一致，已有共识不重复要求确认。"
+            )
         return data
 
     def _messages(
@@ -1448,15 +1454,8 @@ class ChatModelReviewer(SemanticReviewer):
                     'category':item.get('category','system_fact')})
             section['evidence']=evidence
         parsed=_EvaluationPayload.model_validate(candidate)
-        # Canonical missing-date advice is limited to the date-only N gap;
-        # retain any separate action-content or consensus improvement advice.
-        policy = data.get('_authoritative_checks', {}).get('next_contact_policy')
-        if policy and policy['customer_type'] == 'opportunity' and policy['date_state'] == 'missing':
-            for section in candidate.get('sections', []):
-                basis = section.get('advice_basis') or {}
-                if section.get('code') == 'N' and basis.get('fields') == ['next_contact_at']:
-                    section['suggestion'] = '请补充下一次联系客户时间安排，商机客户建议与客户达成下一次拜访时间共识。'
-            parsed = _EvaluationPayload.model_validate(candidate)
+        # Keep evidence-grounded missing-date advice from the model. A missing date
+        # must not erase customer facts or force a generic consensus request.
         from .contact_policy import contact_policy_hits
         policy = data.get('_authoritative_checks', {}).get('next_contact_policy')
         if policy:
