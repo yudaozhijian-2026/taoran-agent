@@ -9,7 +9,6 @@ import re
 import secrets
 from collections.abc import AsyncIterator, Callable
 from concurrent.futures import Future
-from .token_usage import UsageExecutor as ThreadPoolExecutor, usage_scope, usage_stage
 from concurrent.futures import TimeoutError as FutureTimeout
 from contextlib import asynccontextmanager, nullcontext
 from datetime import UTC, date, datetime
@@ -129,6 +128,8 @@ from .tenant_admin import (
     rotate_tenant_access_key,
     rotate_tenant_webhook_secret,
 )
+from .token_usage import UsageExecutor as ThreadPoolExecutor
+from .token_usage import usage_scope, usage_stage
 from .writeback import JiandaoyunWritebackError, writeback_evaluation
 
 
@@ -3073,7 +3074,8 @@ def interactive_quick_check_page(
 <button id="resume" hidden type="button">恢复本次分析</button>
 <div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel">AI正在分析，请稍候。</div>
 <section id="finalPanel" hidden><div class="label">AI最终反馈意见</div><div id="finalContent" class="panel" aria-live="polite"></div></section>
-<button id="ack" hidden disabled>已读并返回修改</button></main><script>
+<button id="ack" hidden disabled>已读并返回修改</button><button id="cancelSubmit" hidden>返回修改</button></main><script>
+const submitConfirmation=__TAORAN_SUBMIT_CONFIRMATION__;
 const publicPath=__TAORAN_PUBLIC_PATH__;
 const sessionToken=__TAORAN_SESSION_TOKEN__;
 const taskVersion=__TAORAN_TASK_VERSION__;
@@ -3081,6 +3083,7 @@ const frontPolicy=__TAORAN_FRONT_POLICY__;
 __TAORAN_INTERACTIVE_SCRIPT__
 </script></body></html>"""
     replacements={
+        '__TAORAN_SUBMIT_CONFIRMATION__':json.dumps(settings.submit_confirmation_enabled),
         '__TAORAN_FRONT_POLICY__':json.dumps(task.get('front_policy')),
         '__TAORAN_TASK_VERSION__':json.dumps(task['input_hash']),
         '__TAORAN_PUBLIC_PATH__':public_path_json,

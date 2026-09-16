@@ -160,6 +160,9 @@ class Settings(BaseSettings):
     # Optional reverse-proxy prefix for an isolated candidate, for example
     # ``/taoran-027``.  Empty keeps the eventual formal deployment at root.
     quick_check_public_path: str = ""
+    # Isolated submit-flow experiment only; never enable on the pilot service.
+    submit_confirmation_enabled: bool = False
+    isolated_test_entry_id: str | None = None
     # Deliberately unavailable unless the service itself is isolated as
     # experimental. This must never enable a production request path.
     experimental_streaming_poc_enabled: bool = False
@@ -195,6 +198,22 @@ class Settings(BaseSettings):
             if not self.tenant_registry_path:
                 raise ValueError("启用客户接入管理页前必须配置可写租户注册表路径")
         self._tenant_registry_cache = self._read_tenant_registry()
+        if self.submit_confirmation_enabled and (
+            self.environment != "isolated-submit-test" or not self.isolated_test_entry_id
+        ):
+            raise ValueError("提交确认实验必须运行在独立测试环境并绑定测试表")
+        if self.isolated_test_entry_id:
+            if self.admin_enabled or self.tenant_keys or self.jiandaoyun_api_keys:
+                raise ValueError("独立测试环境禁止管理写入和旧式租户授权")
+            tenants = self._tenant_registry_cache.tenants
+            if len(tenants) != 1:
+                raise ValueError("独立测试环境只允许一个测试租户")
+            for tenant in tenants.values():
+                mapping_path = tenant.jiandaoyun.mapping_path
+                mapping = json.loads(Path(mapping_path).read_text()) if mapping_path else {}
+                if (mapping.get("source_entry_id") != self.isolated_test_entry_id
+                        or mapping.get("source_application_id") != "60fe7ad79ca2d000075dfab1"):
+                    raise ValueError("独立测试环境表单不在白名单")
         return self
 
     @field_validator(

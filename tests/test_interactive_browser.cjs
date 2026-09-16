@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const code = readFileSync('src/taoran_agent/interactive_quick_check.js', 'utf8');
 function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboard', initial = {}) {
-  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalContent','ack','resume','timings','versionNote','returnNotice'].map(id => [id, {
+  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalContent','ack','resume','timings','versionNote','returnNotice','cancelSubmit'].map(id => [id, {
     textContent: id === 'previewLabel' ? 'AI实时分析' : '', hidden: id === 'ack' || id === 'finalPanel', disabled: id === 'ack',
     addEventListener(name, fn) { this[name] = fn; },
   }]));
@@ -45,6 +45,16 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   };
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
+test('isolated submit mode can return while pending without confirming', () => {
+  const h = harness([], undefined, {submitConfirmation:true,taskVersion:'v1',openingId:'opening'});
+  assert.equal(h.nodes.ack.textContent,'确认提交');
+  assert.equal(h.nodes.ack.disabled,true);
+  assert.equal(h.nodes.cancelSubmit.hidden,false);
+  h.nodes.cancelSubmit.click();
+  assert.equal(h.messages[0][0].pluginMessage.type,'taoran_submit_cancelled');
+  assert.equal(h.messages[0][0].pluginMessage.input_hash,'v1');
+  assert.equal(h.messages[0][0].pluginMessage.submit_confirmed,undefined);
+});
 test('reopened completed preview shows final waiting until matching final arrives', async () => {
   const h = harness([
     {check_id:'qc_test',input_hash:'v1',status:'processing',preview_status:'completed',preview_feedback_text:'实时正文'},

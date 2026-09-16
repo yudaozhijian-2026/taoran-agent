@@ -8,6 +8,21 @@ const finalPanel = document.querySelector('#finalPanel'), finalContent = documen
 const ack = document.querySelector('#ack');
 const resume = document.querySelector('#resume');
 const returnNotice = document.querySelector('#returnNotice');
+const submitMode = typeof submitConfirmation !== 'undefined' && submitConfirmation === true;
+const cancelSubmit = document.querySelector('#cancelSubmit');
+if (submitMode) {
+  ack.textContent = '确认提交';
+  if (returnNotice) returnNotice.textContent = '记录尚未提交。阅读AI意见后可确认提交，不要求全部达标；返回修改或直接关闭均不提交。';
+  if (cancelSubmit) {
+    cancelSubmit.hidden = false;
+    cancelSubmit.addEventListener('click', () => {
+      if (disposed || returning || !allowedParents.has(parentOrigin)) return;
+      feedbackHandedOff = true;
+      window.parent.postMessage({pluginMessage:{type:'taoran_submit_cancelled',
+        check_id:checkId,opening_id:openingId,input_hash:taskVersion}},parentOrigin);
+    });
+  }
+}
 let feedbackHandedOff = false;
 const viewStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
 const clientTimings = {};
@@ -32,7 +47,7 @@ let previewComplete = false, previewSucceeded = false;
 let finalDone = false, finalFailed = false;
 const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
-const restartText = '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
+const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成最终AI反馈意见';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908'].includes(frontPolicy);
@@ -287,6 +302,7 @@ ack.addEventListener('click', async () => {
     }
     window.parent.postMessage({pluginMessage: {
       type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: data.final_feedback_text.replace(/^\s*【AI反馈意见】\s*/, ''),
+      ...(submitMode ? {submit_confirmed:true} : {}),
       opening_id: openingId,
       ...(versionedMode ? {input_hash:taskVersion,generated_at:data.generated_at} : {}),
     }}, parentOrigin);
