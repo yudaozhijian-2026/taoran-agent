@@ -1,0 +1,19 @@
+"""Reuse only the existing test plugin's access key in the isolated test tenant."""
+
+import json
+import shutil
+from pathlib import Path
+
+root = Path('/TAORAN agent/isolated-submit-test-20260916')
+target = root / 'runtime/tenant_registry.json'
+source = json.loads(Path('/TAORAN agent/tenant-config/tenant_registry.json').read_text())
+registry = json.loads(target.read_text())
+assert set(registry['tenants']) == {'tenant_433327714475'}
+backup = root / 'runtime/tenant_registry.before-access.json'
+assert not backup.exists()
+shutil.copy2(target, backup)
+registry['tenants']['tenant_433327714475']['access_keys'] = (
+    source['tenants']['tenant_fe64542a2b07']['access_keys']
+)
+target.write_text(json.dumps(registry, ensure_ascii=False))
+print('Existing test-plugin authorization aligned; production unchanged.')

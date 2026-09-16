@@ -31,7 +31,9 @@ def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
         "overall_percentage": response.overall_percentage,
         "effectiveness_level": response.effectiveness_level,
         "effective_visit_recommendation": response.count_as_effective_visit_recommendation,
-        "ai_opinion": re.sub(r"^\s*【AI反馈意见】\s*", "", response.ai_opinion),
+        # Jiandaoyun normalizes surrounding whitespace in textarea values.
+        # Normalize the delivery value, not the substantive analysis or score.
+        "ai_opinion": re.sub(r"^\s*【AI反馈意见】\s*", "", response.ai_opinion).strip(),
         "ai_suggestions": "\n".join(response.manager_coaching_suggestions),
         "rule_version": response.rule_version,
         "agent_version": response.agent_version,

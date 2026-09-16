@@ -157,6 +157,19 @@ def test_legacy_writeback_removes_only_leading_feedback_heading(env):
     )
 
 
+def test_writeback_normalizes_surrounding_whitespace_only(env):
+    from taoran_agent.models import EvaluationResponse
+    from taoran_agent.writeback import evaluation_writeback_values
+
+    request, _ = env[4]()
+    response = EvaluationResponse.model_validate(env[1].latest_source_job(request)["response"])
+    response.ai_opinion = "\n本次拜访分析：客户已确认清单。\n\nAI改善建议：\n1. 跟进电源准备。\n"
+    values = evaluation_writeback_values(response)
+    assert values["ai_opinion"] == response.ai_opinion.strip()
+    assert values["total_score"] == response.total_score
+    assert "\n\nAI改善建议：\n" in values["ai_opinion"]
+
+
 @pytest.mark.parametrize("preview_fails", [False, True])
 def test_saved_live_preview_independent_of_final_and_reopened(env, monkeypatch, preview_fails):
     from threading import Event
