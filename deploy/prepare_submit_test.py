@@ -90,6 +90,9 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     ports: ["127.0.0.1:8031:8030"]
+    environment:
+      DSM_TAORAN_ENVIRONMENT: isolated-submit-test
+      DSM_TAORAN_DATABASE_PATH: /data/taoran_agent.db
     volumes:
       - "./runtime/agent.env:/app/.env:ro"
       - "./runtime:/runtime:ro"
