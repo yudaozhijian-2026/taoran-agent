@@ -4,11 +4,14 @@ import json
 import shutil
 import sqlite3
 import subprocess
+import sys
 from pathlib import Path
 
 root = Path('/TAORAN agent/isolated-submit-test-20260916')
-old = 'taoran-submit-test:1.0.6rc2-20260916'
-new = 'taoran-submit-test:1.0.6rc3-20260916'
+release = sys.argv[1] if len(sys.argv) > 1 else '1.0.6rc3'
+previous = {'1.0.6rc3': '1.0.6rc2', '1.0.6rc4': '1.0.6rc3'}[release]
+old = f'taoran-submit-test:{previous}-20260916'
+new = f'taoran-submit-test:{release}-20260916'
 info = json.loads(subprocess.check_output(['docker', 'inspect', 'taoran-submit-test-agent']))[0]
 assert info['Config']['Image'] == old, 'Newer or unexpected test deployment: stop'
 prod = json.loads(subprocess.check_output(['docker', 'inspect', 'dsm-taoran-v2-agent']))[0]
@@ -18,7 +21,7 @@ assert db.execute('pragma integrity_check').fetchone()[0] == 'ok'
 assert db.execute("select count(*) from evaluation_jobs where status in ('queued','running')").fetchone()[0] == 0
 for (payload,) in db.execute('select payload_json from quick_check_recovery'):
     assert json.loads(payload)['status'] not in ('queued', 'running')
-backup = root / 'backups/before-1.0.6rc3'
+backup = root / f'backups/before-{release}'
 backup.mkdir(parents=True, exist_ok=False)
 db.backup(sqlite3.connect(backup / 'taoran_agent.db'))
 shutil.copy2(root / 'compose.yaml', backup / 'compose.yaml')

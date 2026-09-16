@@ -50,7 +50,7 @@ const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成最终AI反馈意见';
-const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908'].includes(frontPolicy);
+const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 if (versionedMode) {
   content.textContent = waitingText;

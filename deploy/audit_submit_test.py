@@ -43,6 +43,8 @@ for url in ['http://127.0.0.1:8031/health', 'https://taoran-test.yudaozhijian.to
                 audit['http'][url]['version'] = json.load(response).get('release_version')
     except urllib.error.HTTPError as error:
         audit['http'][url] = {'status': error.code}
-audit['rollback'] = str(root / 'backups/before-1.0.6rc2')
-(root/'acceptance-audit-1.0.6rc2.json').write_text(json.dumps(audit, ensure_ascii=False, indent=2))
+version = audit['http']['http://127.0.0.1:8031/health']['version']
+assert version in {'1.0.6rc2', '1.0.6rc3', '1.0.6rc4'}
+audit['rollback'] = str(root / f'backups/before-{version}')
+(root/f'acceptance-audit-{version}.json').write_text(json.dumps(audit, ensure_ascii=False, indent=2))
 print(json.dumps(audit, ensure_ascii=False, indent=2))

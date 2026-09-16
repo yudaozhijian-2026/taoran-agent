@@ -45,6 +45,21 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   };
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
+test('grounded policy keeps realtime and final separate and allows explicit partial confirmation', async () => {
+  const h = harness([
+    {check_id:'qc_test',input_hash:'v1',status:'completed',recoverable:true,content_complete:false,
+     preview_status:'completed',preview_feedback_text:'实时建议',final_feedback_text:'有效分析；部分内容尚未完成'},
+    {check_id:'qc_test',input_hash:'v1',final_feedback_text:'有效分析；部分内容尚未完成'},
+  ], undefined, {submitConfirmation:true,taskVersion:'v1',openingId:'opening',
+                 frontPolicy:'front-v46-grounded-confirmation-20260916'});
+  await h.tick();
+  assert.equal(h.nodes.content.textContent,'实时建议');
+  assert.equal(h.nodes.finalContent.textContent,'有效分析；部分内容尚未完成');
+  assert.match(h.nodes.status.textContent,/部分分析未完成/);
+  await h.nodes.ack.click();
+  assert.equal(h.messages[0][0].pluginMessage.submit_confirmed,true);
+  assert.match(h.messages[0][0].pluginMessage.feedback_text,/尚未完成/);
+});
 test('isolated submit mode can return while pending without confirming', () => {
   const h = harness([], undefined, {submitConfirmation:true,taskVersion:'v1',openingId:'opening'});
   assert.equal(h.nodes.ack.textContent,'确认提交');
