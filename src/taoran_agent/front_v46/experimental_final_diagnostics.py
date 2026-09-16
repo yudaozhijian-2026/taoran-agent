@@ -7,6 +7,8 @@ from .experimental_semantic_audit import CHECKS
 def safe_code(value):
     if value is None:
         return None
+    if value in {"unresolved_source_reference", "unknown_source_field", "unsupported_role_requirement", "dependent_confirmation_gap"}:
+        return value
     if not isinstance(value, str):
         return "unknown_failure"
     if value in {"timeout", "queue_timeout", "queue_full", "invalid_json", "invalid_contract", "invalid_content", "output_truncated", "provider_http_error", "rate_limited", "authentication_failed", "access_denied", "invalid_response_or_network_error"}:

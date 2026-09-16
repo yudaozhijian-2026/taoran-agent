@@ -1,0 +1,32 @@
+"""Promote only the isolated test service, preserving its current data/config."""
+
+import json
+import shutil
+import sqlite3
+import subprocess
+from pathlib import Path
+
+root = Path('/TAORAN agent/isolated-submit-test-20260916')
+old = 'taoran-submit-test:1.0.6rc2-20260916'
+new = 'taoran-submit-test:1.0.6rc3-20260916'
+info = json.loads(subprocess.check_output(['docker', 'inspect', 'taoran-submit-test-agent']))[0]
+assert info['Config']['Image'] == old, 'Newer or unexpected test deployment: stop'
+prod = json.loads(subprocess.check_output(['docker', 'inspect', 'dsm-taoran-v2-agent']))[0]
+assert prod['Config']['Image'] == 'dsm-taoran-v2:1.0.5-contact-facts-20260914'
+db = sqlite3.connect(root / 'data/taoran_agent.db')
+assert db.execute('pragma integrity_check').fetchone()[0] == 'ok'
+assert db.execute("select count(*) from evaluation_jobs where status in ('queued','running')").fetchone()[0] == 0
+for (payload,) in db.execute('select payload_json from quick_check_recovery'):
+    assert json.loads(payload)['status'] not in ('queued', 'running')
+backup = root / 'backups/before-1.0.6rc3'
+backup.mkdir(parents=True, exist_ok=False)
+db.backup(sqlite3.connect(backup / 'taoran_agent.db'))
+shutil.copy2(root / 'compose.yaml', backup / 'compose.yaml')
+shutil.copytree(root / 'runtime', backup / 'runtime')
+compose = root / 'compose.yaml'
+text = compose.read_text()
+assert text.count(old) == 1
+compose.write_text(text.replace(old, new))
+subprocess.run(['docker', 'compose', '-f', str(compose), 'config', '-q'], check=True)
+subprocess.run(['docker', 'compose', '-f', str(compose), 'up', '-d', '--no-deps', 'agent'], check=True)
+print('Only isolated test service promoted; backup:', backup)
