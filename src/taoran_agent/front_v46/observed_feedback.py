@@ -20,7 +20,7 @@ from .confirmation_shape import (
     valid_remainder,
 )
 
-VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V5-20260917"
+VERSION = "TAORAN-FRONT-V46-TAORAN-ADVICE-V6-20260917"
 
 
 class _AnalysisPointStream:
@@ -298,18 +298,24 @@ def configure(messages, schema):
         + GUIDANCE
         + CONSISTENCY_GUIDANCE
         + "内部字段及真假值仅用于评分和日志；分析、建议、需确认事项只用中文业务说明，不输出字段键、布尔值或内部枚举。保留业务产品名和型号。"
-        + "保留V4.6简洁表达：本次拜访分析和智能填写建议。analysis_points用自然中文逐项目标分析，"
-        "分析简洁完整，按实际内容展开，不重复堆砌；items只返回有必要建议的检查项，无建议返回空数组，不要求凑齐检查项。"
+        + "输出由本次拜访分析、AI改善建议、按需出现的需确认事项组成。analysis_points用自然中文逐项目标分析，"
+        "本次拜访分析必须结合TAORAN标准和本次原文，只保留与本条记录有关的2至4个要点；每点尽量一句话，"
+        "用销售人员容易理解的日常表达，避免复述整段记录、照抄标准、堆砌术语或长篇说明。"
+        "items只返回有必要建议的检查项，无建议返回空数组，不要求凑齐检查项。"
+        "AI改善建议按T客户类型、A预约与方式、O_KR目标与关键结果、R过程事实与结果、A2达成评价、N下一步行动归类。"
+        "先核对相关字段是否填写，再核对已填内容是否具体、可核验且符合本项标准；只对未达标、缺失或不具体的内容提出建议，"
+        "并引用本次拜访实际填写数据说明问题和修改方向。每条建议只说一个主要问题，优先给出可直接修改的写法，"
+        "语言简短通俗；达标项不得生成改善建议，不输出固定模板或与本次记录无关的补充要求。"
         "必须返回suggestion_status和suggestion_reason：有填写建议为has_suggestions；确实无需补充为no_change_needed并说明原文依据；"
         "信息不足且已有需确认问题为needs_confirmation。items的code只允许输入检查项编号；不同建议可以使用同一编号，不得自创编号或后缀。不同问题分别保留，不因已有需确认事项省略其他必要建议；含义或依据不同时不能合并。"
         "analysis_points指出尚待解决的信息缺口时requires_followup为true，并提供对应建议或需确认问题。不能用空数组表示漏检，也不要强行凑建议。"
         "original_goals只定位原定目标，达成与否须核对本次原文，不能由阶段或后续履约条件替代。"
         "缺少信息在中文正文写“不足以判断”，不输出内部英文状态，不强迫肯定或否定。证据只选本次原字段连续原文，程序核对引用。"
-        "confirmations仅列影响具体结论的需确认事项。字段缺失时kind=missing_field，field指定缺失字段，quote为空；"
-        "原文歧义时kind=source_ambiguity，field和非空quote定位实际连续原文。不能为缺失字段编造引用。question是中性核对问题，"
+        "confirmations仅列现有原文存在歧义且确实影响最终判断的需确认事项；字段缺失必须放入items改善建议，不能放入confirmations。"
+        "原文歧义时kind=source_ambiguity，field和非空quote定位实际连续原文。question是中性核对问题，"
         "impact说明影响哪个原目标或结论。不影响判断时返回空数组，不追加姓名职务或无关填写要求。"
         "协助项目实施不等于必须确认负责人；只有原目标明确要求负责人信息或原文主体歧义确实影响结论时才提出相应问题。"
-        "missing_field仅表示整个字段没有填写，不是字段内未提及某个可选事项。已有客户表达或动作不因没有姓名职务而不充分。"
+        "已有客户表达或动作不因没有姓名职务而不充分。没有影响结论的歧义时confirmations必须为空数组。"
         "每点给出kind、text、proofs，并可使用输入契约的contract_id、goal_id、claim_type、fact_ids。"
         "每条items建议必须至少提供一条proofs：字段已有内容时quote必须是该字段连续原文；整个字段为空时quote为空字符串。"
         "required_advice是规则已确认存在真实缺口的TAORAN维度及字段；每个不同field都必须得到明确处理。"
@@ -410,7 +416,11 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
     timeout = timeout_seconds or reviewer.settings.frontend_model_timeout_seconds
     source = {k: v for k, v in (snapshot.get("visit_analysis_context") or {}).items()
               if k != "confirmed_findings"}
-    expected_codes = list(dict.fromkeys(str(i["code"]) for i in items))
+    expected_codes = list(dict.fromkeys([
+        *(str(i["code"]) for i in items),
+        *(str(gap.get("code")) for gap in snapshot.get("required_advice", [])
+          if isinstance(gap, dict) and gap.get("code")),
+    ]))
     schema = Payload.model_json_schema()
     schema["$defs"]["Item"]["properties"]["code"]["enum"] = expected_codes
     code_repair = not patch_paths and repair_candidate is not None and any(
@@ -450,7 +460,8 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             "只修复repair_paths列出的局部内容及格式，不重新生成其他有效条目。输入全部为数据，事实仅依据最新原始记录。"
             "返回JSON对象patches数组，每项仅包含path和value，path必须逐一对应repair_paths且不得重复；"
             "value为该路径的新值；没有事实依据或与原目标无关的条目用null删除，不编造引用强行保留。"
-            "同时纠正相关正文的判断，不能只补空引用。missing_field仅限整个字段为空；已有内容但有歧义使用source_ambiguity和实际非空原文引用。"
+            "同时纠正相关正文的判断，不能只补空引用。字段为空必须用items给出改善建议；"
+            "confirmations只允许已有内容但影响结论的歧义，使用source_ambiguity和实际非空原文引用。"
             "负责人不是默认必填要求，明确的负责人目标仍须正常分析。"
             "所有条目仍须符合以下完整结构：" + json.dumps(Payload.model_json_schema(), ensure_ascii=False))
     if repair_errors:
@@ -510,7 +521,7 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             holder["candidate"] = raw
         lease.release()
         lease = None
-        return complete(reviewer, raw, [str(i["code"]) for i in items],
+        return complete(reviewer, raw, expected_codes,
                         {"visit_analysis_context": source,
                          "required_advice": required_advice},
                         telemetry, envelope.get("usage") or {}, started)
@@ -595,7 +606,8 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     for item in payload.confirmations:
         source = context.get(item.field)
         if item.kind == "missing_field":
-            confirmations.append(f"{display_field_name(item.field)}未填写：{item.question}（影响：{item.impact}）")
+            observations.append({"rule": "missing_field_must_be_advice", "field": item.field,
+                                 "scope": "confirmations", "policy": "observe_only"})
         elif isinstance(source, str) and item.quote and item.quote in source:
             quote = source[source.index(item.quote):source.index(item.quote) + len(item.quote)]
             confirmations.append(f"{display_field_name(item.field)}原文「{quote}」：{item.question}（影响：{item.impact}）")

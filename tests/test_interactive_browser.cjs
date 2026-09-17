@@ -54,7 +54,7 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   ],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.previewLabel.textContent,'本次拜访分析');
-  assert.equal(h.nodes.finalLabel.textContent,'AI最终意见');
+  assert.equal(h.nodes.finalLabel.textContent,'AI改善建议');
   assert.equal(h.nodes.finalPanel.hidden,true);
   assert.equal(h.nodes.finalContent.textContent,'');
   h.source.emit('preview_delta',{text:'客户已确认设备清单。'});
@@ -64,17 +64,17 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   for (let i=0;i<20;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
   assert.equal(h.nodes.finalPanel.hidden,false);
-  assert.equal(h.nodes.finalContent.textContent,'最终AI建议正在生成中');
+  assert.equal(h.nodes.finalContent.textContent,'AI改善建议正在生成中');
   assert.equal(h.nodes.ack.hidden,true);
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
   assert.doesNotMatch(h.nodes.finalContent.textContent,/智能填写建议/);
-  assert.match(h.nodes.finalContent.textContent,/需确认：/);
+  assert.match(h.nodes.finalContent.textContent,/需确认事项：/);
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.status.textContent,'AI检测完成');
 });
-test('acknowledged feedback uses the same AI final opinion heading as the panel', async () => {
+test('acknowledged feedback uses the same AI improvement heading as the panel', async () => {
   const policy='front-v46-final-analysis-typewriter-v1-20260917';
   const feedback='本次拜访分析：客户已确认设备清单。\n\n智能填写建议：\n1、补充下次联系时间。\n\n需确认补充事项：\n1、核对电源准备状态。';
   const h=harness([
@@ -85,9 +85,9 @@ test('acknowledged feedback uses the same AI final opinion heading as the panel'
   for (let i=0;i<20;i++) await h.tick(18);
   await h.nodes.ack.click();
   const returned=h.messages[0][0].pluginMessage.feedback_text;
-  assert.match(returned,/AI最终意见：/);
+  assert.match(returned,/AI改善建议：/);
   assert.doesNotMatch(returned,/智能填写建议：|需确认补充事项：/);
-  assert.match(returned,/需确认：/);
+  assert.match(returned,/需确认事项：/);
 });
 test('typewriter keeps AI final opinion hidden until analysis text is fully displayed', async () => {
   const policy='front-v46-final-analysis-typewriter-v1-20260917';
@@ -149,10 +149,10 @@ test('reopened completed preview shows final waiting until matching final arrive
   ], undefined, {taskVersion:'v1',frontPolicy:'front-v46-suggestion-contract-20260908'});
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(h.nodes.finalPanel.hidden,false);
-  assert.equal(h.nodes.finalContent.textContent,'正在生成最终AI反馈意见');
+  assert.equal(h.nodes.finalContent.textContent,'正在生成AI改善建议');
   assert.equal(h.nodes.ack.hidden,true);
   h.source.emit('stage',{text:'模型处理中'});
-  assert.equal(h.nodes.status.textContent,'正在生成最终AI反馈意见');
+  assert.equal(h.nodes.status.textContent,'正在生成AI改善建议');
   await h.tick();
   assert.equal(h.nodes.content.textContent,'实时正文');
   assert.equal(h.nodes.finalContent.textContent,'本次拜访分析：最终正文');
@@ -420,7 +420,7 @@ test('completed Preview remains unchanged after Final and return', async () => {
   h.source.emit('preview_delta', {text: '迟到内容不应追加'});
   assert.equal(h.nodes.content.textContent, '客户已明确采购计划。');
   assert.equal(h.nodes.finalPanel.hidden, false);
-  assert.equal(h.nodes.finalContent.textContent, '正在生成最终AI反馈意见');
+  assert.equal(h.nodes.finalContent.textContent, '正在生成AI改善建议');
   h.source.emit('final_completed', {check_id: 'qc_test', feedback_text: '正式反馈'});
   assert.equal(h.nodes.content.textContent, '客户已明确采购计划。');
   assert.equal(h.nodes.previewLabel.textContent, 'AI实时分析');
@@ -487,7 +487,7 @@ test('completed AI replaces waiting status only for the matching version', async
     {initialBasic:'基础检查',taskVersion:'version-a'});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.content.textContent,'真实Final');
-  assert.equal(h.nodes.previewLabel.textContent,'AI最终反馈意见');
+  assert.equal(h.nodes.previewLabel.textContent,'AI改善建议');
   assert.equal(h.nodes.versionNote.textContent, '');
 });
 
@@ -554,7 +554,7 @@ test('semantic observation shows confirmation and remains a completed returnable
     {...restored,frontPolicy:'front-v46-observe-20260908'});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.finalContent.textContent,
-    '本次拜访分析：当前不足以判断客户认可。\nAI最终意见：\n需确认：请核对实际确认方。');
+    '本次拜访分析：当前不足以判断客户认可。\nAI改善建议：\n需确认事项：请核对实际确认方。');
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.finalPanel.hidden,false);
   assert.doesNotMatch(h.nodes.status.textContent,/失败|未完成/);

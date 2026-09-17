@@ -4,15 +4,23 @@ import pytest
 from test_suggestion_contract import candidate, execute
 
 
-def test_empty_field_confirmation_needs_no_model_retry(tmp_path):
+def test_empty_field_is_repaired_into_advice_not_confirmation(tmp_path):
     raw = candidate(['R'])
     raw['confirmations'] = [{'field': 'customer_feedback', 'quote': '',
                             'question': '请补充客户反馈。', 'impact': '客户意向判断'}]
     original = deepcopy(raw)
-    result, text, calls = execute(tmp_path, raw)
-    assert len(calls) == 1 and raw == original
-    assert result.suggestion_status == 'needs_confirmation'
-    assert '客户反馈未填写' in text and '原文「」' not in text
+    repaired = deepcopy(raw)
+    repaired.update(confirmations=[], suggestion_status='has_suggestions',
+                    suggestion_reason='客户反馈缺失应作为改善建议处理。')
+    repaired['items'].append({
+        'code': 'R', 'suggestion': '请根据实际沟通补充客户反馈。',
+        'proofs': [{'field': 'customer_feedback', 'quote': ''}],
+    })
+    result, text, calls = execute(tmp_path, raw, repaired)
+    assert len(calls) == 2 and raw == original
+    assert result.suggestion_status == 'has_suggestions'
+    assert '请根据实际沟通补充客户反馈' in text
+    assert '需确认事项：' not in text and '原文「」' not in text
 
 
 def test_ordinary_extra_format_key_is_removed_without_model_retry(tmp_path):

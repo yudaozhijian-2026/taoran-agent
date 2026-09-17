@@ -183,6 +183,34 @@ def test_confirmed_rule_gap_cannot_be_silently_changed_to_no_change(tmp_path):
     assert [value.code for value in result.items] == ["N"]
 
 
+def test_required_taoran_dimension_is_available_even_without_specificity_item(tmp_path):
+    fixed = payload([item(
+        "请补充客户类型，以便按对应标准判断本次拜访。",
+        code="T", field="customer_type_ii", quote="",
+    )])
+    calls = []
+
+    def provider(request):
+        calls.append(__import__("json").loads(request.content))
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": __import__("json").dumps(fixed)},
+                         "finish_reason": "stop"}],
+        })
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path / "db"), llm_model="test",
+                        llm_api_url="https://example.test/chat", llm_api_key="test")
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(reviewer, [{"code": "R"}], {
+            "visit_analysis_context": context(customer_type_ii=None),
+            "required_advice": [{"code": "T", "field": "customer_type_ii"}],
+        }, 30)
+    finally:
+        reviewer.close()
+    assert result.status == "completed" and [value.code for value in result.items] == ["T"]
+    assert '"enum": ["R", "T"]' in calls[0]["messages"][0]["content"]
+
+
 def test_each_distinct_required_field_must_remain_covered(tmp_path):
     first = {
         **payload(),

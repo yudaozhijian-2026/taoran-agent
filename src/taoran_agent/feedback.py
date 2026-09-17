@@ -50,7 +50,26 @@ _SECTIONS = (
     ),
 )
 
-# 提交后用六项结构归类、去重建议；展示时不输出维度、字段编号或固定占位项。
+_TAORAN_ADVICE_LABELS = {
+    "T": "T｜客户类型",
+    "A1": "A｜预约与拜访方式",
+    "O_KR": "O/KR｜拜访目的与关键结果",
+    "R": "R｜过程事实与结果",
+    "A2": "A｜达成评价",
+    "N": "N｜下一步客户行动",
+    "C": "字段完整性",
+}
+
+
+def _taoran_advice(code: str, text: str) -> str:
+    """Render one actionable item in the shared front/post TAORAN frame."""
+    clean = text.strip()
+    if not clean:
+        return ""
+    label = _TAORAN_ADVICE_LABELS.get(code, "填写核对")
+    return f"{label}：{clean}"
+
+# 提交后用六项结构归类、去重建议；展示TAORAN维度，但不输出内部字段编号或固定占位项。
 _POST_ADVICE_SECTIONS = (
     (
         "客户类型",
@@ -307,10 +326,13 @@ def build_front_ai_suggestions_with_model(
         for name, code in model_code_by_name.items()
         if code in natural and natural[code].specific is not None
     }
-    advice_labels = {code: name for name, code in model_code_by_name.items()}
+    advice_labels = {
+        code: _TAORAN_ADVICE_LABELS[code]
+        for code in model_code_by_name.values()
+    }
     if experimental and any(repair.get("kind") == "goal_reminder_relocated" and repair.get("code") == "R"
                             for attempt in wording.model_attempts for repair in attempt.get("recommendation_repairs", [])):
-        advice_labels["R"] = "目标核对建议"
+        advice_labels["R"] = "R｜过程事实与结果（目标核对）"
     result = _front_ai_suggestions(
         structured,
         natural_by_section=natural_by_section,
@@ -321,7 +343,7 @@ def build_front_ai_suggestions_with_model(
                             if experimental else natural.get("C").suggestion if natural.get("C") else ""),
         visit_analysis=wording.visit_analysis,
         visit_analysis_sections=[] if experimental else wording.visit_analysis_sections,
-        recommendation_labels={"过程事实与结果": "目标核对建议"} if experimental and any(
+        recommendation_labels={"过程事实与结果": "R｜过程事实与结果（目标核对）"} if experimental and any(
             repair.get("kind")=="goal_reminder_relocated" and repair.get("code")=="R"
             for attempt in wording.model_attempts for repair in attempt.get("recommendation_repairs", [])
         ) else {},
@@ -334,16 +356,16 @@ def build_front_ai_suggestions_with_model(
         if wording.suggestion_status == "no_change_needed":
             result = result.replace(empty_message, "本次无需额外补充填写。" + _clean_front_text(wording.suggestion_reason))
         elif wording.suggestion_status == "needs_confirmation":
-            result = result.replace(empty_message, "请核对下方需确认补充事项。")
+            result = result.replace(empty_message, "请核对下方需确认事项。")
         elif wording.suggestion_status == "incomplete":
             notice = "填写建议完整性核对未完成，不能据此认定无需补充。"
             if empty_message in result:
                 result = result.replace(empty_message, notice)
             else:
-                result = result.replace("智能填写建议：", "智能填写建议：\n" + notice)
+                result = result.replace("AI改善建议：", "AI改善建议：\n" + notice)
     if wording.confirmation_items:
         footer = "提交后，系统将自动生成正式评分和反馈意见。"
-        body = "需确认补充事项：\n" + "\n".join(
+        body = "需确认事项：\n" + "\n".join(
             f"{i}. {text}" for i, text in enumerate(wording.confirmation_items, 1)
         )
         result = result.replace(footer, body + "\n\n" + footer) if footer in result else result + "\n\n" + body
@@ -510,7 +532,7 @@ def _front_ai_suggestions(
     if rendered_sections or visit_analysis:
         lines.extend(["", "本次拜访分析："])
         lines.extend(rendered_sections or [visit_analysis])
-        lines.extend(["", "智能填写建议："])
+        lines.extend(["", "AI改善建议："])
     if advice:
         lines.extend(f"{index}、{item}" for index, item in enumerate(advice, 1))
     elif not analysis_completed:
@@ -739,8 +761,11 @@ def _build_post_advice(
         # V4: no generic rule/knowledge fallback for a successful model section.
         # Rules still determine scoring and remain in structured audit records.
         validated = semantic_facts.quality_audit.get("advice_basis", {})
-        return _unique([_clean_post_text(s.suggestion) for s in semantic_facts.sections
-                        if s.verdict == "needs_revision" and s.code in validated and s.suggestion.strip()])
+        return _unique([
+            _taoran_advice(s.code, _clean_post_text(s.suggestion))
+            for s in semantic_facts.sections
+            if s.verdict == "needs_revision" and s.code in validated and s.suggestion.strip()
+        ])
     model_by_section = {section.code: section for section in semantic_facts.sections}
     model_codes = {
         "客户类型": "T",
@@ -789,7 +814,7 @@ def _build_post_advice(
             ]
         advice = _merge_similar_advice(candidates)
         if advice:
-            results.append(advice)
+            results.append(_taoran_advice(model_codes[name], advice))
 
     # 无字段归属的知识文本不随机拼入某一维度；它仍保留在结构化审计中，避免误导销售。
     return results

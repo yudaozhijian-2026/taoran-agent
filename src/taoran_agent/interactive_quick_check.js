@@ -50,10 +50,10 @@ const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
-const finalWaitingText = '正在生成最终AI反馈意见';
-const suggestionWaitingText = '最终AI建议正在生成中';
-const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917'].includes(frontPolicy);
-const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917'].includes(frontPolicy);
+const finalWaitingText = '正在生成AI改善建议';
+const suggestionWaitingText = 'AI改善建议正在生成中';
+const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
+const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
@@ -114,7 +114,7 @@ if (versionedMode) {
   content.textContent = waitingText;
   previewComplete = !(dualMode || finalStreamMode);
   if (previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析';
-  if (finalStreamMode && finalLabel) finalLabel.textContent = 'AI最终意见';
+  if (finalStreamMode && finalLabel) finalLabel.textContent = 'AI改善建议';
   if (typewriterMode) {
     finalContent.textContent = '';
     finalPanel.hidden = true;
@@ -172,13 +172,13 @@ function finalDisplayText(text) {
 }
 function normalizeFinalFeedbackHeadings(text) {
   let clean = String(text || '');
-  const suggestionMarker = /智能填写建议：/;
+  const suggestionMarker = /(?:AI改善建议|智能填写建议)：/;
   const confirmationMarker = /(?:需确认补充事项|需确认事项)：/;
   if (suggestionMarker.test(clean)) {
-    clean = clean.replace(suggestionMarker, 'AI最终意见：');
-    clean = clean.replace(confirmationMarker, '需确认：');
+    clean = clean.replace(suggestionMarker, 'AI改善建议：');
+    clean = clean.replace(confirmationMarker, '需确认事项：');
   } else if (confirmationMarker.test(clean)) {
-    clean = clean.replace(confirmationMarker, 'AI最终意见：\n需确认：');
+    clean = clean.replace(confirmationMarker, 'AI改善建议：\n需确认事项：');
   }
   return clean;
 }
@@ -187,11 +187,11 @@ function splitFinalText(text) {
   const marker = '本次拜访分析：';
   let body = clean.startsWith(marker) ? clean.slice(marker.length).trim() : clean;
   let cut = body.length;
-  for (const tail of ['AI最终意见：', '智能填写建议：', '需确认补充事项：', '需确认事项：']) {
+  for (const tail of ['AI改善建议：', 'AI最终意见：', '智能填写建议：', '需确认补充事项：', '需确认事项：']) {
     const index = body.indexOf(tail);
     if (index >= 0) cut = Math.min(cut, index);
   }
-  const tail = body.slice(cut).trim().replace(/^AI最终意见：\s*/, '');
+  const tail = body.slice(cut).trim().replace(/^(?:AI改善建议|AI最终意见)：\s*/, '');
   return {analysis: body.slice(0, cut).trim(), tail};
 }
 function stopTransport() {
@@ -220,7 +220,7 @@ function previewSnapshot(text, state) {
   if (finalDone && !finalFailed) {
     if (previewComplete && !previewSucceeded && versionedMode) {
       content.textContent = finalContent.textContent;
-      if (previewLabel) previewLabel.textContent = 'AI最终反馈意见';
+      if (previewLabel) previewLabel.textContent = 'AI改善建议';
       finalPanel.hidden = true;
     }
     stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
@@ -254,14 +254,14 @@ function finish(text) {
     previewComplete = true;
     previewSucceeded = true;
     if (typewriterMode) {
-      pendingSuggestionText = parts.tail || '本次没有需要补充的智能填写建议或需确认补充事项。';
+      pendingSuggestionText = parts.tail || '本次没有需要补充的AI改善建议或需确认事项。';
       if (parts.analysis) syncAnalysisTarget(parts.analysis);
       finalPanel.hidden = true;
       completeAnalysisDisplay();
     } else {
       if (parts.analysis) flushAnalysisText(parts.analysis);
       finalDone = true;
-      finalContent.textContent = parts.tail || '本次没有需要补充的智能填写建议或需确认补充事项。';
+      finalContent.textContent = parts.tail || '本次没有需要补充的AI改善建议或需确认事项。';
       finalPanel.hidden = false;
       markVisible('final_visible_ms');
       markVisible('first_text_visible_ms');
@@ -278,7 +278,7 @@ function finish(text) {
   markVisible('first_text_visible_ms');
   if (versionedMode && (!dualMode || (previewComplete && !previewSucceeded))) {
     content.textContent = finalDisplayText(text);
-    if (previewLabel) previewLabel.textContent = 'AI最终反馈意见';
+    if (previewLabel) previewLabel.textContent = 'AI改善建议';
     finalPanel.hidden = true;
   } else finalPanel.hidden = false;
   stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');

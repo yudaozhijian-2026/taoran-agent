@@ -2709,7 +2709,7 @@ def _quick_check_final_analysis(feedback_text: str) -> str:
     if marker not in text:
         return ""
     analysis = text.split(marker, 1)[1]
-    for tail in ("智能填写建议：", "需确认补充事项：", "需确认事项："):
+    for tail in ("AI改善建议：", "智能填写建议：", "需确认补充事项：", "需确认事项："):
         if tail in analysis:
             analysis = analysis.split(tail, 1)[0]
     return analysis.strip()
@@ -3209,7 +3209,7 @@ def interactive_quick_check_page(
 <div id="status" class="status">正在连接检测任务…</div>
 <button id="resume" hidden type="button">恢复本次分析</button>
 <div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel" aria-live="polite">AI正在分析，请稍候。</div>
-<section id="finalPanel" hidden><div id="finalLabel" class="label">AI最终反馈意见</div><div id="finalContent" class="panel" aria-live="polite"></div></section>
+<section id="finalPanel" hidden><div id="finalLabel" class="label">AI改善建议</div><div id="finalContent" class="panel" aria-live="polite"></div></section>
 <button id="ack" hidden disabled>已读并返回修改</button><button id="cancelSubmit" hidden>返回修改</button></main><script>
 const submitConfirmation=__TAORAN_SUBMIT_CONFIRMATION__;
 const publicPath=__TAORAN_PUBLIC_PATH__;

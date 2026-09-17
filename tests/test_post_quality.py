@@ -82,3 +82,27 @@ def test_met_sections_do_not_get_knowledge_filler_and_final_conflict_is_observed
     assert facts.quality_audit["final_review"]["policy"] == "observe_only"
     assert facts.quality_audit["final_review"]["hits"]
     r.close()
+
+
+def test_post_improvement_uses_same_taoran_dimension_frame(tmp_path):
+    r = reviewer(tmp_path)
+    v = visit()
+    payload = valid_payload(r, v)
+    for section in payload["sections"]:
+        section.pop("advice_basis", None)
+    target = next(section for section in payload["sections"] if section["code"] == "N")
+    target.update(
+        verdict="needs_revision",
+        suggestion="请补充下一次联系客户时间安排。",
+    )
+    facts = Q34SemanticFacts(
+        **payload["facts"], provider="llm-chat", sections=payload["sections"],
+        quality_audit={
+            "authoritative_checks": quality_context(v, load_taoran_knowledge_snapshot()),
+                "advice_basis": {"N": {"gap_kind": "missing_value"}},
+        },
+    )
+    advice = _build_post_advice([], facts, model_completed=True, knowledge_issues=[],
+                                knowledge_suggestions=[])
+    assert advice == ["N｜下一步客户行动：请补充下一次联系客户时间安排。"]
+    r.close()

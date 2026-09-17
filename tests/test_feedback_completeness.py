@@ -100,3 +100,8 @@ def test_all_advice_sections_survive_without_inventing_specificity():
         assert text.count(item.suggestion)==1
         assert item.specific is None
     assert '不具体：' not in text
+    for label in [
+        'T｜客户类型', 'A｜预约与拜访方式', 'O/KR｜拜访目的与关键结果',
+        'R｜过程事实与结果', 'A｜达成评价', 'N｜下一步客户行动',
+    ]:
+        assert label in text
