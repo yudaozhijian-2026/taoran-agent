@@ -7,7 +7,11 @@ from .experimental_semantic_audit import CHECKS
 def safe_code(value):
     if value is None:
         return None
-    if value in {"unresolved_source_reference", "unknown_source_field", "unsupported_role_requirement", "dependent_confirmation_gap"}:
+    if value in {
+        "unresolved_source_reference", "unknown_source_field", "unsupported_role_requirement",
+        "dependent_confirmation_gap", "required_advice_field_omitted",
+        "required_advice_omitted", "suggestion_completeness",
+    }:
         return value
     if not isinstance(value, str):
         return "unknown_failure"

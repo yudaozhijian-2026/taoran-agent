@@ -53,6 +53,7 @@ let done = false, source, pollTimer, retryDelay = 1000, polling = false, returni
 let disposed = false, returnTimer, lifecycle = 0;
 let previewComplete = false, previewSucceeded = false;
 let finalDone = false, finalFailed = false;
+let finalContentComplete = false;
 const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
@@ -65,6 +66,7 @@ const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-2026090
 const previewLabel = document.querySelector('#previewLabel');
 let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
 let pendingSuggestionText = null;
+let pendingFinalComplete = false;
 const analysisCharacterDelay = 18;
 function stopAnalysisTyping() {
   clearTimeout(analysisTypingTimer);
@@ -160,15 +162,16 @@ function revealTypewriterFinal() {
   const suggestionText = pendingSuggestionText;
   pendingSuggestionText = null;
   finalDone = true;
+  finalContentComplete = pendingFinalComplete;
   finalContent.textContent = suggestionText;
   finalPanel.hidden = false;
   markVisible('final_visible_ms');
   markVisible('first_text_visible_ms');
   stage('AI检测完成');
-  setConfirmReady(true);
+  setConfirmReady(finalContentComplete);
   settle();
 }
-function revealCachedFinal(text) {
+function revealCachedFinal(text, contentComplete = true) {
   const parts = splitFinalText(text);
   stopAnalysisTyping();
   analysisTarget = parts.analysis;
@@ -177,6 +180,7 @@ function revealCachedFinal(text) {
   previewComplete = true;
   previewSucceeded = true;
   finalDone = true;
+  finalContentComplete = contentComplete;
   pendingSuggestionText = null;
   finalContent.textContent = parts.tail || '本次没有需要补充的AI改善建议或需确认事项。';
   finalPanel.hidden = false;
@@ -184,7 +188,7 @@ function revealCachedFinal(text) {
   markVisible('final_visible_ms');
   markVisible('first_text_visible_ms');
   stage('AI检测完成');
-  setConfirmReady(true);
+  setConfirmReady(finalContentComplete);
   settle();
 }
 function completeAnalysisDisplay() {
@@ -257,6 +261,7 @@ function fail(code, message, terminal = false) {
   if (terminal) { done = true; stopTransport(); }
   finalDone = true;
   finalFailed = true;
+  finalContentComplete = false;
   pendingSuggestionText = null;
   if ([finalWaitingText, suggestionWaitingText].includes(finalContent.textContent)) { finalContent.textContent = ''; finalPanel.hidden = true; }
   setConfirmReady(false);
@@ -269,20 +274,22 @@ function fail(code, message, terminal = false) {
   status.className = 'status error';
   settle();
 }
-function finish(text) {
+function finish(text, contentComplete = true) {
   if (finalDone || disposed || pendingSuggestionText !== null) return;
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   if (cachedOpening && finalStreamMode) {
-    revealCachedFinal(text);
+    revealCachedFinal(text, contentComplete);
     return;
   }
   finalDone = true;
+  finalContentComplete = contentComplete;
   if (finalStreamMode) {
     const parts = splitFinalText(text);
     previewComplete = true;
     previewSucceeded = true;
     if (typewriterMode) {
       pendingSuggestionText = parts.tail || '本次没有需要补充的AI改善建议或需确认事项。';
+      pendingFinalComplete = contentComplete;
       if (parts.analysis) syncAnalysisTarget(parts.analysis);
       finalPanel.hidden = true;
       completeAnalysisDisplay();
@@ -294,7 +301,7 @@ function finish(text) {
       markVisible('final_visible_ms');
       markVisible('first_text_visible_ms');
       stage('AI检测完成');
-      setConfirmReady(true);
+      setConfirmReady(finalContentComplete);
       settle();
     }
     return;
@@ -309,7 +316,7 @@ function finish(text) {
     finalPanel.hidden = true;
   } else finalPanel.hidden = false;
   stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
-  setConfirmReady(true);
+  setConfirmReady(finalContentComplete);
   settle();
 }
 async function requestJson(url, options = {}) {
@@ -342,7 +349,7 @@ async function poll() {
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
     if (cachedOpening && task.status === 'completed') {
-      finish(task.final_feedback_text);
+      finish(task.final_feedback_text, task.content_complete !== false);
       if (resume) resume.hidden = !task.recoverable;
       return;
     }
@@ -351,7 +358,7 @@ async function poll() {
     // previews back off, otherwise several generated sentences arrive at once.
     if ((dualMode || finalStreamMode) && !previewComplete) retryDelay = 1000;
     if (task.status === 'completed') {
-      finish(task.final_feedback_text);
+      finish(task.final_feedback_text, task.content_complete !== false);
       if (resume) resume.hidden = !task.recoverable;
       if (task.recoverable) stage('部分分析未完成，任务已保留，可恢复本次分析。');
     }
@@ -424,7 +431,7 @@ if (resume) resume.addEventListener('click', async () => {
     const response = await requestJson(base + '/resume' + query, {method:'POST'});
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
     setConfirmReady(false);
-    done = false; finalDone = false; finalFailed = false; previewComplete = false; previewSucceeded = false;
+    done = false; finalDone = false; finalFailed = false; finalContentComplete = false; previewComplete = false; previewSucceeded = false;
     pendingSuggestionText = null;
     stopAnalysisTyping(); analysisTarget = ''; analysisQueue = '';
     content.textContent = versionedMode ? waitingText : '';
@@ -454,7 +461,7 @@ window.addEventListener('pageshow', event => {
   if (!event.persisted || !disposed) return;
   disposed = false;
   returning = false;
-  if (finalDone && !finalFailed) setConfirmReady(true);
+  if (finalDone && !finalFailed) setConfirmReady(finalContentComplete);
   // A restored page that already holds the authoritative Final only needs to
   // re-enable acknowledgement. Polling again can consume the acknowledgement
   // response slot and must not replace or delay the saved Final.

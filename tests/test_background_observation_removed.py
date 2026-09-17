@@ -4,7 +4,7 @@ import sys
 from types import SimpleNamespace
 
 from taoran_agent import api
-from taoran_agent.front_v46.experimental_final_diagnostics import safe_semantic_audit
+from taoran_agent.front_v46.experimental_final_diagnostics import safe_code, safe_semantic_audit
 
 
 def test_startup_never_recovers_or_runs_historical_observations(tmp_path, monkeypatch):
@@ -37,3 +37,9 @@ def test_removed_audit_is_disabled_not_reported_as_failure():
     assert audit["status"] == "disabled"
     assert audit["latency_ms"] == 0
     assert audit["observation_id"] is None
+
+
+def test_required_advice_gap_keeps_its_diagnostic_code():
+    assert safe_code("required_advice_field_omitted") == "required_advice_field_omitted"
+    assert safe_code("required_advice_omitted") == "required_advice_omitted"
+    assert safe_code("suggestion_completeness") == "suggestion_completeness"
