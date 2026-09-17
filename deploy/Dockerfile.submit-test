@@ -1,5 +1,5 @@
 FROM dsm-taoran-v2:1.0.5-contact-facts-20260914
 USER root
-COPY dsm_taoran_agent-1.0.6rc9-py3-none-any.whl /tmp/dsm_taoran_agent-1.0.6rc9-py3-none-any.whl
-RUN uv pip install --python /app/.venv/bin/python --no-index --no-deps /tmp/dsm_taoran_agent-1.0.6rc9-py3-none-any.whl
+COPY dsm_taoran_agent-1.0.6rc10-py3-none-any.whl /tmp/dsm_taoran_agent-1.0.6rc10-py3-none-any.whl
+RUN uv pip install --python /app/.venv/bin/python --no-index --no-deps /tmp/dsm_taoran_agent-1.0.6rc10-py3-none-any.whl
 USER 10001:10001

@@ -18,7 +18,7 @@ from .confirmation_shape import (
     valid_remainder,
 )
 
-VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V4-20260917"
+VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V5-20260917"
 
 
 class Shape(BaseModel):
