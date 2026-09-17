@@ -12,7 +12,7 @@ import re
 
 from ..models import VisitDraftInput
 
-VERSION = "front-feedback-consistency-v1-20260917"
+VERSION = "front-feedback-consistency-v2-20260917"
 
 GUIDANCE = """
 先确定原目标类型，再判断事实和建议：确认/了解/核实/收集某项情况、状态或信息，只要求取得明确结果，不等于相关事项必须完成；获得客户承诺不等于承诺已经履行；只有原目标明确要求完成、交付、安装或验收，才把完成事实作为达成条件。
@@ -159,7 +159,12 @@ def preview_errors(text: str, context: dict) -> list[dict]:
         errors.append({"code": "goal_summary_contradiction"})
     presence = (context.get("_record_contract") or {}).get("presence", {})
     if (presence.get("next_contact_at") == "empty"
-            and re.search(r"(?:当前|本次|整条)?记录.{0,16}(?:无需|无须|不需要)(?:再)?补充|未发现.{0,12}(?:缺口|需要改善)", text)):
+            and re.search(
+                r"(?:当前|本次|整条)?记录.{0,16}(?:无需|无须|不需要)(?:再)?补充"
+                r"|未发现.{0,12}(?:缺口|需要改善)"
+                r"|(?:当前|本次|整条)?记录.{0,16}未(?:反映|体现|发现).{0,12}(?:需要补充|需要改善|缺口)",
+                text,
+            )):
         errors.append({"code": "known_gap_declared_complete"})
     return errors
 

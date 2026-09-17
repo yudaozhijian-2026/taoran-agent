@@ -232,3 +232,6 @@ def test_preview_cannot_claim_whole_record_needs_nothing_when_date_is_empty():
     assert preview_errors("本次目标已达成，当前记录无需再补充。", value) == [
         {"code": "known_gap_declared_complete"},
     ]
+    assert preview_errors("本次目标已达成，当前记录未反映需要补充的缺口。", value) == [
+        {"code": "known_gap_declared_complete"},
+    ]

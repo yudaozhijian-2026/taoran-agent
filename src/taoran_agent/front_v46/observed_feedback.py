@@ -18,7 +18,7 @@ from .confirmation_shape import (
     valid_remainder,
 )
 
-VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V3-20260917"
+VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V4-20260917"
 
 
 class Shape(BaseModel):
@@ -94,8 +94,9 @@ def configure(messages, schema):
         "missing_field仅表示整个字段没有填写，不是字段内未提及某个可选事项。已有客户表达或动作不因没有姓名职务而不充分。"
         "每点给出kind、text、proofs，并可使用输入契约的contract_id、goal_id、claim_type、fact_ids。"
         "每条items建议必须至少提供一条proofs：字段已有内容时quote必须是该字段连续原文；整个字段为空时quote为空字符串。"
-        "required_advice是规则已确认存在真实缺口的TAORAN维度及字段；可将相关缺口合并成一条自然建议，"
-        "但每个code和field都必须由items中同code建议及proofs.field覆盖。字段为空时proofs.quote为空字符串。"
+        "required_advice是规则已确认存在真实缺口的TAORAN维度及字段；每个不同field都必须得到明确处理。"
+        "如合并表达，建议正文必须逐一说清每个字段的实际问题，并为所有相关字段分别提供proofs；否则分成不同items。"
+        "每个code和field都必须由items中同code建议及proofs.field覆盖。字段为空时proofs.quote为空字符串。"
         "不得输出no_change_needed，也不得用达标描述代替改善建议；不同字段的真实缺口不能因去重而丢失。"
         "只返回JSON，格式：" + json.dumps(schema, ensure_ascii=False)
     )
@@ -380,14 +381,20 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
                                "source_hash": context.get("_record_contract", {}).get("source_hash")})
     def tokens(key):
         return max(0, usage.get(key, 0)) + max(0, audit.get(key, 0))
+    required_validation_errors = [
+        {"location": f"items.{code}.{field}", "code": "required_advice_field_omitted"}
+        for code, field in sorted(missing_required_fields)
+    ]
     return KnowledgeWordingResult(
         status="completed", visit_analysis=analysis,
         suggestion_status=suggestion_status, suggestion_reason=payload.suggestion_reason,
         items=[KnowledgeWordingItem(code=p.code if p.code in expected_codes else "UNMAPPED", suggestion=p.suggestion,
                                     specific=None) for p in payload.items],
         visit_analysis_evidence=evidence, confirmation_items=confirmations,
-        validation_errors=[{"location": "items.code", "code": "unexpected_suggestion_code"}]
-                          if unknown_codes else [],
+        validation_errors=(
+            ([{"location": "items.code", "code": "unexpected_suggestion_code"}]
+             if unknown_codes else []) + required_validation_errors
+        ),
         semantic_observations=observations[:64], provider="llm-chat-light-suggestion",
         model=reviewer.settings.llm_model, prompt_version=VERSION,
         latency_ms=int((monotonic() - started) * 1000), attempt_count=1,
