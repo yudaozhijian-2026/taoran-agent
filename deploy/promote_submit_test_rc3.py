@@ -19,9 +19,10 @@ previous = {
     '1.0.6rc9': '1.0.6rc8',
     '1.0.6rc10': '1.0.6rc9',
     '1.0.6rc11': '1.0.6rc10',
+    '1.0.6rc12': '1.0.6rc11',
 }[release]
 old = f'taoran-submit-test:{previous}-20260916'
-date_suffix = '20260917' if release == '1.0.6rc11' else '20260916'
+date_suffix = '20260917' if release in {'1.0.6rc11', '1.0.6rc12'} else '20260916'
 new = f'taoran-submit-test:{release}-{date_suffix}'
 info = json.loads(subprocess.check_output(['docker', 'inspect', 'taoran-submit-test-agent']))[0]
 assert info['Config']['Image'] == old, 'Newer or unexpected test deployment: stop'
