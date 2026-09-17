@@ -2709,7 +2709,7 @@ def _quick_check_final_analysis(feedback_text: str) -> str:
     if marker not in text:
         return ""
     analysis = text.split(marker, 1)[1]
-    for tail in ("智能填写建议：", "需确认事项："):
+    for tail in ("智能填写建议：", "需确认补充事项：", "需确认事项："):
         if tail in analysis:
             analysis = analysis.split(tail, 1)[0]
     return analysis.strip()

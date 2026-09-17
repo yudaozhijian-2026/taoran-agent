@@ -24,7 +24,7 @@ def test_final_analysis_excludes_suggestions_and_confirmation_tail():
 智能填写建议：
 1、补充时间。
 
-需确认事项：
+需确认补充事项：
 1、核对状态。
 """
     assert _quick_check_final_analysis(text) == "客户已确认设备清单。"

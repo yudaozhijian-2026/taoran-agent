@@ -65,7 +65,7 @@ def test_ambiguous_source_completes_with_scoped_confirmation_without_regeneratio
         assert "影响：是否取得客户方案认可" in result.confirmation_items[0]
         request = PrecheckRequest(context=RequestContext(tenant_id="test", request_id="front", user_id="test"), visit=visit())
         feedback = build_front_ai_suggestions_with_model(TaoranAgent().precheck(request), result, experimental=True)
-        assert "本次拜访分析：" in feedback and "需确认事项：" in feedback
+        assert "本次拜访分析：" in feedback and "需确认补充事项：" in feedback
         assert "已确认采购方案" in feedback and "AI调用异常" not in feedback
     finally:
         reviewer.close()

@@ -334,7 +334,13 @@ def _stream_semantic_preview_once(
         feedback = (_feedback_body(raw) if _OPEN in raw else raw).strip()
         placeholder = re.sub(r"[\s：:。#*`]", "", feedback)
         outside = raw.replace(_OPEN + _feedback_body(raw) + _CLOSE, "").strip() if _OPEN in raw and _CLOSE in raw else ""
-        if not feedback or placeholder in {"分析与必要核对事项", "AI实时分析", "需确认事项", "分析正文"} or outside:
+        if not feedback or placeholder in {
+            "分析与必要核对事项",
+            "AI实时分析",
+            "需确认事项",
+            "需确认补充事项",
+            "分析正文",
+        } or outside:
             raise ValueError("invalid_preview_format")
         stream_body = _stream_feedback_body(raw, interactive=interactive)
         if emitted < len(stream_body):

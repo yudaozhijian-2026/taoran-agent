@@ -334,7 +334,7 @@ def build_front_ai_suggestions_with_model(
         if wording.suggestion_status == "no_change_needed":
             result = result.replace(empty_message, "本次无需额外补充填写。" + _clean_front_text(wording.suggestion_reason))
         elif wording.suggestion_status == "needs_confirmation":
-            result = result.replace(empty_message, "请核对下方需确认事项。")
+            result = result.replace(empty_message, "请核对下方需确认补充事项。")
         elif wording.suggestion_status == "incomplete":
             notice = "填写建议完整性核对未完成，不能据此认定无需补充。"
             if empty_message in result:
@@ -343,7 +343,9 @@ def build_front_ai_suggestions_with_model(
                 result = result.replace("智能填写建议：", "智能填写建议：\n" + notice)
     if wording.confirmation_items:
         footer = "提交后，系统将自动生成正式评分和反馈意见。"
-        body = "需确认事项：\n" + "\n".join(f"{i}. {text}" for i, text in enumerate(wording.confirmation_items, 1))
+        body = "需确认补充事项：\n" + "\n".join(
+            f"{i}. {text}" for i, text in enumerate(wording.confirmation_items, 1)
+        )
         result = result.replace(footer, body + "\n\n" + footer) if footer in result else result + "\n\n" + body
     return business_wording(result)
 

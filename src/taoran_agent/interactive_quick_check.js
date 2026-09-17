@@ -58,7 +58,7 @@ if (versionedMode) {
   content.textContent = waitingText;
   previewComplete = !(dualMode || finalStreamMode);
   if (previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析';
-  if (finalStreamMode && finalLabel) finalLabel.textContent = '智能填写建议与需确认事项';
+  if (finalStreamMode && finalLabel) finalLabel.textContent = '智能填写建议与需确认补充事项';
 }
 function applyVersion(task) {
   if (!versionedMode) return true;
@@ -92,7 +92,7 @@ function splitFinalText(text) {
   const marker = '本次拜访分析：';
   let body = clean.startsWith(marker) ? clean.slice(marker.length).trim() : clean;
   let cut = body.length;
-  for (const tail of ['智能填写建议：', '需确认事项：']) {
+  for (const tail of ['智能填写建议：', '需确认补充事项：', '需确认事项：']) {
     const index = body.indexOf(tail);
     if (index >= 0) cut = Math.min(cut, index);
   }
@@ -154,7 +154,7 @@ function finish(text) {
     if (parts.analysis) content.textContent = parts.analysis;
     previewComplete = true;
     previewSucceeded = true;
-    finalContent.textContent = parts.tail || '本次没有需要补充的智能填写建议或需确认事项。';
+    finalContent.textContent = parts.tail || '本次没有需要补充的智能填写建议或需确认补充事项。';
     finalPanel.hidden = false;
     markVisible('final_visible_ms');
     markVisible('first_text_visible_ms');
