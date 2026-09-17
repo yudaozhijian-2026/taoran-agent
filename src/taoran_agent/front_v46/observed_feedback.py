@@ -124,6 +124,106 @@ class _AnalysisPointStream:
             self.emit("".join(emitted))
 
 
+class _SuggestionStream:
+    """Decode item suggestions incrementally without exposing JSON syntax."""
+
+    def __init__(self, emit=None):
+        self.emit = emit
+        self.buffer = ""
+        self.cursor = 0
+        self.started = False
+        self.in_text = False
+        self.scan_cursor = 0
+        self.escaped = False
+        self.unicode_digits: str | None = None
+        self.item_started = False
+        self.last_character = ""
+        self.item_count = 0
+
+    def feed(self, chunk: str) -> None:
+        if self.emit is None or not chunk:
+            return
+        self.buffer += chunk
+        if not self.started:
+            match = re.search(r'"items"\s*:\s*\[', self.buffer)
+            if match is None:
+                return
+            self.started = True
+            self.cursor = match.end()
+        emitted: list[str] = []
+        while True:
+            if not self.in_text:
+                end_at = re.search(r'"confirmations"\s*:', self.buffer[self.cursor:])
+                suggestion_match = re.search(r'"suggestion"\s*:\s*', self.buffer[self.cursor:])
+                if suggestion_match is None:
+                    break
+                absolute = self.cursor + suggestion_match.end()
+                if end_at is not None and self.cursor + end_at.start() < absolute:
+                    break
+                if absolute >= len(self.buffer):
+                    break
+                if self.buffer[absolute] != '"':
+                    self.cursor = absolute + 1
+                    continue
+                self.in_text = True
+                self.scan_cursor = absolute + 1
+                self.escaped = False
+                self.unicode_digits = None
+                self.item_started = False
+                self.last_character = ""
+
+            closed = False
+            while self.scan_cursor < len(self.buffer):
+                character = self.buffer[self.scan_cursor]
+                self.scan_cursor += 1
+                decoded = ""
+                if self.unicode_digits is not None:
+                    self.unicode_digits += character
+                    if len(self.unicode_digits) < 4:
+                        continue
+                    try:
+                        decoded = chr(int(self.unicode_digits, 16))
+                    except ValueError:
+                        decoded = ""
+                    self.unicode_digits = None
+                    self.escaped = False
+                elif self.escaped:
+                    if character == "u":
+                        self.unicode_digits = ""
+                        continue
+                    decoded = {
+                        '"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f",
+                        "n": "\n", "r": "\r", "t": "\t",
+                    }.get(character, character)
+                    self.escaped = False
+                elif character == "\\":
+                    self.escaped = True
+                    continue
+                elif character == '"':
+                    self.in_text = False
+                    self.cursor = self.scan_cursor
+                    if self.item_started:
+                        if self.last_character not in "。！？；":
+                            emitted.append("。")
+                        emitted.append("\n")
+                        self.item_count += 1
+                    closed = True
+                    break
+                else:
+                    decoded = character
+
+                if decoded and (self.item_started or decoded.strip()):
+                    if not self.item_started:
+                        emitted.append(f"{self.item_count + 1}、")
+                    emitted.append(decoded)
+                    self.item_started = True
+                    self.last_character = decoded[-1]
+            if not closed:
+                break
+        if emitted:
+            self.emit("".join(emitted))
+
+
 class Shape(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -345,7 +445,10 @@ def configure(messages, schema):
     )
 
 
-def generate(reviewer, items, snapshot, timeout_seconds, *, analysis_emit=None, analysis_reset=None):
+def generate(
+    reviewer, items, snapshot, timeout_seconds, *,
+    analysis_emit=None, analysis_reset=None, suggestion_emit=None, suggestion_reset=None,
+):
     """One bounded shape repair; semantic observations never request a retry."""
     started = monotonic()
     holder = {}
@@ -356,6 +459,7 @@ def generate(reviewer, items, snapshot, timeout_seconds, *, analysis_emit=None, 
         timeout_seconds,
         holder=holder,
         analysis_emit=analysis_emit,
+        suggestion_emit=suggestion_emit,
     )
     if (first.failure_reason == "invalid_contract" and holder.get("candidate") is not None
             and _format_only_errors(first.validation_errors)):
@@ -423,7 +527,7 @@ def generate(reviewer, items, snapshot, timeout_seconds, *, analysis_emit=None, 
 
 def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=None,
                    repair_candidate=None, holder=None, patch_paths=None,
-                   analysis_emit=None):
+                   analysis_emit=None, suggestion_emit=None):
 
     import httpx
     from pydantic import ValidationError
@@ -503,6 +607,10 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
         request_started = monotonic()
         probe = TransportProbe(reviewer.settings, source)
         analysis_stream = _AnalysisPointStream(analysis_emit)
+        suggestion_stream = _SuggestionStream(suggestion_emit)
+        def stream_content(chunk):
+            analysis_stream.feed(chunk)
+            suggestion_stream.feed(chunk)
         with reviewer._client.stream("POST", reviewer.settings.llm_api_url, json=body,
                 headers={"Authorization": f"Bearer {reviewer.settings.llm_api_key.get_secret_value()}"},
                 timeout=timeout, extensions={"trace": probe.trace}) as response:
@@ -510,7 +618,7 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             response.raise_for_status()
             envelope, first, last = _read_chat_response(response, started=request_started,
                                                        timeout=timeout, max_bytes=None,
-                                                       content_callback=analysis_stream.feed)
+                                                       content_callback=stream_content)
             probe.completed(envelope, first, last)
         telemetry.update(model_first_byte_ms=first, model_complete_ms=last)
         choice = envelope["choices"][0]

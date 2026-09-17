@@ -27,6 +27,7 @@ FIELDS = (
     "phase_timings",
     "client_timings",
     "preview_snapshot",
+    "suggestion_snapshot",
     "basic_feedback",
     "front_policy",
     "retention_until",

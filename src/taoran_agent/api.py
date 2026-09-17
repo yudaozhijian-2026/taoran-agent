@@ -1706,6 +1706,8 @@ def _enhance_front_suggestions(
     experimental: bool = False,
     analysis_emit=None,
     analysis_reset=None,
+    suggestion_emit=None,
+    suggestion_reset=None,
 ) -> PrecheckResponse:
     if not response.knowledge_snapshot_hash or not response.knowledge_references:
         return response
@@ -1862,6 +1864,8 @@ def _enhance_front_suggestions(
             wording_kwargs.update(
                 analysis_emit=analysis_emit,
                 analysis_reset=analysis_reset,
+                suggestion_emit=suggestion_emit,
+                suggestion_reset=suggestion_reset,
             )
         wording = reviewer.verbalize_knowledge_issues(
             field_checks,
@@ -1895,7 +1899,10 @@ def _enhance_front_suggestions(
             if "analysis_emit" in inspect.signature(
                 reviewer.verbalize_knowledge_issues
             ).parameters:
-                retry_kwargs.update(analysis_emit=None, analysis_reset=None)
+                retry_kwargs.update(
+                    analysis_emit=None, analysis_reset=None,
+                    suggestion_emit=None, suggestion_reset=None,
+                )
             retry = reviewer.verbalize_knowledge_issues(
                 field_checks,
                 timeout_seconds,
@@ -2093,6 +2100,8 @@ def _execute_knowledge_button_feedback(
     experimental: bool = False,
     analysis_emit=None,
     analysis_reset=None,
+    suggestion_emit=None,
+    suggestion_reset=None,
 ) -> PrecheckResponse:
     """执行可独立返回的实时知识库分支和受控AI表达。"""
     started = monotonic()
@@ -2163,6 +2172,8 @@ def _execute_knowledge_button_feedback(
                     experimental=experimental,
                     analysis_emit=analysis_emit,
                     analysis_reset=analysis_reset,
+                    suggestion_emit=suggestion_emit,
+                    suggestion_reset=suggestion_reset,
                 )
         else:
             if isinstance(reviewer, ChatModelReviewer):
@@ -2216,6 +2227,8 @@ def _execute_unified_button_feedback(
     experimental: bool = False,
     analysis_emit=None,
     analysis_reset=None,
+    suggestion_emit=None,
+    suggestion_reset=None,
 ) -> PrecheckResponse:
     """唯一反馈链：确定性规则为底座，实时知识与轻量AI只做增强。"""
     enhanced = _execute_knowledge_button_feedback(
@@ -2224,6 +2237,8 @@ def _execute_unified_button_feedback(
         experimental=experimental,
         analysis_emit=analysis_emit,
         analysis_reset=analysis_reset,
+        suggestion_emit=suggestion_emit,
+        suggestion_reset=suggestion_reset,
     )
     if enhanced.knowledge_snapshot_hash:
         return enhanced.model_copy(
@@ -2508,6 +2523,7 @@ def _quick_check_schedule(task, canonical_request, settings):
     from .front_v46 import POLICY_VERSION
     task['front_policy'] = POLICY_VERSION
     task['preview_snapshot'] = {'text':'','status':'processing','kind':'ai'}
+    task['suggestion_snapshot'] = {'text':'','status':'processing','kind':'ai'}
     task['events'] = Queue()
     queued = monotonic()
     _quick_check_persist(task)  # Durable source precedes dispatch.
@@ -2547,7 +2563,10 @@ def _quick_check_cleanup(now: float) -> None:
             _quick_check_idempotency.pop(key, None)
 
 
-def _quick_check_run_final(canonical_request, settings, *, analysis_emit=None, analysis_reset=None):
+def _quick_check_run_final(
+    canonical_request, settings, *, analysis_emit=None, analysis_reset=None,
+    suggestion_emit=None, suggestion_reset=None,
+):
     """Keep bounded transient retries around the restored V4.6 policy."""
     from time import sleep
     attempts = []
@@ -2559,6 +2578,8 @@ def _quick_check_run_final(canonical_request, settings, *, analysis_emit=None, a
             final_once_kwargs.update(
                 analysis_emit=analysis_emit,
                 analysis_reset=analysis_reset,
+                suggestion_emit=suggestion_emit,
+                suggestion_reset=suggestion_reset,
             )
         result = _quick_check_run_final_once(
             canonical_request,
@@ -2587,6 +2608,8 @@ def _quick_check_run_final_once(
     *,
     analysis_emit=None,
     analysis_reset=None,
+    suggestion_emit=None,
+    suggestion_reset=None,
 ) -> dict[str, Any]:
     """Run candidate-only Final presentation on validated model wording."""
     from .front_v46.experimental_final_diagnostics import audit as experimental_final_audit
@@ -2601,6 +2624,8 @@ def _quick_check_run_final_once(
             experimental=True,
             analysis_emit=analysis_emit,
             analysis_reset=analysis_reset,
+            suggestion_emit=suggestion_emit,
+            suggestion_reset=suggestion_reset,
         )
         final = UnifiedButtonPrecheckResponse.from_precheck(
             result,
@@ -2675,6 +2700,7 @@ def _quick_check_run(
     from .content_cache import run_with_knowledge_basis
     started = monotonic()
     stream_state = {"text": "", "first_ms": None}
+    suggestion_state = {"text": "", "first_ms": None}
 
     def emit_analysis(text: str) -> None:
         if not isinstance(text, str) or not text.strip():
@@ -2688,6 +2714,18 @@ def _quick_check_run(
         stream_state.update(text="", first_ms=None)
         events.put({"type": "preview_reset"})
 
+    def emit_suggestion(text: str) -> None:
+        if not isinstance(text, str) or not text:
+            return
+        if suggestion_state["first_ms"] is None and text.strip():
+            suggestion_state["first_ms"] = int((monotonic() - started) * 1000)
+        suggestion_state["text"] += text
+        events.put({"type": "suggestion_delta", "text": text})
+
+    def reset_suggestion() -> None:
+        suggestion_state.update(text="", first_ms=None)
+        events.put({"type": "suggestion_reset"})
+
     try:
         final = run_with_knowledge_basis(
             _quick_check_run_final,
@@ -2696,6 +2734,8 @@ def _quick_check_run(
             knowledge_basis,
             analysis_emit=emit_analysis,
             analysis_reset=reset_analysis,
+            suggestion_emit=emit_suggestion,
+            suggestion_reset=reset_suggestion,
         )
     except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
         final = {"status": "failed", "failure_category": "final_service_error"}
@@ -2707,6 +2747,11 @@ def _quick_check_run(
             # bounded retry. Replace it atomically; never blank and replay it.
             stream_state.update(text=final_analysis, first_ms=stream_state["first_ms"])
             events.put({"type": "preview_replace", "text": final_analysis})
+        final_suggestion = _quick_check_final_suggestion(final.get("feedback_text", ""))
+        if final_suggestion.strip() != suggestion_state["text"].strip():
+            suggestion_state.update(text=final_suggestion, first_ms=suggestion_state["first_ms"])
+            events.put({"type": "suggestion_replace", "text": final_suggestion})
+        events.put({"type": "suggestion_complete", "status": "completed"})
         preview = {
             "status": "completed",
             "feedback_hash": hashlib.sha256(final_analysis.encode()).hexdigest(),
@@ -2716,6 +2761,7 @@ def _quick_check_run(
             "recovered_after_retry": final.get("recovered_after_retry", False),
         }
     else:
+        events.put({"type": "suggestion_complete", "status": "unavailable"})
         preview = {
             "status": "failed",
             "failure_category": final.get("failure_category", "final_service_error"),
@@ -2739,10 +2785,27 @@ def _quick_check_final_analysis(feedback_text: str) -> str:
     return analysis.strip()
 
 
+def _quick_check_final_suggestion(feedback_text: str) -> str:
+    """Return the improvement/confirmation tail without its display heading."""
+    text = str(feedback_text or "").replace("【AI反馈意见】", "", 1).strip()
+    markers = ("AI改善建议：", "智能填写建议：", "需确认补充事项：", "需确认事项：")
+    starts = [(text.find(marker), marker) for marker in markers if marker in text]
+    if not starts:
+        return ""
+    index, marker = min(starts, key=lambda item: item[0])
+    tail = text[index:]
+    if marker in {"需确认补充事项：", "需确认事项："}:
+        return tail.replace(marker, "需确认事项：", 1).strip()
+    return tail[len(marker):].strip().replace("需确认补充事项：", "需确认事项：")
+
+
 def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
     """Task-scoped memory only; all readers receive the same retained snapshot."""
     with _quick_check_lock:
         state = task.setdefault("preview_snapshot", {"text": "", "status": "processing"})
+        suggestion = task.setdefault(
+            "suggestion_snapshot", {"text": "", "status": "processing", "kind": "ai"},
+        )
         outcome = task.get("outcome", {})
         future = outcome.get("preview_future")
         if future is not None and future.done():
@@ -2763,9 +2826,28 @@ def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
                 state.update(text="", status="processing")
             elif event["type"] == "preview_complete":
                 state["status"] = "completed" if event.get("status") == "completed" else "unavailable"
+            elif event["type"] == "suggestion_delta" and suggestion["status"] == "processing":
+                suggestion["text"] += event["text"]
+            elif event["type"] == "suggestion_replace":
+                suggestion.update(text=event["text"], status="processing")
+            elif event["type"] == "suggestion_reset":
+                suggestion.update(text="", status="processing")
+            elif event["type"] == "suggestion_complete":
+                suggestion["status"] = (
+                    "completed" if event.get("status") == "completed" else "unavailable"
+                )
         preview = outcome.get("preview", {})
         if state["status"] == "processing" and preview.get("status") not in (None, "processing"):
             state["status"] = "completed" if preview["status"] == "completed" else "unavailable"
+        final = outcome.get("final", {})
+        if suggestion["status"] == "processing" and final.get("status") not in (None, "processing"):
+            if final.get("status") == "completed":
+                suggestion.update(
+                    text=_quick_check_final_suggestion(final.get("feedback_text", "")),
+                    status="completed",
+                )
+            else:
+                suggestion["status"] = "unavailable"
         return dict(state)
 
 
@@ -2841,6 +2923,11 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
     preview_snapshot = _quick_check_preview_snapshot(task)
     result["preview_status"] = preview_snapshot["status"]
     result["preview_feedback_text"] = preview_snapshot["text"]
+    suggestion_snapshot = task.get(
+        "suggestion_snapshot", {"text": "", "status": "unavailable"},
+    )
+    result["suggestion_status"] = suggestion_snapshot["status"]
+    result["suggestion_feedback_text"] = suggestion_snapshot["text"]
     content_incomplete = task['status'] == 'completed' and (
         preview_snapshot['status'] in {'unavailable', 'failed'}
         or (result.get('diagnostics') or {}).get('suggestion_status') == 'incomplete'
@@ -3064,6 +3151,7 @@ async def _interactive_quick_check_events(
     yield _quick_check_sse("started", {"check_id": task["check_id"], "status": "processing"})
     yield _quick_check_sse("stage", {"text": "正在进行TAORAN分析"})
     last_snapshot = None
+    last_suggestion_snapshot = None
     final_sent = False
     while True:
         if await request.is_disconnected():
@@ -3073,9 +3161,19 @@ async def _interactive_quick_check_events(
             return
         outcome = _quick_check_resolve(task)
         snapshot = _quick_check_preview_snapshot(task)
+        suggestion_snapshot = dict(task.get(
+            "suggestion_snapshot", {"text": "", "status": "processing", "kind": "ai"},
+        ))
         if snapshot != last_snapshot:
             yield _quick_check_sse("preview_snapshot", {"check_id": task["check_id"], **snapshot})
             last_snapshot = snapshot
+        if (suggestion_snapshot != last_suggestion_snapshot
+                and (suggestion_snapshot.get("text")
+                     or suggestion_snapshot.get("status") != "processing")):
+            yield _quick_check_sse(
+                "suggestion_snapshot", {"check_id": task["check_id"], **suggestion_snapshot},
+            )
+            last_suggestion_snapshot = suggestion_snapshot
         if outcome is not None and not final_sent:
             final = outcome["final"]
             final_sent = True
@@ -3099,7 +3197,8 @@ async def _interactive_quick_check_events(
                     "diagnostics": final.get("diagnostics"),
                     "recovered_after_retry": final.get("recovered_after_retry"),
                 })
-        if final_sent and snapshot["status"] != "processing":
+        if (final_sent and snapshot["status"] != "processing"
+                and suggestion_snapshot["status"] != "processing"):
             return
         yield ": keepalive\n\n"
         await asyncio.sleep(0.12)

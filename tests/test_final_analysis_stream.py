@@ -1,5 +1,5 @@
 from taoran_agent.api import _quick_check_final_analysis
-from taoran_agent.front_v46.observed_feedback import _AnalysisPointStream
+from taoran_agent.front_v46.observed_feedback import _AnalysisPointStream, _SuggestionStream
 
 
 def test_analysis_point_stream_emits_partial_text_without_json_syntax():
@@ -41,3 +41,25 @@ def test_final_analysis_excludes_suggestions_and_confirmation_tail():
 1、核对状态。
 """
     assert _quick_check_final_analysis(text) == "客户已确认设备清单。"
+
+
+def test_suggestion_stream_emits_numbered_advice_without_json_syntax():
+    emitted = []
+    stream = _SuggestionStream(emitted.append)
+    chunks = [
+        '{"analysis_points":[],"items":[{"code":"N","sugg',
+        'estion":"补充下次联系',
+        '时间"},{"code":"R","suggestion":"说清客户\\u786e认的事项。"}],',
+        '"confirmations":[]}',
+    ]
+    for chunk in chunks:
+        stream.feed(chunk)
+    assert "".join(emitted) == "1、补充下次联系时间。\n2、说清客户确认的事项。\n"
+    assert '"suggestion"' not in "".join(emitted)
+
+
+def test_suggestion_stream_ignores_empty_suggestion():
+    emitted = []
+    stream = _SuggestionStream(emitted.append)
+    stream.feed('{"items":[{"suggestion":""}],"confirmations":[]}')
+    assert emitted == []

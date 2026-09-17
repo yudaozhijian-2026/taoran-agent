@@ -12,7 +12,8 @@ from . import experimental_semantic_audit
 class FrontReviewer(CurrentReviewer):
     def verbalize_knowledge_issues(self, items, timeout_seconds=None, *, taoran_snapshot=None,
                                    experimental=False, repair_reason=None, repair_context=None,
-                                   analysis_emit=None, analysis_reset=None):
+                                   analysis_emit=None, analysis_reset=None,
+                                   suggestion_emit=None, suggestion_reset=None):
         from .observed_feedback import generate
         return generate(
             self,
@@ -21,6 +22,8 @@ class FrontReviewer(CurrentReviewer):
             timeout_seconds,
             analysis_emit=analysis_emit,
             analysis_reset=analysis_reset,
+            suggestion_emit=suggestion_emit,
+            suggestion_reset=suggestion_reset,
         )
 
     def _experimental_audit_wording(self, context, analysis, suggestions, timeout, audit,

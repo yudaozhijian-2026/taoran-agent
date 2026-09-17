@@ -60,17 +60,79 @@ const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重�
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成AI改善建议';
 const suggestionWaitingText = '改善建议生成中';
-const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
-const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
+const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917'].includes(frontPolicy);
+const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917'].includes(frontPolicy);
+const suggestionStreamMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-taoran-advice-v4-20260917';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
+let suggestionTarget = '', suggestionQueue = '', suggestionTypingTimer;
+let suggestionComplete = false, finalResultReceived = false;
 let pendingSuggestionText = null;
 let pendingFinalComplete = false;
 const analysisCharacterDelay = 18;
 function stopAnalysisTyping() {
   clearTimeout(analysisTypingTimer);
   analysisTypingTimer = undefined;
+}
+function stopSuggestionTyping() {
+  clearTimeout(suggestionTypingTimer);
+  suggestionTypingTimer = undefined;
+}
+function analysisDisplayComplete() {
+  return !analysisQueue && content.textContent === analysisTarget;
+}
+function finishSuggestionDisplay() {
+  if (!suggestionStreamMode || !suggestionComplete || suggestionQueue || !finalResultReceived) return;
+  finalDone = true;
+  finalContentComplete = pendingFinalComplete;
+  if (!finalContent.textContent || finalContent.textContent === suggestionWaitingText) {
+    finalContent.textContent = pendingSuggestionText || '本次没有需要补充的AI改善建议或需确认事项。';
+  }
+  markVisible('final_visible_ms');
+  markVisible('first_text_visible_ms');
+  stage('AI检测完成');
+  setConfirmReady(finalContentComplete);
+  settle();
+}
+function typeSuggestionCharacter() {
+  suggestionTypingTimer = undefined;
+  if (disposed || !suggestionQueue || !analysisDisplayComplete()) return;
+  const character = Array.from(suggestionQueue)[0];
+  suggestionQueue = suggestionQueue.slice(character.length);
+  if (finalContent.textContent === suggestionWaitingText) finalContent.textContent = '';
+  finalContent.textContent += character;
+  if (character.trim()) markVisible('final_visible_ms');
+  if (suggestionQueue) suggestionTypingTimer = setTimeout(typeSuggestionCharacter, analysisCharacterDelay);
+  else finishSuggestionDisplay();
+}
+function startSuggestionTyping() {
+  if (!suggestionStreamMode || !analysisDisplayComplete()) return;
+  finalPanel.hidden = false;
+  if (!suggestionQueue) {
+    if (!suggestionTarget) finalContent.textContent = suggestionWaitingText;
+    finishSuggestionDisplay();
+    return;
+  }
+  if (finalContent.textContent === suggestionWaitingText) finalContent.textContent = '';
+  if (suggestionTypingTimer === undefined) typeSuggestionCharacter();
+}
+function syncSuggestionTarget(text, state = 'processing') {
+  if (!suggestionStreamMode || typeof text !== 'string') return false;
+  if (state === 'completed' || state === 'unavailable' || state === 'failed') suggestionComplete = true;
+  if (text !== suggestionTarget) {
+    if (text.startsWith(suggestionTarget)) suggestionQueue += text.slice(suggestionTarget.length);
+    else {
+      // A validated final correction replaces the draft once without blanking
+      // and replaying the already visible advice.
+      stopSuggestionTyping();
+      suggestionQueue = '';
+      finalContent.textContent = text;
+    }
+    suggestionTarget = text;
+  }
+  if (analysisDisplayComplete()) startSuggestionTyping();
+  return true;
 }
 function typeAnalysisCharacter() {
   analysisTypingTimer = undefined;
@@ -153,6 +215,13 @@ function showFinalWaiting() {
     finalPanel.hidden = true;
     return;
   }
+  if (suggestionStreamMode) {
+    if (!suggestionTarget && !suggestionQueue) finalContent.textContent = suggestionWaitingText;
+    finalPanel.hidden = false;
+    startSuggestionTyping();
+    stage(finalWaitingText);
+    return;
+  }
   finalContent.textContent = typewriterMode ? suggestionWaitingText : finalWaitingText;
   finalPanel.hidden = false;
   stage(finalWaitingText);
@@ -174,6 +243,7 @@ function revealTypewriterFinal() {
 function revealCachedFinal(text, contentComplete = true) {
   const parts = splitFinalText(text);
   stopAnalysisTyping();
+  stopSuggestionTyping();
   analysisTarget = parts.analysis;
   analysisQueue = '';
   content.textContent = parts.analysis || '本次拜访分析已完成。';
@@ -193,6 +263,10 @@ function revealCachedFinal(text, contentComplete = true) {
 }
 function completeAnalysisDisplay() {
   if (!typewriterMode || analysisQueue || content.textContent !== analysisTarget) return;
+  if (suggestionStreamMode) {
+    showFinalWaiting();
+    return;
+  }
   if (pendingSuggestionText !== null) revealTypewriterFinal();
   else if (previewComplete && previewSucceeded) showFinalWaiting();
 }
@@ -227,6 +301,7 @@ function stopTransport() {
   if (source) source.close();
   clearTimeout(pollTimer);
   stopAnalysisTyping();
+  stopSuggestionTyping();
 }
 function settle() {
   if (finalDone && previewComplete) { done = true; stopTransport(); }
@@ -256,6 +331,10 @@ function previewSnapshot(text, state) {
   }
   settle();
 }
+function suggestionSnapshot(text, state) {
+  if (!suggestionStreamMode || cachedOpening || finalDone) return;
+  syncSuggestionTarget(typeof text === 'string' ? text : '', state || 'processing');
+}
 function fail(code, message, terminal = false) {
   if (done || disposed) return;
   if (terminal) { done = true; stopTransport(); }
@@ -275,13 +354,13 @@ function fail(code, message, terminal = false) {
   settle();
 }
 function finish(text, contentComplete = true) {
-  if (finalDone || disposed || pendingSuggestionText !== null) return;
+  if (finalDone || disposed) return;
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   if (cachedOpening && finalStreamMode) {
     revealCachedFinal(text, contentComplete);
     return;
   }
-  finalDone = true;
+  finalResultReceived = true;
   finalContentComplete = contentComplete;
   if (finalStreamMode) {
     const parts = splitFinalText(text);
@@ -291,7 +370,10 @@ function finish(text, contentComplete = true) {
       pendingSuggestionText = parts.tail || '本次没有需要补充的AI改善建议或需确认事项。';
       pendingFinalComplete = contentComplete;
       if (parts.analysis) syncAnalysisTarget(parts.analysis);
-      finalPanel.hidden = true;
+      if (suggestionStreamMode) {
+        suggestionComplete = true;
+        syncSuggestionTarget(pendingSuggestionText, 'completed');
+      } else finalPanel.hidden = true;
       completeAnalysisDisplay();
     } else {
       if (parts.analysis) flushAnalysisText(parts.analysis);
@@ -354,6 +436,7 @@ async function poll() {
       return;
     }
     previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
+    suggestionSnapshot(task.suggestion_feedback_text, task.suggestion_status || 'processing');
     // Healthy active previews refresh each second; only failures/finished
     // previews back off, otherwise several generated sentences arrive at once.
     if ((dualMode || finalStreamMode) && !previewComplete) retryDelay = 1000;
@@ -414,6 +497,10 @@ source.addEventListener('preview_complete', event => decode(event, data => {
   );
   settle();
 }));
+source.addEventListener('suggestion_snapshot', event => decode(event, data => {
+  if (data.check_id !== checkId) return fail('task_mismatch', undefined, true);
+  suggestionSnapshot(data.text, data.status);
+}));
 source.addEventListener('final_completed', event => decode(event, data => {
   if (data.check_id !== checkId) return fail('task_mismatch', undefined, true);
   if (versionedMode) { recover(); return; }
@@ -432,8 +519,10 @@ if (resume) resume.addEventListener('click', async () => {
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
     setConfirmReady(false);
     done = false; finalDone = false; finalFailed = false; finalContentComplete = false; previewComplete = false; previewSucceeded = false;
+    finalResultReceived = false; suggestionComplete = false;
     pendingSuggestionText = null;
     stopAnalysisTyping(); analysisTarget = ''; analysisQueue = '';
+    stopSuggestionTyping(); suggestionTarget = ''; suggestionQueue = '';
     content.textContent = versionedMode ? waitingText : '';
     finalContent.textContent = '';
     finalPanel.hidden = true;

@@ -125,6 +125,49 @@ test('cached result displays analysis and improvement advice together without ty
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal([...h.timers.values()].filter(timer=>timer.delay===18).length,0);
 });
+test('v4 streams improvement advice after analysis and reconciles the final tail without replay', async () => {
+  const policy='front-v46-taoran-advice-v4-20260917';
+  const analysis='客户已确认设备清单。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n1、补充下次联系时间。\n\n需确认事项：\n1、核对安装日期。`;
+  const h=harness([new Error('initial transport unavailable'), {
+    check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',
+    suggestion_status:'completed',suggestion_feedback_text:'1、补充下次联系时间。\n\n需确认事项：\n1、核对安装日期。',
+    preview_feedback_text:analysis,final_feedback_text:feedback,
+  }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  await new Promise(resolve=>setImmediate(resolve));
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:analysis,status:'completed'});
+  for (let i=0;i<analysis.length;i++) await h.tick(18);
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.equal(h.nodes.finalContent.textContent,'改善建议生成中');
+  h.source.emit('suggestion_snapshot',{check_id:'qc_test',text:'1、补充下次联系时间。\n',status:'processing'});
+  assert.equal(h.nodes.finalContent.textContent,'1');
+  assert.equal(h.nodes.ack.disabled,true);
+  for (let i=0;i<20;i++) await h.tick(18);
+  assert.equal(h.nodes.finalContent.textContent,'1、补充下次联系时间。\n');
+  h.source.emit('suggestion_snapshot',{check_id:'qc_test',text:'1、补充下次联系时间。\n',status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
+  await new Promise(resolve=>setImmediate(resolve));
+  for (let i=0;i<80;i++) await h.tick(18);
+  assert.equal(h.nodes.finalContent.textContent,'1、补充下次联系时间。\n\n需确认事项：\n1、核对安装日期。');
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
+test('cached v4 result is displayed immediately without suggestion replay', async () => {
+  const policy='front-v46-taoran-advice-v4-20260917';
+  const analysis='客户已确认设备清单。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n1、补充联系时间。`;
+  const h=harness([{
+    check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',
+    suggestion_status:'completed',suggestion_feedback_text:'1、补充联系时间。',
+    preview_feedback_text:analysis,final_feedback_text:feedback,
+  }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy,reusedOpening:true});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalContent.textContent,'1、补充联系时间。');
+  assert.equal([...h.timers.values()].filter(timer=>timer.delay===18).length,0);
+  assert.equal(h.nodes.ack.disabled,false);
+});
 test('validated analysis correction replaces visible draft once without replay', async () => {
   const policy='front-v46-final-analysis-typewriter-v1-20260917';
   const h=harness([],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
