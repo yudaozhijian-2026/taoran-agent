@@ -50,27 +50,34 @@ _SECTIONS = (
     ),
 )
 
-_TAORAN_ADVICE_LABELS = {
-    "T": "客户类型",
-    "A1": "预约与拜访方式",
-    "O_KR": "拜访目的与关键结果",
-    "R": "过程事实与结果",
-    "A2": "达成评价",
-    "N": "下一步客户行动",
-    "C": "字段完整性",
-}
+_VISIBLE_TAORAN_ADVICE_HEADING = re.compile(
+    r"^\s*(?:TAORAN\s*)?(?:"
+    r"T(?:ype)?|A(?:ppointment|ssessment)?|O(?:/KR|_KR)?|R(?:esult)?|N(?:ext\s*Action)?|"
+    r"客户类型|预约与拜访方式|拜访目的与关键结果|过程事实与结果(?:（目标核对）)?|"
+    r"达成评价|下一步客户行动|字段完整性"
+    r")\s*(?:[|｜:：\-—]+)\s*",
+    flags=re.IGNORECASE,
+)
 
 
-def _taoran_advice(code: str, text: str) -> str:
-    """Render one actionable item in the shared front/post TAORAN frame."""
-    clean = text.strip()
+def _strip_taoran_advice_heading(text: str) -> str:
+    """Hide internal TAORAN group titles while retaining the concrete advice."""
+    previous = None
+    while text != previous:
+        previous = text
+        text = _VISIBLE_TAORAN_ADVICE_HEADING.sub("", text, count=1)
+    return text.strip()
+
+
+def _taoran_advice(_code: str, text: str) -> str:
+    """Render actionable wording without exposing the internal dimension title."""
+    clean = _strip_taoran_advice_heading(text)
     if not clean:
         return ""
-    label = _TAORAN_ADVICE_LABELS.get(code, "填写核对")
-    return f"{label}：{clean}"
+    return clean
 
 
-def _group_taoran_advice(items, labels: dict[str, str]) -> list[tuple[str, str]]:
+def _group_taoran_advice(items) -> list[tuple[str, str]]:
     """Group field-level findings into one visible item per TAORAN dimension.
 
     Field-level items stay separate in the validated model result so required
@@ -85,7 +92,9 @@ def _group_taoran_advice(items, labels: dict[str, str]) -> list[tuple[str, str]]
         if item.code not in grouped:
             grouped[item.code] = []
             order.append(item.code)
-        text = _clean_experimental_front_text(item.suggestion)
+        text = _strip_taoran_advice_heading(
+            _clean_experimental_front_text(item.suggestion)
+        )
         if text and text not in grouped[item.code]:
             grouped[item.code].append(text)
 
@@ -101,12 +110,12 @@ def _group_taoran_advice(items, labels: dict[str, str]) -> list[tuple[str, str]]
         return "".join(rendered)
 
     return [
-        (labels.get(code, "填写核对"), merge(grouped[code]))
+        ("", merge(grouped[code]))
         for code in order
         if grouped[code]
     ]
 
-# 提交后用六项结构归类、去重建议；展示TAORAN维度，但不输出内部字段编号或固定占位项。
+# 提交后仍按六项结构归类和去重，但只展示具体建议，不显示内部维度标题。
 _POST_ADVICE_SECTIONS = (
     (
         "客户类型",
@@ -363,18 +372,11 @@ def build_front_ai_suggestions_with_model(
         for name, code in model_code_by_name.items()
         if code in natural and natural[code].specific is not None
     }
-    advice_labels = {
-        code: _TAORAN_ADVICE_LABELS[code]
-        for code in model_code_by_name.values()
-    }
-    if experimental and any(repair.get("kind") == "goal_reminder_relocated" and repair.get("code") == "R"
-                            for attempt in wording.model_attempts for repair in attempt.get("recommendation_repairs", [])):
-        advice_labels["R"] = "过程事实与结果（目标核对）"
     result = _front_ai_suggestions(
         structured,
         natural_by_section=natural_by_section,
         explicit_advice=(
-            _group_taoran_advice(wording.items, advice_labels)
+            _group_taoran_advice(wording.items)
             if experimental else None
         ),
         specificity_by_section=specificity_by_section,
@@ -508,7 +510,11 @@ def _front_ai_suggestions(
         )
 
     if explicit_advice is not None:
-        advice.extend(f"{label}：{_clean_front_text(text)}" for label, text in explicit_advice if _clean_front_text(text))
+        advice.extend(
+            (f"{label}：" if label else "") + _clean_front_text(text)
+            for label, text in explicit_advice
+            if _clean_front_text(text)
+        )
     checks = _FRONT_SPECIFICITY_CHECKS if explicit_advice is None else ()
     for _, label, section_name, field, issue_codes, missing_codes in checks:
         field_unreceived = (

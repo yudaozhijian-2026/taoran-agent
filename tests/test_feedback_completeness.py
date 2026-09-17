@@ -100,12 +100,11 @@ def test_all_advice_sections_survive_without_inventing_specificity():
         assert text.count(item.suggestion)==1
         assert item.specific is None
     assert '不具体：' not in text
-    for label in [
-        '客户类型', '预约与拜访方式', '拜访目的与关键结果',
-        '过程事实与结果', '达成评价', '下一步客户行动',
-    ]:
-        assert label in text
-    assert not any(prefix in text for prefix in ('T｜', 'A｜', 'O/KR｜', 'R｜', 'N｜'))
+    assert not any(label in text for label in (
+        '客户类型：', '预约与拜访方式：', '拜访目的与关键结果：',
+        '过程事实与结果：', '达成评价：', '下一步客户行动：',
+        'T｜', 'A｜', 'O/KR｜', 'R｜', 'N｜',
+    ))
 
 
 def test_multiple_fields_in_one_dimension_render_as_one_advice_point():
@@ -137,10 +136,35 @@ def test_multiple_fields_in_one_dimension_render_as_one_advice_point():
         TaoranAgent().precheck(request), wording, experimental=True,
     )
 
-    assert text.count('下一步客户行动：') == 1
     assert '请把“跟进客户”写成客户需确认的具体事项。请补充下一次联系客户时间安排。' in text
-    assert text.count('过程事实与结果：') == 1
-    assert 'N｜' not in text and 'R｜' not in text
+    assert text.count('\n1、') == 1 and text.count('\n2、') == 1
+    assert '下一步客户行动：' not in text and '过程事实与结果：' not in text
+
+
+def test_model_dimension_titles_are_removed_from_visible_advice():
+    from taoran_agent.models import KnowledgeWordingItem, KnowledgeWordingResult
+
+    request = PrecheckRequest(
+        context=RequestContext(tenant_id='test', request_id='front', user_id='test'),
+        visit=visit(),
+    )
+    wording = KnowledgeWordingResult(
+        status='completed',
+        items=[KnowledgeWordingItem(
+            code='N',
+            suggestion='TAORAN N｜下一步客户行动：请补充下一次联系客户时间安排。',
+        )],
+        visit_analysis='客户提出需先核对预算。',
+        suggestion_status='has_suggestions',
+        suggestion_reason='缺少下一次联系时间。',
+    )
+
+    text = build_front_ai_suggestions_with_model(
+        TaoranAgent().precheck(request), wording, experimental=True,
+    )
+
+    assert '请补充下一次联系客户时间安排。' in text
+    assert 'TAORAN N' not in text and '下一步客户行动：' not in text
 
 
 def test_obviously_vague_goal_and_next_result_become_required_advice():

@@ -8,7 +8,7 @@ from hashlib import sha256
 from pathlib import Path
 from time import monotonic, time
 
-VERSION = "content-cache-v2"
+VERSION = "content-cache-v3-taoran-fields"
 knowledge_basis = ContextVar("interactive_knowledge_basis", default=None)
 
 
@@ -97,9 +97,12 @@ def fingerprint(
             "live_knowledge": live_knowledge_hash,
         }
     )
-    # Preserve raw fields and subtable contents as well as validated facts.
+    # The parsed visit is the authoritative TAORAN analysis input. It already
+    # contains relevant subtables, mapped facts and received-field metadata.
+    # Unrelated Jiandaoyun page fields must not invalidate a completed analysis
+    # when a salesperson returns to edit and submits the same TAORAN content.
     # Do not trim/case-fold prose or sort arrays: different facts must never collide.
-    content = digest({"snapshot": snapshot, "visit": visit})
+    content = digest({"visit": visit})
     return digest({"scope": scope, "basis": basis, "content": content})
 
 

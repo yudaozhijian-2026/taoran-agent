@@ -176,8 +176,8 @@ def test_render_moves_reminder_label_only_and_keeps_formal_branch_identical():
         model_attempts=[{"recommendation_repairs": notes}],
     )
     text = build_front_ai_suggestions_with_model(structured, wording, experimental=True)
-    assert "过程事实与结果（目标核对）：" in text and "过程详细描述不具体" not in text
-    assert "R｜" not in text
+    assert "过程详细描述不具体" not in text
+    assert "过程事实与结果" not in text and "R｜" not in text
     assert structured.model_dump() == before
     formal = build_front_ai_suggestions_with_model(structured, wording, experimental=False)
     assert "目标核对建议：" not in formal and "过程详细描述不具体" in formal

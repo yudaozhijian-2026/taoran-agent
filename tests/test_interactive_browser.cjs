@@ -64,8 +64,9 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   for (let i=0;i<20;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
   assert.equal(h.nodes.finalPanel.hidden,false);
-  assert.equal(h.nodes.finalContent.textContent,'AI改善建议正在生成中');
-  assert.equal(h.nodes.ack.hidden,true);
+  assert.equal(h.nodes.finalContent.textContent,'AI改善意见正在生成中');
+  assert.equal(h.nodes.ack.hidden,false);
+  assert.equal(h.nodes.ack.disabled,true);
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
@@ -100,7 +101,8 @@ test('typewriter keeps AI final opinion hidden until analysis text is fully disp
   assert.equal(h.nodes.content.textContent,'客');
   assert.equal(h.nodes.finalPanel.hidden,true);
   assert.equal(h.nodes.finalContent.textContent,'');
-  assert.equal(h.nodes.ack.hidden,true);
+  assert.equal(h.nodes.ack.hidden,false);
+  assert.equal(h.nodes.ack.disabled,true);
   for (let i=0;i<analysis.length;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,analysis);
   assert.equal(h.nodes.finalPanel.hidden,false);
@@ -135,12 +137,23 @@ test('grounded policy keeps realtime and final separate and allows explicit part
 test('isolated submit mode can return while pending without confirming', () => {
   const h = harness([], undefined, {submitConfirmation:true,taskVersion:'v1',openingId:'opening'});
   assert.equal(h.nodes.ack.textContent,'确认提交');
+  assert.equal(h.nodes.ack.hidden,false);
   assert.equal(h.nodes.ack.disabled,true);
   assert.equal(h.nodes.cancelSubmit.hidden,false);
   h.nodes.cancelSubmit.click();
   assert.equal(h.messages[0][0].pluginMessage.type,'taoran_submit_cancelled');
   assert.equal(h.messages[0][0].pluginMessage.input_hash,'v1');
   assert.equal(h.messages[0][0].pluginMessage.submit_confirmed,undefined);
+});
+test('isolated submit mode keeps confirmation visible but disabled after failure', async () => {
+  const h = harness(
+    [{check_id:'qc_test',input_hash:'v1',status:'failed',failure_category:'model_failed'}],
+    undefined,
+    {submitConfirmation:true,taskVersion:'v1',openingId:'opening'},
+  );
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.ack.hidden,false);
+  assert.equal(h.nodes.ack.disabled,true);
 });
 test('reopened completed preview shows final waiting until matching final arrives', async () => {
   const h = harness([

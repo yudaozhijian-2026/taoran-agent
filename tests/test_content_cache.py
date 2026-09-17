@@ -40,11 +40,15 @@ def test_partitions_and_revisions():
 
 
 def test_related_data_changes():
-    assert key() != key(snapshot={"process": "客户确认试用", "opportunities": [{"stage": "P4"}]})
+    assert key() != key(visit={"customer_id": "C1", "opportunities": [{"current_stage": "P4"}]})
 
 
 def test_text_not_normalized_away():
-    assert key() != key(snapshot={"process": "客户未确认试用", "opportunities": [{"stage": "P3"}]})
+    assert key() != key(visit={"customer_id": "C1", "process_description": "客户未确认试用"})
+
+
+def test_unrelated_page_fields_do_not_invalidate_taoran_content():
+    assert key() == key(snapshot={"unrelated_display_field": "只改了非TAORAN字段"})
 
 
 def test_only_complete_success_reuses():
@@ -142,6 +146,16 @@ def test_api_blank_business_id_and_concurrent_dedup(monkeypatch):
     assert len({r["check_id"] for r in results}) == 1
     assert sum(not r["reused"] for r in results) == 1
     assert len({r["opening_id"] for r in results}) == 12
+    same_taoran = api.create_interactive_quick_check_task(
+        {"form_snapshot": {
+            "process_description": "客户确认A",
+            "unrelated_management_note": "非TAORAN字段已变更",
+        }},
+        "t",
+        "key",
+    )
+    assert same_taoran["reused"] and same_taoran["check_id"] == results[0]["check_id"]
+    assert len(calls) == 1
     changed = api.create_interactive_quick_check_task(
         {"form_snapshot": {"process_description": "客户确认B"}}, "t", "key"
     )

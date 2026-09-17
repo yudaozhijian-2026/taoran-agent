@@ -309,6 +309,7 @@ def configure(messages, schema):
         "必须返回suggestion_status和suggestion_reason：有填写建议为has_suggestions；确实无需补充为no_change_needed并说明原文依据；"
         "信息不足且已有需确认问题为needs_confirmation。items的code只允许输入检查项编号，不得自创编号或后缀。"
         "同一TAORAN维度有多个字段问题时，优先合并为一条item，在一条suggestion中按逻辑说清每个字段的实际问题，"
+        "suggestion只写结合本次数据形成的具体问题和修改方向，不要在正文前添加TAORAN字母、TAORAN名称或中文维度标题。"
         "并在proofs中分别覆盖所有相关字段；不同TAORAN维度不得合并。不因已有需确认事项省略其他必要建议。"
         "analysis_points指出尚待解决的信息缺口时requires_followup为true，并提供对应建议或需确认问题。不能用空数组表示漏检，也不要强行凑建议。"
         "original_goals只定位原定目标，达成与否须核对本次原文，不能由阶段或后续履约条件替代。"

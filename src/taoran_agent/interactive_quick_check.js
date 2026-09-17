@@ -11,8 +11,14 @@ const resume = document.querySelector('#resume');
 const returnNotice = document.querySelector('#returnNotice');
 const submitMode = typeof submitConfirmation !== 'undefined' && submitConfirmation === true;
 const cancelSubmit = document.querySelector('#cancelSubmit');
+function setConfirmReady(ready) {
+  if (!ack) return;
+  ack.hidden = submitMode ? false : !ready;
+  ack.disabled = !ready;
+}
 if (submitMode) {
   ack.textContent = '确认提交';
+  setConfirmReady(false);
   if (returnNotice) returnNotice.textContent = '记录尚未提交。阅读AI意见后可确认提交，不要求全部达标；返回修改或直接关闭均不提交。';
   if (cancelSubmit) {
     cancelSubmit.hidden = false;
@@ -51,7 +57,7 @@ const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成AI改善建议';
-const suggestionWaitingText = 'AI改善建议正在生成中';
+const suggestionWaitingText = 'AI改善意见正在生成中';
 const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
 const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
@@ -158,8 +164,7 @@ function revealTypewriterFinal() {
   markVisible('final_visible_ms');
   markVisible('first_text_visible_ms');
   stage('AI检测完成');
-  ack.hidden = false;
-  ack.disabled = false;
+  setConfirmReady(true);
   settle();
 }
 function completeAnalysisDisplay() {
@@ -234,8 +239,7 @@ function fail(code, message, terminal = false) {
   finalFailed = true;
   pendingSuggestionText = null;
   if ([finalWaitingText, suggestionWaitingText].includes(finalContent.textContent)) { finalContent.textContent = ''; finalPanel.hidden = true; }
-  ack.hidden = true;
-  ack.disabled = true;
+  setConfirmReady(false);
   // Content-mode retries must capture the current form and effective versions.
   if (resume) resume.hidden = terminal || Boolean(openingId);
   const expired = code === 'task_or_token_expired' || code === 'task_expired';
@@ -266,8 +270,7 @@ function finish(text) {
       markVisible('final_visible_ms');
       markVisible('first_text_visible_ms');
       stage('AI检测完成');
-      ack.hidden = false;
-      ack.disabled = false;
+      setConfirmReady(true);
       settle();
     }
     return;
@@ -282,8 +285,7 @@ function finish(text) {
     finalPanel.hidden = true;
   } else finalPanel.hidden = false;
   stage(previewComplete ? 'AI检测完成' : '最终反馈已生成，AI实时分析仍在生成…');
-  ack.hidden = false;
-  ack.disabled = false;
+  setConfirmReady(true);
   settle();
 }
 async function requestJson(url, options = {}) {
@@ -389,7 +391,7 @@ if (resume) resume.addEventListener('click', async () => {
   try {
     const response = await requestJson(base + '/resume' + query, {method:'POST'});
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
-    ack.hidden = true; ack.disabled = true;
+    setConfirmReady(false);
     done = false; finalDone = false; finalFailed = false; previewComplete = false; previewSucceeded = false;
     pendingSuggestionText = null;
     stopAnalysisTyping(); analysisTarget = ''; analysisQueue = '';
@@ -420,7 +422,7 @@ window.addEventListener('pageshow', event => {
   if (!event.persisted || !disposed) return;
   disposed = false;
   returning = false;
-  if (finalDone && !ack.hidden) ack.disabled = false;
+  if (finalDone && !finalFailed) setConfirmReady(true);
   // A restored page that already holds the authoritative Final only needs to
   // re-enable acknowledgement. Polling again can consume the acknowledgement
   // response slot and must not replace or delay the saved Final.

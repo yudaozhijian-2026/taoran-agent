@@ -104,5 +104,5 @@ def test_post_improvement_uses_same_taoran_dimension_frame(tmp_path):
     )
     advice = _build_post_advice([], facts, model_completed=True, knowledge_issues=[],
                                 knowledge_suggestions=[])
-    assert advice == ["下一步客户行动：请补充下一次联系客户时间安排。"]
+    assert advice == ["请补充下一次联系客户时间安排。"]
     r.close()
