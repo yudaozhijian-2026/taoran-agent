@@ -101,10 +101,46 @@ def test_all_advice_sections_survive_without_inventing_specificity():
         assert item.specific is None
     assert '不具体：' not in text
     for label in [
-        'T｜客户类型', 'A｜预约与拜访方式', 'O/KR｜拜访目的与关键结果',
-        'R｜过程事实与结果', 'A｜达成评价', 'N｜下一步客户行动',
+        '客户类型', '预约与拜访方式', '拜访目的与关键结果',
+        '过程事实与结果', '达成评价', '下一步客户行动',
     ]:
         assert label in text
+    assert not any(prefix in text for prefix in ('T｜', 'A｜', 'O/KR｜', 'R｜', 'N｜'))
+
+
+def test_multiple_fields_in_one_dimension_render_as_one_advice_point():
+    from taoran_agent.models import KnowledgeWordingItem, KnowledgeWordingResult
+
+    request = PrecheckRequest(
+        context=RequestContext(tenant_id='test', request_id='front', user_id='test'),
+        visit=visit(),
+    )
+    wording = KnowledgeWordingResult(
+        status='completed',
+        items=[
+            KnowledgeWordingItem(
+                code='N', suggestion='请把“跟进客户”写成客户需确认的具体事项。'
+            ),
+            KnowledgeWordingItem(
+                code='N', suggestion='请补充下一次联系客户时间安排。'
+            ),
+            KnowledgeWordingItem(
+                code='R', suggestion='请补充客户的实际表达或动作。'
+            ),
+        ],
+        visit_analysis='已记录本次拜访概况。',
+        suggestion_status='has_suggestions',
+        suggestion_reason='下一步内容和联系时间需完善。',
+    )
+
+    text = build_front_ai_suggestions_with_model(
+        TaoranAgent().precheck(request), wording, experimental=True,
+    )
+
+    assert text.count('下一步客户行动：') == 1
+    assert '请把“跟进客户”写成客户需确认的具体事项。请补充下一次联系客户时间安排。' in text
+    assert text.count('过程事实与结果：') == 1
+    assert 'N｜' not in text and 'R｜' not in text
 
 
 def test_obviously_vague_goal_and_next_result_become_required_advice():

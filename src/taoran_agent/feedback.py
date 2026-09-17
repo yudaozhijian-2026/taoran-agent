@@ -51,12 +51,12 @@ _SECTIONS = (
 )
 
 _TAORAN_ADVICE_LABELS = {
-    "T": "T｜客户类型",
-    "A1": "A｜预约与拜访方式",
-    "O_KR": "O/KR｜拜访目的与关键结果",
-    "R": "R｜过程事实与结果",
-    "A2": "A｜达成评价",
-    "N": "N｜下一步客户行动",
+    "T": "客户类型",
+    "A1": "预约与拜访方式",
+    "O_KR": "拜访目的与关键结果",
+    "R": "过程事实与结果",
+    "A2": "达成评价",
+    "N": "下一步客户行动",
     "C": "字段完整性",
 }
 
@@ -68,6 +68,43 @@ def _taoran_advice(code: str, text: str) -> str:
         return ""
     label = _TAORAN_ADVICE_LABELS.get(code, "填写核对")
     return f"{label}：{clean}"
+
+
+def _group_taoran_advice(items, labels: dict[str, str]) -> list[tuple[str, str]]:
+    """Group field-level findings into one visible item per TAORAN dimension.
+
+    Field-level items stay separate in the validated model result so required
+    field coverage remains auditable.  Only the salesperson-facing rendering is
+    consolidated here.
+    """
+    grouped: dict[str, list[str]] = {}
+    order: list[str] = []
+    for item in items:
+        if item.code == "C" or not item.suggestion.strip():
+            continue
+        if item.code not in grouped:
+            grouped[item.code] = []
+            order.append(item.code)
+        text = _clean_experimental_front_text(item.suggestion)
+        if text and text not in grouped[item.code]:
+            grouped[item.code].append(text)
+
+    def merge(parts: list[str]) -> str:
+        rendered = []
+        for index, part in enumerate(parts):
+            if part.endswith(("。", "！", "？", "；", "!", "?", ";")):
+                rendered.append(part)
+            elif index < len(parts) - 1:
+                rendered.append(part + "；")
+            else:
+                rendered.append(part + "。")
+        return "".join(rendered)
+
+    return [
+        (labels.get(code, "填写核对"), merge(grouped[code]))
+        for code in order
+        if grouped[code]
+    ]
 
 # 提交后用六项结构归类、去重建议；展示TAORAN维度，但不输出内部字段编号或固定占位项。
 _POST_ADVICE_SECTIONS = (
@@ -332,18 +369,20 @@ def build_front_ai_suggestions_with_model(
     }
     if experimental and any(repair.get("kind") == "goal_reminder_relocated" and repair.get("code") == "R"
                             for attempt in wording.model_attempts for repair in attempt.get("recommendation_repairs", [])):
-        advice_labels["R"] = "R｜过程事实与结果（目标核对）"
+        advice_labels["R"] = "过程事实与结果（目标核对）"
     result = _front_ai_suggestions(
         structured,
         natural_by_section=natural_by_section,
-        explicit_advice=[(advice_labels.get(item.code, "填写核对"), item.suggestion)
-                        for item in wording.items if item.code != "C" and item.suggestion.strip()] if experimental else None,
+        explicit_advice=(
+            _group_taoran_advice(wording.items, advice_labels)
+            if experimental else None
+        ),
         specificity_by_section=specificity_by_section,
         natural_completion=("\n".join(item.suggestion for item in wording.items if item.code == "C")
                             if experimental else natural.get("C").suggestion if natural.get("C") else ""),
         visit_analysis=wording.visit_analysis,
         visit_analysis_sections=[] if experimental else wording.visit_analysis_sections,
-        recommendation_labels={"过程事实与结果": "R｜过程事实与结果（目标核对）"} if experimental and any(
+        recommendation_labels={"过程事实与结果": "过程事实与结果（目标核对）"} if experimental and any(
             repair.get("kind")=="goal_reminder_relocated" and repair.get("code")=="R"
             for attempt in wording.model_attempts for repair in attempt.get("recommendation_repairs", [])
         ) else {},

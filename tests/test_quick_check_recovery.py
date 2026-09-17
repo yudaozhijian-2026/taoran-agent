@@ -222,6 +222,8 @@ def test_first_html_shows_waiting_without_saved_basic_feedback(
     assert "分析完成后，请点击“已读并返回修改”，可将 AI 最终反馈带回拜访记录填写页面。直接关闭弹窗不会同步反馈。" in html
     assert "点击“已读并返回修改”" in html
     assert "AI正在分析" in html
+    assert '.actions{display:flex;align-items:center;gap:16px' in html
+    assert html.index('id="cancelSubmit"') < html.index('id="ack"')
     assert 'id="timings"' not in html and 'id="versionNote"' not in html
     assert response.headers["referrer-policy"] == "no-referrer"
 
