@@ -23,16 +23,17 @@ previous = {
     '1.0.6rc13': '1.0.6rc12',
     '1.0.6rc14': '1.0.6rc13',
     '1.0.6rc15': '1.0.6rc14',
+    '1.0.6rc16': '1.0.6rc15',
 }[release]
 old_date_suffix = (
     '20260917'
-    if previous in {'1.0.6rc11', '1.0.6rc12', '1.0.6rc13', '1.0.6rc14', '1.0.6rc15'}
+    if previous in {'1.0.6rc11', '1.0.6rc12', '1.0.6rc13', '1.0.6rc14', '1.0.6rc15', '1.0.6rc16'}
     else '20260916'
 )
 old = f'taoran-submit-test:{previous}-{old_date_suffix}'
 date_suffix = (
     '20260917'
-    if release in {'1.0.6rc11', '1.0.6rc12', '1.0.6rc13', '1.0.6rc14', '1.0.6rc15'}
+    if release in {'1.0.6rc11', '1.0.6rc12', '1.0.6rc13', '1.0.6rc14', '1.0.6rc15', '1.0.6rc16'}
     else '20260916'
 )
 new = f'taoran-submit-test:{release}-{date_suffix}'

@@ -54,17 +54,18 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   ],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.previewLabel.textContent,'本次拜访分析');
-  assert.equal(h.nodes.finalLabel.textContent,'智能填写建议与需确认补充事项');
-  assert.equal(h.nodes.finalPanel.hidden,false);
-  assert.equal(h.nodes.finalContent.textContent,'最终AI建议正在生成中');
+  assert.equal(h.nodes.finalLabel.textContent,'AI最终意见');
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal(h.nodes.finalContent.textContent,'');
   h.source.emit('preview_delta',{text:'客户已确认设备清单。'});
   assert.equal(h.nodes.content.textContent,'客');
+  h.source.emit('preview_complete',{status:'completed'});
+  assert.equal(h.nodes.finalPanel.hidden,true);
   for (let i=0;i<20;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
   assert.equal(h.nodes.finalPanel.hidden,false);
   assert.equal(h.nodes.finalContent.textContent,'最终AI建议正在生成中');
   assert.equal(h.nodes.ack.hidden,true);
-  h.source.emit('preview_complete',{status:'completed'});
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
@@ -72,6 +73,24 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   assert.match(h.nodes.finalContent.textContent,/需确认补充事项/);
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
+test('typewriter keeps AI final opinion hidden until analysis text is fully displayed', async () => {
+  const policy='front-v46-final-analysis-typewriter-v1-20260917';
+  const analysis='客户已确认设备清单和安装位置。';
+  const feedback=`本次拜访分析：${analysis}\n\n智能填写建议：\n1、补充下次联系时间。`;
+  const h=harness([{check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',
+    preview_feedback_text:analysis,final_feedback_text:feedback}],undefined,
+  {submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,'客');
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal(h.nodes.finalContent.textContent,'');
+  assert.equal(h.nodes.ack.hidden,true);
+  for (let i=0;i<analysis.length;i++) await h.tick(18);
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.match(h.nodes.finalContent.textContent,/智能填写建议/);
+  assert.equal(h.nodes.ack.disabled,false);
 });
 test('grounded policy keeps realtime and final separate and allows explicit partial confirmation', async () => {
   const h = harness([
