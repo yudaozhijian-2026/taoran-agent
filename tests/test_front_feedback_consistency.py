@@ -1,5 +1,7 @@
+import httpx
 import pytest
 
+from taoran_agent.config import Settings
 from taoran_agent.front_v46.confirmation_shape import ConfirmationShapeError, normalize
 from taoran_agent.front_v46.feedback_consistency import (
     candidate_errors,
@@ -8,6 +10,8 @@ from taoran_agent.front_v46.feedback_consistency import (
     preview_errors,
     unsupported_optional_requirement,
 )
+from taoran_agent.front_v46.observed_feedback import generate
+from taoran_agent.front_v46.reviewer import FrontReviewer
 
 
 def context(**changes):
@@ -130,3 +134,48 @@ def test_goal_summary_contradiction_targets_conflicting_analysis_only():
         "location": "analysis_points.1", "code": "goal_summary_contradiction",
     }]
     assert preview_errors("本次目标已达成，但本次目标未达成。", context())
+
+
+def test_confirmed_rule_gap_cannot_be_silently_changed_to_no_change(tmp_path):
+    no_change = payload()
+    fixed = {
+        "items": [item(
+            "请补充下一次联系客户时间安排，并写清后续跟进事项。",
+            code="N", field="next_contact_at", quote="",
+        )],
+        "confirmations": [],
+        "suggestion_status": "has_suggestions",
+        "suggestion_reason": "下一步联系时间尚未填写。",
+    }
+    calls = []
+
+    def provider(request):
+        calls.append(request)
+        value = no_change if len(calls) == 1 else fixed
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": __import__("json").dumps(value)},
+                         "finish_reason": "stop"}],
+        })
+
+    settings = Settings(
+        _env_file=None, database_path=str(tmp_path / "db"), llm_model="test",
+        llm_api_url="https://example.test/chat", llm_api_key="test",
+    )
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(
+            reviewer,
+            [{"code": "N"}],
+            {
+                "visit_analysis_context": context(),
+                "required_advice_codes": ["N"],
+            },
+            30,
+        )
+    finally:
+        reviewer.close()
+    assert len(calls) == 2
+    assert result.status == "completed"
+    assert result.suggestion_status == "has_suggestions"
+    assert result.recovered_after_retry
+    assert [value.code for value in result.items] == ["N"]

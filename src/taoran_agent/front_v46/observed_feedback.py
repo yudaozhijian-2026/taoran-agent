@@ -18,7 +18,7 @@ from .confirmation_shape import (
     valid_remainder,
 )
 
-VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V1-20260917"
+VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V2-20260917"
 
 
 class Shape(BaseModel):
@@ -94,6 +94,8 @@ def configure(messages, schema):
         "missing_field仅表示整个字段没有填写，不是字段内未提及某个可选事项。已有客户表达或动作不因没有姓名职务而不充分。"
         "每点给出kind、text、proofs，并可使用输入契约的contract_id、goal_id、claim_type、fact_ids。"
         "每条items建议必须至少提供一条proofs：字段已有内容时quote必须是该字段连续原文；整个字段为空时quote为空字符串。"
+        "required_advice_codes是规则已确认存在真实缺口的TAORAN维度；可将同一维度的多个缺口合并成一条自然建议，"
+        "但每个code至少返回一条对应items建议，不得输出no_change_needed，也不得用达标描述代替改善建议。"
         "只返回JSON，格式：" + json.dumps(schema, ensure_ascii=False)
     )
 
@@ -147,10 +149,13 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
     schema["$defs"]["Item"]["properties"]["code"]["enum"] = expected_codes
     code_repair = not patch_paths and repair_candidate is not None and any(
         item.get("code") not in expected_codes for item in repair_candidate.get("items", []))
+    required_advice_codes = [str(code) for code in snapshot.get("required_advice_codes", [])
+                             if str(code) in expected_codes]
     data = {"visit_analysis_context": source,
             "field_specificity_checks": [{**{k: v for k, v in i.items() if k not in {"source_fields", "reference_context"}},
                 "source_field_names": list(i.get("source_fields", {})),
                 "reference_field_names": list(i.get("reference_context", {}))} for i in items],
+            "required_advice_codes": required_advice_codes,
             "original_goals": [{"goal_id": g.goal_id, "source_text": g.source_text} for g in goals(source)]}
     messages = [{"role": "system", "content": ""},
                 {"role": "user", "content": json.dumps(data, ensure_ascii=False)}]
@@ -237,7 +242,9 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
         lease.release()
         lease = None
         return complete(reviewer, raw, [str(i["code"]) for i in items],
-                        {"visit_analysis_context": source}, telemetry, envelope.get("usage") or {}, started)
+                        {"visit_analysis_context": source,
+                         "required_advice_codes": required_advice_codes},
+                        telemetry, envelope.get("usage") or {}, started)
     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
         reason = "invalid_contract" if isinstance(exc, (ValidationError, KeyError, IndexError, TypeError)) else _failure_reason(exc)
         if isinstance(exc, ValueError) and not isinstance(exc, ModelCallError):
@@ -340,16 +347,22 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     if covered and not payload.items and payload.suggestion_status == "has_suggestions":
         payload.suggestion_status = "needs_confirmation"
     has_suggestions = any(p.suggestion.strip() for p in payload.items)
+    required_codes = set(snapshot.get("required_advice_codes") or [])
+    covered_required_codes = {p.code for p in payload.items if p.suggestion.strip()}
+    missing_required_codes = required_codes - covered_required_codes
     declared = payload.suggestion_status
     complete_suggestions = not unknown_codes and bool(payload.suggestion_reason.strip()) and (
         (declared == "has_suggestions" and has_suggestions)
         or (declared == "needs_confirmation" and confirmations)
         or (declared == "no_change_needed" and not has_suggestions and not confirmations
             and not any(p.requires_followup or p.kind in {"judgment_gap", "assessment_gap"} for p in payload.analysis_points))
-    )
+    ) and not missing_required_codes
     suggestion_status = declared if complete_suggestions else "incomplete"
     if not complete_suggestions:
         observations.append({"rule": "suggestion_completeness", "scope": "items", "policy": "observe_only"})
+    for code in sorted(missing_required_codes):
+        observations.append({"rule": "required_advice_omitted", "scope": "items",
+                             "code": code, "policy": "observe_only"})
     audit = {"status": "disabled", "policy": "observe_only", "latency_ms": 0}
     audit["findings"] = observations
     reference = save_failure_evidence(reviewer.settings, stage="frontend_semantic_observation",
