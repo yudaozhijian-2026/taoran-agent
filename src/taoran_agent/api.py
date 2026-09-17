@@ -261,8 +261,8 @@ _EXPERIMENTAL_SEMANTIC_V22_EXPANSION_CASES = {
 }
 
 _FRONT_OBVIOUS_VAGUE = {
-    "了解一下", "了解需求", "沟通一下", "客户有兴趣", "客户认可方案",
-    "继续跟进", "保持联系", "维护关系", "推进项目", "待定", "不知道", "无内容",
+    "了解一下", "了解需求", "了解客户情况", "沟通一下", "客户有兴趣", "客户认可方案",
+    "继续跟进", "跟进客户", "保持联系", "维护关系", "推进项目", "待定", "不知道", "无内容",
 }
 _FRONT_ACTORS = ("客户", "院方", "校方", "对方", "负责人", "主任", "经理", "采购", "技术", "决策人")
 _FRONT_ACTIONS = ("确认", "同意", "认可", "提供", "决定", "承诺", "完成", "提出", "要求", "拒绝")
@@ -1456,6 +1456,7 @@ def _front_specificity_items(
             "field": field,
             "required_features": required_features[code],
             "source_fields": source_fields,
+            "local_specificity": _front_local_specificity(field, visit_snapshot),
         }
         if code == "N":
             item["reference_context"] = {
@@ -1768,7 +1769,7 @@ def _enhance_front_suggestions(
     # phrase and consolidate them, but must not silently turn them into a
     # no-change result. One natural suggestion per affected TAORAN dimension
     # is sufficient, so repeated rule messages do not create repeated advice.
-    required_advice = list({
+    required_advice_by_field = {
         (issue.dimension, issue.field_paths[0]): {
             "code": issue.dimension,
             "field": issue.field_paths[0],
@@ -1779,7 +1780,14 @@ def _enhance_front_suggestions(
         and issue.dimension in {"C", "T", "A1", "O_KR", "R", "A2", "N"}
         and issue.field_paths
         and not (experimental and front_rule_issue_superseded(issue.code, visit_analysis_context))
-    }.values())
+    }
+    for check in field_checks:
+        if check.get("local_specificity") == "not_specific":
+            required_advice_by_field[(str(check["code"]), str(check["field"]))] = {
+                "code": str(check["code"]),
+                "field": str(check["field"]),
+            }
+    required_advice = list(required_advice_by_field.values())
     if required_advice:
         taoran_snapshot["required_advice"] = required_advice
     if experimental:

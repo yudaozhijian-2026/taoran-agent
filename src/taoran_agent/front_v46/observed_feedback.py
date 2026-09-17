@@ -20,7 +20,7 @@ from .confirmation_shape import (
     valid_remainder,
 )
 
-VERSION = "TAORAN-FRONT-V46-TAORAN-ADVICE-V6-20260917"
+VERSION = "TAORAN-FRONT-V46-TAORAN-ADVICE-V7-20260917"
 
 
 class _AnalysisPointStream:
@@ -299,7 +299,7 @@ def configure(messages, schema):
         + CONSISTENCY_GUIDANCE
         + "内部字段及真假值仅用于评分和日志；分析、建议、需确认事项只用中文业务说明，不输出字段键、布尔值或内部枚举。保留业务产品名和型号。"
         + "输出由本次拜访分析、AI改善建议、按需出现的需确认事项组成。analysis_points用自然中文逐项目标分析，"
-        "本次拜访分析必须结合TAORAN标准和本次原文，只保留与本条记录有关的2至4个要点；每点尽量一句话，"
+        "本次拜访分析必须结合TAORAN标准和本次原文，只保留与本条记录有关的2至4个要点；每点尽量一句话，全文尽量控制在120字以内，"
         "用销售人员容易理解的日常表达，避免复述整段记录、照抄标准、堆砌术语或长篇说明。"
         "items只返回有必要建议的检查项，无建议返回空数组，不要求凑齐检查项。"
         "AI改善建议按T客户类型、A预约与方式、O_KR目标与关键结果、R过程事实与结果、A2达成评价、N下一步行动归类。"

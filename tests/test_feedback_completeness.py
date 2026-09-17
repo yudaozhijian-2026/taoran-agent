@@ -105,3 +105,27 @@ def test_all_advice_sections_survive_without_inventing_specificity():
         'R｜过程事实与结果', 'A｜达成评价', 'N｜下一步客户行动',
     ]:
         assert label in text
+
+
+def test_obviously_vague_goal_and_next_result_become_required_advice():
+    from taoran_agent import api
+    from taoran_agent.models import PrecheckResponse
+
+    response = PrecheckResponse.model_construct(
+        request_id='r', tenant_id='t', status='needs_revision', quality_score=0,
+        issues=[], suggestions=[], field_completion={
+            'expected_key_result': True, 'process_description': True,
+            'next_action_expected_result': True,
+        }, taoran_sections=[], knowledge_references=[], knowledge_snapshot_hash='k',
+        standard_audit=None, semantic_review=None, feedback_text='', rule_feedback_text='',
+        phase_latency_ms={}, engine_version='test',
+    )
+    checks = api._front_specificity_items(response, {
+        'expected_key_result': '了解客户情况',
+        'process_description': '客户表示设备经常卡纸，并要求下周提供维修和更换方案。',
+        'next_action_expected_result': '跟进客户',
+        'next_action_purpose': '提供方案',
+    })
+    states = {item['code']: item['local_specificity'] for item in checks}
+    assert states['O_KR'] == 'not_specific'
+    assert states['N'] == 'not_specific'
