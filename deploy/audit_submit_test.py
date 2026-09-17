@@ -44,7 +44,7 @@ for url in ['http://127.0.0.1:8031/health', 'https://taoran-test.yudaozhijian.to
     except urllib.error.HTTPError as error:
         audit['http'][url] = {'status': error.code}
 version = audit['http']['http://127.0.0.1:8031/health']['version']
-assert version in {'1.0.6rc2', '1.0.6rc3', '1.0.6rc4', '1.0.6rc5', '1.0.6rc6', '1.0.6rc7', '1.0.6rc8', '1.0.6rc9', '1.0.6rc10', '1.0.6rc11', '1.0.6rc12', '1.0.6rc13', '1.0.6rc14'}
+assert version in {'1.0.6rc2', '1.0.6rc3', '1.0.6rc4', '1.0.6rc5', '1.0.6rc6', '1.0.6rc7', '1.0.6rc8', '1.0.6rc9', '1.0.6rc10', '1.0.6rc11', '1.0.6rc12', '1.0.6rc13', '1.0.6rc14', '1.0.6rc15'}
 audit['rollback'] = str(root / f'backups/before-{version}')
 (root/f'acceptance-audit-{version}.json').write_text(json.dumps(audit, ensure_ascii=False, indent=2))
 print(json.dumps(audit, ensure_ascii=False, indent=2))

@@ -55,11 +55,14 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.previewLabel.textContent,'本次拜访分析');
   assert.equal(h.nodes.finalLabel.textContent,'智能填写建议与需确认补充事项');
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.equal(h.nodes.finalContent.textContent,'最终AI建议正在生成中');
   h.source.emit('preview_delta',{text:'客户已确认设备清单。'});
   assert.equal(h.nodes.content.textContent,'客');
   for (let i=0;i<20;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
-  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.equal(h.nodes.finalContent.textContent,'最终AI建议正在生成中');
   assert.equal(h.nodes.ack.hidden,true);
   h.source.emit('preview_complete',{status:'completed'});
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});

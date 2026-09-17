@@ -51,6 +51,7 @@ const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成最终AI反馈意见';
+const suggestionWaitingText = '最终AI建议正在生成中';
 const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917'].includes(frontPolicy);
 const typewriterMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-final-analysis-typewriter-v1-20260917';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
@@ -105,6 +106,10 @@ if (versionedMode) {
   previewComplete = !(dualMode || finalStreamMode);
   if (previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析';
   if (finalStreamMode && finalLabel) finalLabel.textContent = '智能填写建议与需确认补充事项';
+  if (typewriterMode) {
+    finalContent.textContent = suggestionWaitingText;
+    finalPanel.hidden = false;
+  }
 }
 function applyVersion(task) {
   if (!versionedMode) return true;
@@ -126,7 +131,7 @@ function stage(text) {
 }
 function showFinalWaiting() {
   if (disposed || finalDone || !previewSucceeded) return;
-  finalContent.textContent = finalWaitingText;
+  finalContent.textContent = typewriterMode ? suggestionWaitingText : finalWaitingText;
   finalPanel.hidden = false;
   stage(finalWaitingText);
 }
@@ -182,7 +187,7 @@ function fail(code, message, terminal = false) {
   if (terminal) { done = true; stopTransport(); }
   finalDone = true;
   finalFailed = true;
-  if (finalContent.textContent === finalWaitingText) { finalContent.textContent = ''; finalPanel.hidden = true; }
+  if ([finalWaitingText, suggestionWaitingText].includes(finalContent.textContent)) { finalContent.textContent = ''; finalPanel.hidden = true; }
   ack.hidden = true;
   ack.disabled = true;
   // Content-mode retries must capture the current form and effective versions.
@@ -332,7 +337,9 @@ if (resume) resume.addEventListener('click', async () => {
     ack.hidden = true; ack.disabled = true;
     done = false; finalDone = false; finalFailed = false; previewComplete = false; previewSucceeded = false;
     stopAnalysisTyping(); analysisTarget = ''; analysisQueue = '';
-    content.textContent = versionedMode ? waitingText : ''; finalContent.textContent = ''; finalPanel.hidden = true;
+    content.textContent = versionedMode ? waitingText : '';
+    finalContent.textContent = typewriterMode ? suggestionWaitingText : '';
+    finalPanel.hidden = typewriterMode ? false : true;
     if (versionedMode) { previewComplete = !(dualMode || finalStreamMode); if (previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析'; }
     resume.hidden = true; status.className = 'status';
     stage('正在恢复本次分析，请稍候…');
