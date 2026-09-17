@@ -409,6 +409,7 @@ def test_sqlite_reopen_ack_restart_and_changed_content(tmp_path, monkeypatch):
     reopened = api.create_interactive_quick_check_task(payload, "tenant", "test-key")
     assert reopened["reused"] and reopened["check_id"] == first["check_id"]
     assert reopened["opening_id"] != first["opening_id"]
+    assert reopened["opening_id"] in api._quick_check_tasks[first["check_id"]]["reused_opening_ids"]
     assert len(calls) == 1
     assert (
         api.acknowledge_interactive_quick_check_task(

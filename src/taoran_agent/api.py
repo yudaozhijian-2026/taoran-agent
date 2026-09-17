@@ -2896,10 +2896,17 @@ def create_interactive_quick_check_task(
                     existing["stream_token_expires_at"] = (
                         now + settings.quick_check_stream_token_ttl_seconds
                     )
-                    _quick_check_persist(existing)
+                opening_id = secrets.token_urlsafe(24)
+                # Let this exact popup opening render a completed cached result
+                # atomically.  The opening nonce is already part of the parent
+                # handoff guard and is not a form field or cache identity.
+                reused_openings = existing.setdefault("reused_opening_ids", [])
+                reused_openings.append(opening_id)
+                del reused_openings[:-32]
+                _quick_check_persist(existing)
                 return {
                     **_quick_check_task_response(existing),
-                    "opening_id": secrets.token_urlsafe(24),
+                    "opening_id": opening_id,
                     "stream_token": existing["stream_token"],
                     "reused": True,
                     "expires_in_seconds": max(0, int(existing["stream_token_expires_at"] - now)),
@@ -3177,6 +3184,7 @@ def interactive_quick_check_page(
     request: Request,
     check_id: str = Query(min_length=3, max_length=100),
     stream_token: str = Query(min_length=32, max_length=256),
+    opening_id: str | None = Query(default=None, min_length=1, max_length=100),
 ) -> HTMLResponse:
     """Minimal iframe page; the Jiandaoyun parent owns all form writes."""
     settings = get_settings()
@@ -3224,12 +3232,16 @@ const publicPath=__TAORAN_PUBLIC_PATH__;
 const sessionToken=__TAORAN_SESSION_TOKEN__;
 const taskVersion=__TAORAN_TASK_VERSION__;
 const frontPolicy=__TAORAN_FRONT_POLICY__;
+const reusedOpening=__TAORAN_REUSED_OPENING__;
 __TAORAN_INTERACTIVE_SCRIPT__
 </script></body></html>"""
     replacements={
         '__TAORAN_SUBMIT_CONFIRMATION__':json.dumps(settings.submit_confirmation_enabled),
         '__TAORAN_FRONT_POLICY__':json.dumps(task.get('front_policy')),
         '__TAORAN_TASK_VERSION__':json.dumps(task['input_hash']),
+        '__TAORAN_REUSED_OPENING__':json.dumps(
+            bool(opening_id and opening_id in task.get("reused_opening_ids", ()))
+        ),
         '__TAORAN_PUBLIC_PATH__':public_path_json,
         '__TAORAN_SESSION_TOKEN__':json.dumps(task['session_token']),
         '__TAORAN_INTERACTIVE_SCRIPT__':files('taoran_agent').joinpath('interactive_quick_check.js').read_text(encoding='utf-8'),

@@ -64,7 +64,7 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   for (let i=0;i<20;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
   assert.equal(h.nodes.finalPanel.hidden,false);
-  assert.equal(h.nodes.finalContent.textContent,'AI改善意见正在生成中');
+  assert.equal(h.nodes.finalContent.textContent,'改善建议生成中');
   assert.equal(h.nodes.ack.hidden,false);
   assert.equal(h.nodes.ack.disabled,true);
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
@@ -108,6 +108,22 @@ test('typewriter keeps AI final opinion hidden until analysis text is fully disp
   assert.equal(h.nodes.finalPanel.hidden,false);
   assert.equal(h.nodes.finalContent.textContent,'1、补充下次联系时间。');
   assert.equal(h.nodes.ack.disabled,false);
+});
+test('cached result displays analysis and improvement advice together without typewriter replay', async () => {
+  const policy='front-v46-final-analysis-typewriter-v1-20260917';
+  const analysis='客户已确认设备清单和安装位置。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n1、补充下次联系时间。`;
+  const h=harness([{check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',
+    preview_feedback_text:analysis,final_feedback_text:feedback}],undefined,
+  {submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy,reusedOpening:true});
+
+  await new Promise(resolve=>setImmediate(resolve));
+
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.equal(h.nodes.finalContent.textContent,'1、补充下次联系时间。');
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal([...h.timers.values()].filter(timer=>timer.delay===18).length,0);
 });
 test('validated analysis correction replaces visible draft once without replay', async () => {
   const policy='front-v46-final-analysis-typewriter-v1-20260917';

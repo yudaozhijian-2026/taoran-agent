@@ -11,6 +11,7 @@ const resume = document.querySelector('#resume');
 const returnNotice = document.querySelector('#returnNotice');
 const submitMode = typeof submitConfirmation !== 'undefined' && submitConfirmation === true;
 const cancelSubmit = document.querySelector('#cancelSubmit');
+const cachedOpening = typeof reusedOpening !== 'undefined' && reusedOpening === true;
 function setConfirmReady(ready) {
   if (!ack) return;
   ack.hidden = submitMode ? false : !ready;
@@ -57,7 +58,7 @@ const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成AI改善建议';
-const suggestionWaitingText = 'AI改善意见正在生成中';
+const suggestionWaitingText = '改善建议生成中';
 const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
 const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917'].includes(frontPolicy);
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
@@ -167,6 +168,25 @@ function revealTypewriterFinal() {
   setConfirmReady(true);
   settle();
 }
+function revealCachedFinal(text) {
+  const parts = splitFinalText(text);
+  stopAnalysisTyping();
+  analysisTarget = parts.analysis;
+  analysisQueue = '';
+  content.textContent = parts.analysis || '本次拜访分析已完成。';
+  previewComplete = true;
+  previewSucceeded = true;
+  finalDone = true;
+  pendingSuggestionText = null;
+  finalContent.textContent = parts.tail || '本次没有需要补充的AI改善建议或需确认事项。';
+  finalPanel.hidden = false;
+  markVisible('preview_complete_visible_ms');
+  markVisible('final_visible_ms');
+  markVisible('first_text_visible_ms');
+  stage('AI检测完成');
+  setConfirmReady(true);
+  settle();
+}
 function completeAnalysisDisplay() {
   if (!typewriterMode || analysisQueue || content.textContent !== analysisTarget) return;
   if (pendingSuggestionText !== null) revealTypewriterFinal();
@@ -252,6 +272,10 @@ function fail(code, message, terminal = false) {
 function finish(text) {
   if (finalDone || disposed || pendingSuggestionText !== null) return;
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
+  if (cachedOpening && finalStreamMode) {
+    revealCachedFinal(text);
+    return;
+  }
   finalDone = true;
   if (finalStreamMode) {
     const parts = splitFinalText(text);
@@ -317,6 +341,11 @@ async function poll() {
     markTiming('task_received_ms');
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
+    if (cachedOpening && task.status === 'completed') {
+      finish(task.final_feedback_text);
+      if (resume) resume.hidden = !task.recoverable;
+      return;
+    }
     previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
     // Healthy active previews refresh each second; only failures/finished
     // previews back off, otherwise several generated sentences arrive at once.
@@ -352,9 +381,11 @@ source = new EventSource(base + '/events' + query);
 source.addEventListener('stage', event => decode(event, data => { if (!finalDone) stage(data.text); }));
 source.addEventListener('preview_snapshot', event => decode(event, data => {
   if (data.check_id !== checkId) return fail('task_mismatch', undefined, true);
+  if (cachedOpening) return;
   previewSnapshot(data.text, data.status);
 }));
 source.addEventListener('preview_delta', event => decode(event, data => {
+  if (cachedOpening) return;
   if (!previewComplete && typeof data.text === 'string') {
     if (!appendAnalysisText(data.text)) {
       if (content.textContent === waitingText) content.textContent = '';
@@ -365,6 +396,7 @@ source.addEventListener('preview_delta', event => decode(event, data => {
   }
 }));
 source.addEventListener('preview_complete', event => decode(event, data => {
+  if (cachedOpening) return;
   previewComplete = true;
   previewSucceeded = data.status === 'completed';
   if (previewSucceeded) markVisible('preview_complete_visible_ms');

@@ -35,6 +35,7 @@ FIELDS = (
     "stream_token_until",
     "source",
     "return_failure",
+    "reused_opening_ids",
 )
 
 

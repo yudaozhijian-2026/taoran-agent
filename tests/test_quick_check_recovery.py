@@ -228,6 +228,30 @@ def test_first_html_shows_waiting_without_saved_basic_feedback(
     assert response.headers["referrer-policy"] == "no-referrer"
 
 
+def test_reused_opening_is_injected_only_for_that_popup(recovery, monkeypatch):
+    settings, _store, _request, task = recovery
+    settings.quick_check_interactive_enabled = True
+    task["reused_opening_ids"] = ["cached-opening"]
+    monkeypatch.setattr(api, "_quick_check_task", lambda *args: task)
+    from starlette.requests import Request
+
+    cached = api.interactive_quick_check_page(
+        Request({"type": "http", "headers": []}),
+        task["check_id"],
+        "b" * 40,
+        "cached-opening",
+    ).body.decode()
+    fresh = api.interactive_quick_check_page(
+        Request({"type": "http", "headers": []}),
+        task["check_id"],
+        "b" * 40,
+        "fresh-opening",
+    ).body.decode()
+
+    assert "const reusedOpening=true;" in cached
+    assert "const reusedOpening=false;" in fresh
+
+
 @pytest.mark.parametrize("http_status", [404, 410])
 def test_expired_launch_shows_self_service_page_without_credentials(recovery, monkeypatch, http_status):
     settings, _store, _request, _task = recovery
