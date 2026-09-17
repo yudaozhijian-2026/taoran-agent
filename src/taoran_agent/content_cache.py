@@ -1,5 +1,6 @@
 """Content-based identities; no business record or persistent draft ID required."""
 
+import inspect
 import json
 from contextvars import ContextVar
 from functools import lru_cache
@@ -11,11 +12,20 @@ VERSION = "content-cache-v2"
 knowledge_basis = ContextVar("interactive_knowledge_basis", default=None)
 
 
-def run_with_knowledge_basis(callback, request, settings, basis):
+def run_with_knowledge_basis(callback, request, settings, basis, **kwargs):
     """Bind only the interactive Final worker, never submitted scoring."""
     token = knowledge_basis.set(basis)
     try:
-        return callback(request, settings)
+        parameters = inspect.signature(callback).parameters.values()
+        supports_extra = any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters
+        )
+        accepted = kwargs if supports_extra else {
+            key: value for key, value in kwargs.items()
+            if key in inspect.signature(callback).parameters
+        }
+        return callback(request, settings, **accepted)
     finally:
         knowledge_basis.reset(token)
 

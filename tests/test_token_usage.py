@@ -176,7 +176,6 @@ def test_actual_front_dispatch_labels_preview_and_final_with_same_record_owner(t
     from queue import Queue
 
     from taoran_agent import api
-    from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as preview_module
 
     path = tmp_path / "usage.db"
     settings = SimpleNamespace(database_path=path, frontend_model_timeout_seconds=5)
@@ -185,15 +184,13 @@ def test_actual_front_dispatch_labels_preview_and_final_with_same_record_owner(t
             consume(c)
         return {"status": "completed"}
     monkeypatch.setattr(api, "_quick_check_run_final", provider_call)
-    monkeypatch.setattr(preview_module, "stream_semantic_preview_v22", provider_call)
     monkeypatch.setattr(api, "get_agent", lambda *_: SimpleNamespace(semantic_reviewer=None))
     # Initial schema creation has the same serialization requirements as the production DB.
     from taoran_agent.token_usage import UsageLedger
     UsageLedger(path)._write("SELECT 1")
-    result = api._quick_check_run(request("record-owner", "t"), settings, Queue())
-    result["preview_future"].result(timeout=5)
+    api._quick_check_run(request("record-owner", "t"), settings, Queue())
     assert {(r["stage"], r["employee_id"], r["tenant_id"]) for r in rows(path)} == {
-        ("frontend_preview", "record-owner", "t"), ("frontend_final", "record-owner", "t")}
+        ("frontend_final", "record-owner", "t")}
 
 
 def test_tracking_schema_is_additive_to_existing_business_database(tmp_path):

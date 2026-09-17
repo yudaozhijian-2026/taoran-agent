@@ -45,7 +45,7 @@ def test_multiple_readers_receive_same_snapshot_without_consuming_it():
     assert all(r['preview_feedback_text'] == '同一份建议' for r in results)
 
 
-def test_v46_mode_restores_independent_preview_and_final(monkeypatch):
+def test_v46_mode_streams_authoritative_final_analysis_without_preview_call(monkeypatch):
     from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as preview
     calls=[]
     def generate(settings, visit, emit, **kwargs):
@@ -54,13 +54,17 @@ def test_v46_mode_restores_independent_preview_and_final(monkeypatch):
         emit('V4.6实时意见')
         return {'status':'completed'}
     monkeypatch.setattr(preview,'stream_semantic_preview_v22',generate)
-    monkeypatch.setattr(api,'_quick_check_run_final',lambda *args: calls.append('final') or {'status':'completed','feedback_text':'最终意见'})
+    monkeypatch.setattr(api,'_quick_check_run_final',lambda *args, **kwargs: calls.append('final') or {'status':'completed','feedback_text':'本次拜访分析：最终意见'})
     events=task()['events']
     outcome=api._quick_check_run(SimpleNamespace(visit=None),None,events)
-    assert outcome['preview_future'].result()['status']=='completed'
-    assert sorted(calls)==['final','preview']
-    assert outcome['final']['feedback_text']=='最终意见'
-    assert events.get()['text']=='V4.6实时意见'
+    assert outcome['preview']['status']=='completed'
+    assert calls==['final']
+    assert outcome['final']['feedback_text']=='本次拜访分析：最终意见'
+    queued=[]
+    while not events.empty():
+        queued.append(events.get())
+    assert any(item.get('type') == 'preview_delta' and item.get('text') == '最终意见' for item in queued)
+    assert not any(item.get('text') == 'V4.6实时意见' for item in queued)
 
 
 def test_failed_final_does_not_remove_preview():

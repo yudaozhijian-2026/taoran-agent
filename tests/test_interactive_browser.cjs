@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const code = readFileSync('src/taoran_agent/interactive_quick_check.js', 'utf8');
 function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboard', initial = {}) {
-  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalContent','ack','resume','timings','versionNote','returnNotice','cancelSubmit'].map(id => [id, {
+  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalLabel','finalContent','ack','resume','timings','versionNote','returnNotice','cancelSubmit'].map(id => [id, {
     textContent: id === 'previewLabel' ? 'AI实时分析' : '', hidden: id === 'ack' || id === 'finalPanel', disabled: id === 'ack',
     addEventListener(name, fn) { this[name] = fn; },
   }]));
@@ -45,6 +45,25 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
   };
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
+test('final-analysis stream shows analysis first and reveals validated tail together', async () => {
+  const policy='front-v46-final-analysis-stream-v1-20260917';
+  const feedback='本次拜访分析：\n客户已确认设备清单。\n\n智能填写建议：\n1、补充下次联系时间。\n\n需确认事项：\n1、核对电源准备状态。';
+  const h=harness([{check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',preview_feedback_text:'客户已确认设备清单。',final_feedback_text:feedback}],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  assert.equal(h.nodes.previewLabel.textContent,'本次拜访分析');
+  assert.equal(h.nodes.finalLabel.textContent,'智能填写建议与需确认事项');
+  h.source.emit('preview_delta',{text:'客户已确认设备清单。'});
+  assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal(h.nodes.ack.hidden,true);
+  h.source.emit('preview_complete',{status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
+  assert.match(h.nodes.finalContent.textContent,/智能填写建议/);
+  assert.match(h.nodes.finalContent.textContent,/需确认事项/);
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
 test('grounded policy keeps realtime and final separate and allows explicit partial confirmation', async () => {
   const h = harness([
     {check_id:'qc_test',input_hash:'v1',status:'completed',recoverable:true,content_complete:false,

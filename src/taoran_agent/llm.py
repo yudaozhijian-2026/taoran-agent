@@ -277,6 +277,7 @@ def _read_chat_response(
     timeout: float | None,
     max_bytes: int | None,
     progress=None,
+    content_callback=None,
 ) -> tuple[dict, int, int]:
     """Read JSON or SSE chat output and measure the first generated character."""
     content_type = response.headers.get("content-type", "").lower()
@@ -356,6 +357,8 @@ def _read_chat_response(
                 if progress:
                     progress.update(model_first_byte_ms=first_character_ms, phase="generating")
             content_parts.append(str(content))
+            if content_callback is not None:
+                content_callback(str(content))
             if progress:
                 progress.update(text=str(content))
         if delta.get("refusal"):

@@ -5,6 +5,7 @@ const checkId = params.get('check_id'), token = sessionToken;
 const openingId = params.get('opening_id') || '';
 const status = document.querySelector('#status'), content = document.querySelector('#content');
 const finalPanel = document.querySelector('#finalPanel'), finalContent = document.querySelector('#finalContent');
+const finalLabel = document.querySelector('#finalLabel');
 const ack = document.querySelector('#ack');
 const resume = document.querySelector('#resume');
 const returnNotice = document.querySelector('#returnNotice');
@@ -50,12 +51,14 @@ const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成最终AI反馈意见';
+const finalStreamMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-final-analysis-stream-v1-20260917';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 if (versionedMode) {
   content.textContent = waitingText;
-  previewComplete = !dualMode;
-  if (previewLabel) previewLabel.textContent = 'AI实时分析';
+  previewComplete = !(dualMode || finalStreamMode);
+  if (previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析';
+  if (finalStreamMode && finalLabel) finalLabel.textContent = '智能填写建议与需确认事项';
 }
 function applyVersion(task) {
   if (!versionedMode) return true;
@@ -84,6 +87,17 @@ function showFinalWaiting() {
 function finalDisplayText(text) {
   return text.replace(/^\s*【AI反馈意见】\s*/, '');
 }
+function splitFinalText(text) {
+  const clean = finalDisplayText(text).trim();
+  const marker = '本次拜访分析：';
+  let body = clean.startsWith(marker) ? clean.slice(marker.length).trim() : clean;
+  let cut = body.length;
+  for (const tail of ['智能填写建议：', '需确认事项：']) {
+    const index = body.indexOf(tail);
+    if (index >= 0) cut = Math.min(cut, index);
+  }
+  return {analysis: body.slice(0, cut).trim(), tail: body.slice(cut).trim()};
+}
 function stopTransport() {
   if (source) source.close();
   clearTimeout(pollTimer);
@@ -92,12 +106,12 @@ function settle() {
   if (finalDone && previewComplete) { done = true; stopTransport(); }
 }
 function previewSnapshot(text, state) {
-  if ((versionedMode && !dualMode) || previewComplete) return;
+  if ((versionedMode && !(dualMode || finalStreamMode)) || previewComplete) return;
   if (typeof text === 'string') {
     // An empty snapshot can retract an incomplete attempt before format retry.
     content.textContent = text || (dualMode ? waitingText : '');
     if (text.trim()) markVisible('first_text_visible_ms');
-    if (dualMode && previewLabel) previewLabel.textContent = 'AI实时分析';
+    if ((dualMode || finalStreamMode) && previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析';
   }
   previewSucceeded = state === 'completed';
   if (previewSucceeded) markVisible('preview_complete_visible_ms');
@@ -135,6 +149,21 @@ function finish(text) {
   if (finalDone || disposed) return;
   if (typeof text !== 'string' || !text.trim()) return fail('empty_final_feedback');
   finalDone = true;
+  if (finalStreamMode) {
+    const parts = splitFinalText(text);
+    if (parts.analysis) content.textContent = parts.analysis;
+    previewComplete = true;
+    previewSucceeded = true;
+    finalContent.textContent = parts.tail || '本次没有需要补充的智能填写建议或需确认事项。';
+    finalPanel.hidden = false;
+    markVisible('final_visible_ms');
+    markVisible('first_text_visible_ms');
+    stage('AI检测完成');
+    ack.hidden = false;
+    ack.disabled = false;
+    settle();
+    return;
+  }
   finalContent.textContent = finalDisplayText(text);
   markVisible('final_visible_ms');
   markVisible('first_text_visible_ms');
@@ -180,7 +209,7 @@ async function poll() {
     previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
     // Healthy active previews refresh each second; only failures/finished
     // previews back off, otherwise several generated sentences arrive at once.
-    if (dualMode && !previewComplete) retryDelay = 1000;
+    if ((dualMode || finalStreamMode) && !previewComplete) retryDelay = 1000;
     if (task.status === 'completed') {
       finish(task.final_feedback_text);
       if (resume) resume.hidden = !task.recoverable;
@@ -188,7 +217,7 @@ async function poll() {
     }
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);
-    else stage(dualMode && previewSucceeded ? finalWaitingText : 'AI任务正在运行，请等待分析结果。');
+    else stage((dualMode || finalStreamMode) && previewSucceeded ? finalWaitingText : 'AI任务正在运行，请等待分析结果。');
   } catch (_) { stage('连接暂时中断，正在查询原任务；后台生成不会因此取消。'); }
   finally {
     polling = false;
@@ -218,6 +247,7 @@ source.addEventListener('preview_delta', event => decode(event, data => {
   if (!previewComplete && typeof data.text === 'string') {
     if (content.textContent === waitingText) content.textContent = '';
     content.textContent += data.text;
+    if (finalStreamMode) stage('正在分析本次拜访，并核对填写建议…');
     if (data.text.trim()) markVisible('first_text_visible_ms');
   }
 }));
@@ -227,8 +257,8 @@ source.addEventListener('preview_complete', event => decode(event, data => {
   if (previewSucceeded) markVisible('preview_complete_visible_ms');
   showFinalWaiting();
   if (!finalDone) stage(data.status === 'unavailable'
-    ? '实时预览暂不可用，仍在生成最终检测结果…'
-    : 'AI实时分析已生成，正在完成最终检测…'
+    ? (finalStreamMode ? '本次拜访分析暂未完成，仍在核对最终意见…' : '实时预览暂不可用，仍在生成最终检测结果…')
+    : (finalStreamMode ? '本次拜访分析已生成，正在核对填写建议…' : 'AI实时分析已生成，正在完成最终检测…')
   );
   settle();
 }));
@@ -251,7 +281,7 @@ if (resume) resume.addEventListener('click', async () => {
     ack.hidden = true; ack.disabled = true;
     done = false; finalDone = false; finalFailed = false; previewComplete = false; previewSucceeded = false;
     content.textContent = versionedMode ? waitingText : ''; finalContent.textContent = ''; finalPanel.hidden = true;
-    if (versionedMode) { previewComplete = !dualMode; if (previewLabel) previewLabel.textContent = 'AI实时分析'; }
+    if (versionedMode) { previewComplete = !(dualMode || finalStreamMode); if (previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析'; }
     resume.hidden = true; status.className = 'status';
     stage('正在恢复本次分析，请稍候…');
     retryDelay = 1000; recover();

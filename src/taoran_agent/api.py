@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import hmac
+import inspect
 import json
 import logging
 import re
@@ -1702,6 +1703,8 @@ def _enhance_front_suggestions(
     taoran_context: dict[str, Any],
     *,
     experimental: bool = False,
+    analysis_emit=None,
+    analysis_reset=None,
 ) -> PrecheckResponse:
     if not response.knowledge_snapshot_hash or not response.knowledge_references:
         return response
@@ -1825,11 +1828,21 @@ def _enhance_front_suggestions(
     )
     reused_wording = wording is not None and wording.cache_hit
     if wording is None:
+        wording_kwargs: dict[str, Any] = {
+            "taoran_snapshot": taoran_snapshot,
+            **({"experimental": True} if experimental else {}),
+        }
+        if "analysis_emit" in inspect.signature(
+            reviewer.verbalize_knowledge_issues
+        ).parameters:
+            wording_kwargs.update(
+                analysis_emit=analysis_emit,
+                analysis_reset=analysis_reset,
+            )
         wording = reviewer.verbalize_knowledge_issues(
             field_checks,
             timeout_seconds,
-            taoran_snapshot=taoran_snapshot,
-            **({"experimental": True} if experimental else {}),
+            **wording_kwargs,
         )
         if (
             settings.frontend_model_format_retries > 0
@@ -1842,13 +1855,27 @@ def _enhance_front_suggestions(
             })
         ):
             first = wording
+            retry_kwargs: dict[str, Any] = {
+                "taoran_snapshot": taoran_snapshot,
+                **(
+                    {"experimental": True, "repair_reason": first.failure_reason}
+                    if experimental
+                    else {}
+                ),
+                **(
+                    {"repair_context": first._experimental_repair_context}
+                    if experimental and first._experimental_repair_context
+                    else {}
+                ),
+            }
+            if "analysis_emit" in inspect.signature(
+                reviewer.verbalize_knowledge_issues
+            ).parameters:
+                retry_kwargs.update(analysis_emit=None, analysis_reset=None)
             retry = reviewer.verbalize_knowledge_issues(
                 field_checks,
                 timeout_seconds,
-                taoran_snapshot=taoran_snapshot,
-                **({"experimental": True, "repair_reason": first.failure_reason} if experimental else {}),
-                **({"repair_context": first._experimental_repair_context}
-                   if experimental and first._experimental_repair_context else {}),
+                **retry_kwargs,
             )
             wording = retry.model_copy(
                 update={
@@ -2040,6 +2067,8 @@ def _execute_knowledge_button_feedback(
     settings: Settings,
     *,
     experimental: bool = False,
+    analysis_emit=None,
+    analysis_reset=None,
 ) -> PrecheckResponse:
     """执行可独立返回的实时知识库分支和受控AI表达。"""
     started = monotonic()
@@ -2108,6 +2137,8 @@ def _execute_knowledge_button_feedback(
                     knowledge_wording_budget,
                     _knowledge_model_context(live_request, live_snapshot, experimental=experimental),
                     experimental=experimental,
+                    analysis_emit=analysis_emit,
+                    analysis_reset=analysis_reset,
                 )
         else:
             if isinstance(reviewer, ChatModelReviewer):
@@ -2159,9 +2190,17 @@ def _execute_unified_button_feedback(
     settings: Settings,
     *,
     experimental: bool = False,
+    analysis_emit=None,
+    analysis_reset=None,
 ) -> PrecheckResponse:
     """唯一反馈链：确定性规则为底座，实时知识与轻量AI只做增强。"""
-    enhanced = _execute_knowledge_button_feedback(canonical_request, settings, experimental=experimental)
+    enhanced = _execute_knowledge_button_feedback(
+        canonical_request,
+        settings,
+        experimental=experimental,
+        analysis_emit=analysis_emit,
+        analysis_reset=analysis_reset,
+    )
     if enhanced.knowledge_snapshot_hash:
         return enhanced.model_copy(
             update={
@@ -2484,12 +2523,26 @@ def _quick_check_cleanup(now: float) -> None:
             _quick_check_idempotency.pop(key, None)
 
 
-def _quick_check_run_final(canonical_request, settings):
+def _quick_check_run_final(canonical_request, settings, *, analysis_emit=None, analysis_reset=None):
     """Keep bounded transient retries around the restored V4.6 policy."""
     from time import sleep
     attempts = []
     for index in range(3):
-        result = _quick_check_run_final_once(canonical_request, settings)
+        if index and analysis_reset is not None:
+            analysis_reset()
+        final_once_kwargs = {}
+        if "analysis_emit" in inspect.signature(
+            _quick_check_run_final_once
+        ).parameters:
+            final_once_kwargs.update(
+                analysis_emit=analysis_emit,
+                analysis_reset=analysis_reset,
+            )
+        result = _quick_check_run_final_once(
+            canonical_request,
+            settings,
+            **final_once_kwargs,
+        )
         attempts.append(result.get("phase_timings", {}))
         reason = (result.get("diagnostics") or {}).get("failure_reason")
         if result.get("status") == "completed" or reason not in {
@@ -2509,6 +2562,9 @@ def _quick_check_run_final(canonical_request, settings):
 def _quick_check_run_final_once(
     canonical_request: PrecheckRequest,
     settings: Settings,
+    *,
+    analysis_emit=None,
+    analysis_reset=None,
 ) -> dict[str, Any]:
     """Run candidate-only Final presentation on validated model wording."""
     from .front_v46.experimental_final_diagnostics import audit as experimental_final_audit
@@ -2517,7 +2573,13 @@ def _quick_check_run_final_once(
     started = monotonic()
     request_id = canonical_request.context.request_id
     try:
-        result = _execute_unified_button_feedback(canonical_request, settings, experimental=True)
+        result = _execute_unified_button_feedback(
+            canonical_request,
+            settings,
+            experimental=True,
+            analysis_emit=analysis_emit,
+            analysis_reset=analysis_reset,
+        )
         final = UnifiedButtonPrecheckResponse.from_precheck(
             result,
             latency_ms=int((monotonic() - started) * 1000),
@@ -2589,19 +2651,68 @@ def _quick_check_run(
     knowledge_basis: dict | None = None,
 ) -> dict[str, Any]:
     from .content_cache import run_with_knowledge_basis
-    final_future = _quick_check_final_executor.submit(
-        run_with_knowledge_basis, _quick_check_run_final, canonical_request, settings, knowledge_basis,
-    )
-    preview_future = _quick_check_preview_executor.submit(
-        _quick_check_run_preview, canonical_request.visit, settings, events,
-    )
+    started = monotonic()
+    stream_state = {"text": "", "first_ms": None}
+
+    def emit_analysis(text: str) -> None:
+        if not isinstance(text, str) or not text.strip():
+            return
+        if stream_state["first_ms"] is None:
+            stream_state["first_ms"] = int((monotonic() - started) * 1000)
+        stream_state["text"] += text
+        events.put({"type": "preview_delta", "text": text})
+
+    def reset_analysis() -> None:
+        stream_state.update(text="", first_ms=None)
+        events.put({"type": "preview_reset"})
+
     try:
-        final = final_future.result()
+        final = run_with_knowledge_basis(
+            _quick_check_run_final,
+            canonical_request,
+            settings,
+            knowledge_basis,
+            analysis_emit=emit_analysis,
+            analysis_reset=reset_analysis,
+        )
     except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
         final = {"status": "failed", "failure_category": "final_service_error"}
-    # Final remains available immediately; Preview keeps running independently.
-    preview = preview_future.result() if preview_future.done() else {"status": "processing"}
-    return {"preview": preview, "final": final, "preview_future": preview_future}
+    elapsed = int((monotonic() - started) * 1000)
+    if final.get("status") == "completed":
+        final_analysis = _quick_check_final_analysis(final.get("feedback_text", ""))
+        if final_analysis and final_analysis.strip() != stream_state["text"].strip():
+            reset_analysis()
+            emit_analysis(final_analysis)
+        preview = {
+            "status": "completed",
+            "feedback_hash": hashlib.sha256(final_analysis.encode()).hexdigest(),
+            "first_real_ai_text_ms": stream_state["first_ms"],
+            "semantic_complete_ms": elapsed,
+            "attempt_count": final.get("model_attempt_count", 1),
+            "recovered_after_retry": final.get("recovered_after_retry", False),
+        }
+    else:
+        preview = {
+            "status": "failed",
+            "failure_category": final.get("failure_category", "final_service_error"),
+            "first_real_ai_text_ms": stream_state["first_ms"],
+            "semantic_complete_ms": elapsed,
+        }
+    events.put({"type": "preview_complete", **preview})
+    return {"preview": preview, "final": final}
+
+
+def _quick_check_final_analysis(feedback_text: str) -> str:
+    """Return only the authoritative visit-analysis paragraph for streaming."""
+    text = str(feedback_text or "").replace("【AI反馈意见】", "", 1).strip()
+    marker = "本次拜访分析："
+    if marker not in text:
+        return ""
+    analysis = text.split(marker, 1)[1]
+    for tail in ("智能填写建议：", "需确认事项："):
+        if tail in analysis:
+            analysis = analysis.split(tail, 1)[0]
+    return analysis.strip()
 
 
 def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
@@ -3095,8 +3206,8 @@ def interactive_quick_check_page(
 <p id="returnNotice" role="note" style="background:#fff7e6;padding:12px;border-radius:7px;line-height:1.6">分析完成后，请点击“已读并返回修改”，可将 AI 最终反馈带回拜访记录填写页面。直接关闭弹窗不会同步反馈。</p>
 <div id="status" class="status">正在连接检测任务…</div>
 <button id="resume" hidden type="button">恢复本次分析</button>
-<div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel">AI正在分析，请稍候。</div>
-<section id="finalPanel" hidden><div class="label">AI最终反馈意见</div><div id="finalContent" class="panel" aria-live="polite"></div></section>
+<div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel" aria-live="polite">AI正在分析，请稍候。</div>
+<section id="finalPanel" hidden><div id="finalLabel" class="label">AI最终反馈意见</div><div id="finalContent" class="panel" aria-live="polite"></div></section>
 <button id="ack" hidden disabled>已读并返回修改</button><button id="cancelSubmit" hidden>返回修改</button></main><script>
 const submitConfirmation=__TAORAN_SUBMIT_CONFIRMATION__;
 const publicPath=__TAORAN_PUBLIC_PATH__;

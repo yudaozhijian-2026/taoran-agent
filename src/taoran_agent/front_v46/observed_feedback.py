@@ -1,5 +1,7 @@
 """Retain V4.6 presentation while separating shape validation from interpretation."""
 
+import json
+import re
 from time import monotonic
 from typing import Literal
 
@@ -19,6 +21,43 @@ from .confirmation_shape import (
 )
 
 VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V5-20260917"
+
+
+class _AnalysisPointStream:
+    """Extract completed analysis point strings from the streamed JSON safely."""
+
+    def __init__(self, emit=None):
+        self.emit = emit
+        self.buffer = ""
+        self.cursor = 0
+        self.started = False
+
+    def feed(self, chunk: str) -> None:
+        if self.emit is None or not chunk:
+            return
+        self.buffer += chunk
+        if not self.started:
+            match = re.search(r'"analysis_points"\s*:\s*\[', self.buffer)
+            if match is None:
+                return
+            self.started = True
+            self.cursor = match.end()
+        while True:
+            items_at = re.search(r'"items"\s*:', self.buffer[self.cursor:])
+            text_match = re.search(r'"text"\s*:\s*', self.buffer[self.cursor:])
+            if text_match is None:
+                return
+            absolute = self.cursor + text_match.end()
+            if items_at is not None and self.cursor + items_at.start() < absolute:
+                return
+            try:
+                value, end = json.JSONDecoder().raw_decode(self.buffer[absolute:])
+            except json.JSONDecodeError:
+                return
+            self.cursor = absolute + end
+            if isinstance(value, str) and value.strip():
+                text = value.strip()
+                self.emit(text if text.endswith(("。", "！", "？", "；")) else text + "。")
 
 
 class Shape(BaseModel):
@@ -102,19 +141,29 @@ def configure(messages, schema):
     )
 
 
-def generate(reviewer, items, snapshot, timeout_seconds):
+def generate(reviewer, items, snapshot, timeout_seconds, *, analysis_emit=None, analysis_reset=None):
     """One bounded shape repair; semantic observations never request a retry."""
     started = monotonic()
     holder = {}
-    first = _generate_once(reviewer, items, snapshot, timeout_seconds, holder=holder)
+    first = _generate_once(
+        reviewer,
+        items,
+        snapshot,
+        timeout_seconds,
+        holder=holder,
+        analysis_emit=analysis_emit,
+    )
     incomplete = first.status == "completed" and first.suggestion_status == "incomplete"
     if not incomplete and first.failure_reason not in {"invalid_contract", "invalid_json", "output_truncated"}:
         return first
     paths = [] if incomplete else repair_paths(holder.get("candidate"), first.validation_errors)
+    if not incomplete and analysis_reset is not None:
+        analysis_reset()
     second = _generate_once(reviewer, items, snapshot, timeout_seconds,
                             repair_errors=first.validation_errors or [{"code": "suggestion_completeness" if incomplete else first.failure_reason}],
                             repair_candidate=holder.get("candidate") if incomplete or paths else None,
-                            patch_paths=paths)
+                            patch_paths=paths,
+                            analysis_emit=None if incomplete or paths else analysis_emit)
     if paths and (second.status != "completed" or second.suggestion_status == "incomplete"):
         try:
             partial = complete(reviewer, valid_remainder(holder["candidate"], paths),
@@ -133,8 +182,8 @@ def generate(reviewer, items, snapshot, timeout_seconds):
 
 
 def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=None,
-                   repair_candidate=None, holder=None, patch_paths=None):
-    import json
+                   repair_candidate=None, holder=None, patch_paths=None,
+                   analysis_emit=None):
 
     import httpx
     from pydantic import ValidationError
@@ -208,13 +257,15 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             body["thinking"] = {"type": "disabled"}
         request_started = monotonic()
         probe = TransportProbe(reviewer.settings, source)
+        analysis_stream = _AnalysisPointStream(analysis_emit)
         with reviewer._client.stream("POST", reviewer.settings.llm_api_url, json=body,
                 headers={"Authorization": f"Bearer {reviewer.settings.llm_api_key.get_secret_value()}"},
                 timeout=timeout, extensions={"trace": probe.trace}) as response:
             probe.headers(response)
             response.raise_for_status()
             envelope, first, last = _read_chat_response(response, started=request_started,
-                                                       timeout=timeout, max_bytes=None)
+                                                       timeout=timeout, max_bytes=None,
+                                                       content_callback=analysis_stream.feed)
             probe.completed(envelope, first, last)
         telemetry.update(model_first_byte_ms=first, model_complete_ms=last)
         choice = envelope["choices"][0]
