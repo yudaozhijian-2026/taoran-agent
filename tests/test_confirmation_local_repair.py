@@ -15,6 +15,18 @@ def test_empty_field_confirmation_needs_no_model_retry(tmp_path):
     assert '客户反馈未填写' in text and '原文「」' not in text
 
 
+def test_ordinary_extra_format_key_is_removed_without_model_retry(tmp_path):
+    raw = candidate(['R'])
+    raw['analysis_points'][0]['model_comment'] = '不属于输出契约的普通格式字段'
+    original = deepcopy(raw)
+    result, text, calls = execute(tmp_path, raw)
+    assert raw == original and len(calls) == 1
+    assert result.status == 'completed' and result.suggestion_status != 'incomplete'
+    assert not result.recovered_after_retry
+    assert result.model_attempts[0]['local_format_repair'] is True
+    assert result.visit_analysis in text
+
+
 def test_nonempty_field_cannot_be_claimed_missing(tmp_path):
     raw = candidate(['R'])
     raw['confirmations'][0].update(kind='missing_field', quote='')
@@ -42,15 +54,15 @@ def test_local_repair_failure_keeps_valid_content_and_is_incomplete(tmp_path, re
     assert '完整性核对未完成' in text and '不在原文中' not in text
 
 
-def test_invalid_suggestion_repairs_only_bad_item(tmp_path):
+def test_invalid_empty_suggestion_is_normalized_without_model_retry(tmp_path):
     raw = candidate(['R', 'R'])
     raw['items'][1]['suggestion'] = None
-    fixed = dict(raw['items'][1], suggestion='请补充调价结果。')
-    result, text, calls = execute(tmp_path, raw, {'patches': [
-        {'path': 'items.1', 'value': fixed}]})
-    assert len(calls) == 2 and result.recovered_after_retry
+    result, text, calls = execute(tmp_path, raw)
+    assert len(calls) == 1 and not result.recovered_after_retry
+    assert result.model_attempts[0]['local_format_repair'] is True
     assert result.items[0].suggestion == raw['items'][0]['suggestion']
-    assert '请补充调价结果。' in text
+    assert all(item.suggestion for item in result.items)
+    assert raw['items'][0]['suggestion'] in text
 
 
 def test_unknown_field_is_not_rendered_as_missing(tmp_path):

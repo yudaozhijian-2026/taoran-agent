@@ -69,10 +69,25 @@ test('final-analysis stream shows analysis first and reveals validated tail toge
   h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
   await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
-  assert.match(h.nodes.finalContent.textContent,/智能填写建议/);
-  assert.match(h.nodes.finalContent.textContent,/需确认补充事项/);
+  assert.doesNotMatch(h.nodes.finalContent.textContent,/智能填写建议/);
+  assert.match(h.nodes.finalContent.textContent,/需确认：/);
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
+test('acknowledged feedback uses the same AI final opinion heading as the panel', async () => {
+  const policy='front-v46-final-analysis-typewriter-v1-20260917';
+  const feedback='本次拜访分析：客户已确认设备清单。\n\n智能填写建议：\n1、补充下次联系时间。\n\n需确认补充事项：\n1、核对电源准备状态。';
+  const h=harness([
+    {check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',
+      preview_feedback_text:'客户已确认设备清单。',final_feedback_text:feedback},
+    {check_id:'qc_test',final_feedback_text:feedback},
+  ],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  for (let i=0;i<20;i++) await h.tick(18);
+  await h.nodes.ack.click();
+  const returned=h.messages[0][0].pluginMessage.feedback_text;
+  assert.match(returned,/AI最终意见：/);
+  assert.doesNotMatch(returned,/智能填写建议：|需确认补充事项：/);
+  assert.match(returned,/需确认：/);
 });
 test('typewriter keeps AI final opinion hidden until analysis text is fully displayed', async () => {
   const policy='front-v46-final-analysis-typewriter-v1-20260917';
@@ -89,8 +104,18 @@ test('typewriter keeps AI final opinion hidden until analysis text is fully disp
   for (let i=0;i<analysis.length;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,analysis);
   assert.equal(h.nodes.finalPanel.hidden,false);
-  assert.match(h.nodes.finalContent.textContent,/智能填写建议/);
+  assert.equal(h.nodes.finalContent.textContent,'1、补充下次联系时间。');
   assert.equal(h.nodes.ack.disabled,false);
+});
+test('validated analysis correction replaces visible draft once without replay', async () => {
+  const policy='front-v46-final-analysis-typewriter-v1-20260917';
+  const h=harness([],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'第一版分析正文。',status:'processing'});
+  assert.equal(h.nodes.content.textContent,'第');
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'校验后的最终分析正文。',status:'processing'});
+  assert.equal(h.nodes.content.textContent,'校验后的最终分析正文。');
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal([...h.timers.values()].filter(timer=>timer.delay===18).length,0);
 });
 test('grounded policy keeps realtime and final separate and allows explicit partial confirmation', async () => {
   const h = harness([
@@ -528,7 +553,8 @@ test('semantic observation shows confirmation and remains a completed returnable
     preview_feedback_text:'原文未说明确认方，需确认实际确认方。',preview_status:'completed'}],undefined,
     {...restored,frontPolicy:'front-v46-observe-20260908'});
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.nodes.finalContent.textContent,text.replace('【AI反馈意见】\n',''));
+  assert.equal(h.nodes.finalContent.textContent,
+    '本次拜访分析：当前不足以判断客户认可。\nAI最终意见：\n需确认：请核对实际确认方。');
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.finalPanel.hidden,false);
   assert.doesNotMatch(h.nodes.status.textContent,/失败|未完成/);

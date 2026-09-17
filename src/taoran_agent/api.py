@@ -2528,8 +2528,6 @@ def _quick_check_run_final(canonical_request, settings, *, analysis_emit=None, a
     from time import sleep
     attempts = []
     for index in range(3):
-        if index and analysis_reset is not None:
-            analysis_reset()
         final_once_kwargs = {}
         if "analysis_emit" in inspect.signature(
             _quick_check_run_final_once
@@ -2681,8 +2679,10 @@ def _quick_check_run(
     if final.get("status") == "completed":
         final_analysis = _quick_check_final_analysis(final.get("feedback_text", ""))
         if final_analysis and final_analysis.strip() != stream_state["text"].strip():
-            reset_analysis()
-            emit_analysis(final_analysis)
+            # The streamed draft may differ after local normalization or a
+            # bounded retry. Replace it atomically; never blank and replay it.
+            stream_state.update(text=final_analysis, first_ms=stream_state["first_ms"])
+            events.put({"type": "preview_replace", "text": final_analysis})
         preview = {
             "status": "completed",
             "feedback_hash": hashlib.sha256(final_analysis.encode()).hexdigest(),
@@ -2733,6 +2733,8 @@ def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
                 break
             if event["type"] == "preview_delta" and state["status"] == "processing":
                 state["text"] += event["text"]
+            elif event["type"] == "preview_replace":
+                state.update(text=event["text"], status="processing")
             elif event["type"] == "preview_reset":
                 state.update(text="", status="processing")
             elif event["type"] == "preview_complete":

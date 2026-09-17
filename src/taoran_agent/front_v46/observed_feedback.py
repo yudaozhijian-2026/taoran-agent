@@ -172,6 +172,121 @@ class Payload(Shape):
     suggestion_reason: str = ""
 
 
+_FORMAT_ONLY_ERROR_CODES = {
+    "bool_type",
+    "extra_forbidden",
+    "list_type",
+    "literal_error",
+    "missing",
+    "string_type",
+    "too_long",
+}
+
+
+def _format_only_errors(errors: list[dict]) -> bool:
+    """Return true only for container/type defects that need no new judgment."""
+    return bool(errors) and all(error.get("code") in _FORMAT_ONLY_ERROR_CODES for error in errors)
+
+
+def _local_format_repair(raw, context):
+    """Normalize ordinary model shape drift without another model call.
+
+    This intentionally does not repair grounding, rule coverage, contradictions,
+    or missing business content.  Those remain subject to the normal validation
+    and bounded semantic repair path.
+    """
+    if not isinstance(raw, dict):
+        return None
+    value = {key: raw.get(key) for key in (
+        "analysis_points", "items", "confirmations", "suggestion_status", "suggestion_reason"
+    )}
+
+    def as_list(item):
+        if item is None:
+            return []
+        if isinstance(item, list):
+            return item
+        if isinstance(item, dict):
+            return [item]
+        return []
+
+    points = []
+    for item in as_list(value.get("analysis_points"))[:20]:
+        if not isinstance(item, dict) or not isinstance(item.get("text"), str) or not item["text"].strip():
+            continue
+        point = {key: item.get(key) for key in (
+            "kind", "text", "requires_followup", "proofs", "contract_id", "goal_id",
+            "claim_type", "fact_ids"
+        ) if key in item}
+        if point.get("kind") not in {"visit_context", "objective_result", "customer_fact",
+                                     "judgment_gap", "next_step", "assessment_gap"}:
+            point["kind"] = "visit_context"
+        point["requires_followup"] = bool(point.get("requires_followup", False))
+        point["proofs"] = [
+            {"field": proof.get("field"), "quote": proof.get("quote", "")}
+            for proof in as_list(point.get("proofs"))
+            if isinstance(proof, dict) and isinstance(proof.get("field"), str)
+            and isinstance(proof.get("quote", ""), str)
+        ]
+        point["fact_ids"] = [str(value) for value in as_list(point.get("fact_ids"))[:24]
+                             if isinstance(value, (str, int))]
+        for optional in ("contract_id", "goal_id", "claim_type"):
+            if point.get(optional) is not None and not isinstance(point[optional], str):
+                point[optional] = str(point[optional])
+        points.append(point)
+    if not points:
+        return None
+
+    items = []
+    for item in as_list(value.get("items"))[:16]:
+        if not isinstance(item, dict) or not isinstance(item.get("code"), str):
+            continue
+        suggestion = item.get("suggestion", "")
+        if suggestion is None:
+            suggestion = ""
+        if not isinstance(suggestion, str):
+            suggestion = str(suggestion)
+        if not suggestion.strip():
+            continue
+        proofs = []
+        for proof in as_list(item.get("proofs")):
+            if not isinstance(proof, dict) or not isinstance(proof.get("field"), str):
+                continue
+            quote = proof.get("quote", "")
+            if not isinstance(quote, str):
+                quote = str(quote)
+            proofs.append({"field": proof["field"], "quote": quote,
+                           "features": [str(feature) for feature in as_list(proof.get("features"))[:16]]})
+        items.append({"code": item["code"], "suggestion": suggestion,
+                      "present": [str(entry) for entry in as_list(item.get("present"))[:16]],
+                      "proofs": proofs})
+
+    confirmations = []
+    for item in as_list(value.get("confirmations"))[:4]:
+        if not isinstance(item, dict) or not all(
+            isinstance(item.get(key), str) and item.get(key).strip()
+            for key in ("field", "question", "impact")
+        ):
+            continue
+        field = item["field"]
+        source = context.get(field)
+        quote = item.get("quote", "") if isinstance(item.get("quote", ""), str) else ""
+        kind = "missing_field" if source is None or source == [] or (
+            isinstance(source, str) and not source.strip()
+        ) else item.get("kind", "source_ambiguity")
+        confirmations.append({"kind": kind, "field": field, "quote": quote,
+                              "question": item["question"], "impact": item["impact"]})
+
+    status = value.get("suggestion_status")
+    if status not in {"has_suggestions", "no_change_needed", "needs_confirmation"}:
+        status = "has_suggestions" if items else ("needs_confirmation" if confirmations else "no_change_needed")
+    reason = value.get("suggestion_reason", "")
+    if not isinstance(reason, str):
+        reason = str(reason or "")
+    return {"analysis_points": points, "items": items, "confirmations": confirmations,
+            "suggestion_status": status, "suggestion_reason": reason}
+
+
 def configure(messages, schema):
     """One final interpretation policy; V4.6 output containers remain unchanged."""
     import json
@@ -217,17 +332,53 @@ def generate(reviewer, items, snapshot, timeout_seconds, *, analysis_emit=None, 
         holder=holder,
         analysis_emit=analysis_emit,
     )
+    if (first.failure_reason == "invalid_contract" and holder.get("candidate") is not None
+            and _format_only_errors(first.validation_errors)):
+        repaired = _local_format_repair(
+            holder["candidate"], snapshot.get("visit_analysis_context") or {}
+        )
+        if repaired is not None:
+            try:
+                local = complete(
+                    reviewer,
+                    repaired,
+                    [str(item["code"]) for item in items],
+                    snapshot,
+                    {
+                        "model_queue_ms": first.model_queue_ms,
+                        "model_first_byte_ms": first.model_first_byte_ms,
+                        "model_complete_ms": first.model_complete_ms,
+                    },
+                    {},
+                    started,
+                )
+                if local.suggestion_status != "incomplete":
+                    attempts = local.model_attempts or [{}]
+                    attempts[0] = {
+                        **attempts[0],
+                        "local_format_repair": True,
+                        "original_validation_errors": first.validation_errors,
+                    }
+                    return local.model_copy(update={
+                        "attempt_count": 1,
+                        "model_attempts": attempts,
+                        "recovered_after_retry": False,
+                    })
+            except (ValueError, TypeError, KeyError):
+                # Grounding and semantic failures are deliberately not hidden by
+                # the local shape repair and continue to the bounded model repair.
+                pass
     incomplete = first.status == "completed" and first.suggestion_status == "incomplete"
     if not incomplete and first.failure_reason not in {"invalid_contract", "invalid_json", "output_truncated"}:
         return first
     paths = [] if incomplete else repair_paths(holder.get("candidate"), first.validation_errors)
-    if not incomplete and analysis_reset is not None:
-        analysis_reset()
     second = _generate_once(reviewer, items, snapshot, timeout_seconds,
                             repair_errors=first.validation_errors or [{"code": "suggestion_completeness" if incomplete else first.failure_reason}],
                             repair_candidate=holder.get("candidate") if incomplete or paths else None,
                             patch_paths=paths,
-                            analysis_emit=None if incomplete or paths else analysis_emit)
+                            # Never expose a retry as a second visible paragraph.
+                            # The accepted final analysis replaces the draft once.
+                            analysis_emit=None)
     if paths and (second.status != "completed" or second.suggestion_status == "incomplete"):
         try:
             partial = complete(reviewer, valid_remainder(holder["candidate"], paths),

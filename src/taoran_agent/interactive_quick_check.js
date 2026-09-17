@@ -52,8 +52,8 @@ const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重�
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成最终AI反馈意见';
 const suggestionWaitingText = '最终AI建议正在生成中';
-const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917'].includes(frontPolicy);
-const typewriterMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-final-analysis-typewriter-v1-20260917';
+const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917'].includes(frontPolicy);
+const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917'].includes(frontPolicy);
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
@@ -81,6 +81,13 @@ function syncAnalysisTarget(text) {
   if (!typewriterMode || typeof text !== 'string') return false;
   if (text === analysisTarget) return true;
   if (text.startsWith(analysisTarget)) analysisQueue += text.slice(analysisTarget.length);
+  else if (analysisTarget && text) {
+    // A validated retry/final normalization is an atomic correction. Keeping
+    // the old paragraph visible until now avoids blanking and replaying it.
+    flushAnalysisText(text);
+    completeAnalysisDisplay();
+    return true;
+  }
   else {
     stopAnalysisTyping();
     content.textContent = '';
@@ -161,18 +168,31 @@ function completeAnalysisDisplay() {
   else if (previewComplete && previewSucceeded) showFinalWaiting();
 }
 function finalDisplayText(text) {
-  return text.replace(/^\s*【AI反馈意见】\s*/, '');
+  return normalizeFinalFeedbackHeadings(text.replace(/^\s*【AI反馈意见】\s*/, ''));
+}
+function normalizeFinalFeedbackHeadings(text) {
+  let clean = String(text || '');
+  const suggestionMarker = /智能填写建议：/;
+  const confirmationMarker = /(?:需确认补充事项|需确认事项)：/;
+  if (suggestionMarker.test(clean)) {
+    clean = clean.replace(suggestionMarker, 'AI最终意见：');
+    clean = clean.replace(confirmationMarker, '需确认：');
+  } else if (confirmationMarker.test(clean)) {
+    clean = clean.replace(confirmationMarker, 'AI最终意见：\n需确认：');
+  }
+  return clean;
 }
 function splitFinalText(text) {
   const clean = finalDisplayText(text).trim();
   const marker = '本次拜访分析：';
   let body = clean.startsWith(marker) ? clean.slice(marker.length).trim() : clean;
   let cut = body.length;
-  for (const tail of ['智能填写建议：', '需确认补充事项：', '需确认事项：']) {
+  for (const tail of ['AI最终意见：', '智能填写建议：', '需确认补充事项：', '需确认事项：']) {
     const index = body.indexOf(tail);
     if (index >= 0) cut = Math.min(cut, index);
   }
-  return {analysis: body.slice(0, cut).trim(), tail: body.slice(cut).trim()};
+  const tail = body.slice(cut).trim().replace(/^AI最终意见：\s*/, '');
+  return {analysis: body.slice(0, cut).trim(), tail};
 }
 function stopTransport() {
   if (source) source.close();
@@ -426,7 +446,7 @@ ack.addEventListener('click', async () => {
       throw new Error('invalid_final');
     }
     window.parent.postMessage({pluginMessage: {
-      type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: data.final_feedback_text.replace(/^\s*【AI反馈意见】\s*/, ''),
+      type: 'taoran_quick_check_acknowledged', check_id: checkId, feedback_text: finalDisplayText(data.final_feedback_text),
       ...(submitMode ? {submit_confirmed:true} : {}),
       opening_id: openingId,
       ...(versionedMode ? {input_hash:taskVersion,generated_at:data.generated_at} : {}),

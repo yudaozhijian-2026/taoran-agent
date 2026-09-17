@@ -63,7 +63,7 @@ def test_v46_mode_streams_authoritative_final_analysis_without_preview_call(monk
     queued=[]
     while not events.empty():
         queued.append(events.get())
-    assert any(item.get('type') == 'preview_delta' and item.get('text') == '最终意见' for item in queued)
+    assert any(item.get('type') == 'preview_replace' and item.get('text') == '最终意见' for item in queued)
     assert not any(item.get('text') == 'V4.6实时意见' for item in queued)
 
 
@@ -94,6 +94,17 @@ def test_live_reset_replaces_failed_attempt_for_all_readers():
     t['events'].put({'type': 'preview_complete', 'status': 'completed'})
     assert api._quick_check_preview_snapshot(t) == {'text': '新尝试正文', 'status': 'completed'}
     assert api._quick_check_preview_snapshot(t)['text'] == '新尝试正文'
+
+
+def test_validated_analysis_replaces_draft_atomically_without_empty_snapshot():
+    t = task({'status': 'processing'})
+    t['future'] = Future()
+    t['events'].put({'type': 'preview_delta', 'text': '草稿分析正文'})
+    assert api._quick_check_preview_snapshot(t)['text'] == '草稿分析正文'
+    t['events'].put({'type': 'preview_replace', 'text': '校验后的最终分析正文'})
+    snapshot = api._quick_check_preview_snapshot(t)
+    assert snapshot == {'text': '校验后的最终分析正文', 'status': 'processing'}
+    assert snapshot['text']
 
 
 def test_sse_delivers_partial_snapshot_while_final_is_pending():
