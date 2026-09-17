@@ -41,14 +41,29 @@
         "self_evaluation_consistency": {
           "weight": 0.7,
           "max_score": 35,
-          "period_thresholds": [0.95, 0.85, 0.75, 0.6]
+          "single_record_thresholds": [0.95, 0.85, 0.75, 0.6],
+          "standard_weights": {
+            "appointment_standard": 0.05,
+            "key_result_quality_and_purpose_alignment": 0.25,
+            "process_customer_facts": 0.2,
+            "achievement_evidence_support": 0.15,
+            "system_self_assessment_consistency": 0.35
+          }
         },
         "next_action_quality": {
           "weight": 0.3,
           "max_score": 15,
-          "period_thresholds": [0.95, 0.85, 0.75, 0.6]
+          "single_record_thresholds": [0.95, 0.85, 0.75, 0.6],
+          "standard_weights": {
+            "purpose_present": 0.2,
+            "expected_result_present": 0.2,
+            "contact_date_valid": 0.15,
+            "customer_type_standard": 0.25,
+            "semantic_logic_and_continuity": 0.2
+          }
         }
       },
+      "single_record_scoring_policy": "TAORAN-Q34-WEIGHTED-TEST-V1",
       "formal_q40_scope": "face_to_face"
     }
   },

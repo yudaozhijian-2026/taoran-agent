@@ -108,7 +108,7 @@ from .purpose_mapping import (
 from .q40_integration import build_period_facts, rule_compatibility
 from .rules import canonical_hash, normalized_text
 from .runtime import build_agent
-from .scoring_contract import TOTAL_RULE_VERSION
+from .scoring_contract import Q34_WEIGHTED_POLICY_VERSION, TOTAL_RULE_VERSION
 from .semantic import SemanticReviewer
 from .source_revision import analysis_input_revision, business_revision, source_lock
 from .storage import AgentStore, IdempotencyConflictError
@@ -5131,7 +5131,12 @@ def submit_evaluation(
     x_api_key: str | None = Header(default=None),
 ) -> EvaluationAccepted:
     authorize(request.context.tenant_id, x_tenant_id, x_api_key)
-    snapshot_hash = canonical_hash(request)
+    snapshot_hash = canonical_hash(
+        {
+            "request": request.model_dump(mode="json"),
+            "scoring_policy": Q34_WEIGHTED_POLICY_VERSION,
+        }
+    )
     job_id = f"job_{snapshot_hash[:20]}"
     try:
         record, created = get_store().create_evaluation_job(job_id, request, snapshot_hash)
@@ -5240,13 +5245,14 @@ def _enqueue_jiandaoyun_record(
     revision = business_revision(record, mapping)
     request_id = event.request_id or f"jdy_submit_{event.data_id}_{revision[:16]}"
     if not event.request_id:
-        request_id += f"_{TOTAL_RULE_VERSION}"
+        request_id += f"_{TOTAL_RULE_VERSION}_{Q34_WEIGHTED_POLICY_VERSION}"
     if event.request_id and event.request_id.startswith("refetch_job_"):
         request_id += f"_{revision[:16]}_{POLICY_VERSION}"
     settings = get_settings()
     if settings.llm_enabled and not event.request_id:
         analysis_revision = canonical_hash({
             "post_policy": POLICY_VERSION,
+            "scoring_policy": Q34_WEIGHTED_POLICY_VERSION,
             "model": settings.llm_model, "endpoint": settings.llm_api_url,
             "prompt": PROMPT_VERSION,
             "knowledge": load_taoran_knowledge_snapshot(

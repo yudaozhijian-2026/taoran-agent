@@ -25,7 +25,11 @@ from .scoring_contract import (
     CONSISTENCY_MAX_SCORE,
     NEXT_ACTION_MAX_SCORE,
     Q33_RULE_VERSION,
+    Q34_NEXT_ACTION_WEIGHTS,
     Q34_RULE_VERSION,
+    Q34_SELF_EVALUATION_WEIGHTS,
+    Q34_WEIGHTED_POLICY_VERSION,
+    Q34_WEIGHTED_THRESHOLDS,
     TIMELINESS_MAX_SCORE,
 )
 
@@ -53,6 +57,18 @@ def _opportunity_stage_present(visit: VisitDraftInput) -> bool:
     if visit.opportunities:
         return all(item.current_stage for item in visit.opportunities)
     return bool(visit.opportunity_stage)
+
+
+def _weighted_standard_rate(
+    checks: dict[str, bool],
+    weights: dict[str, float],
+) -> float:
+    """Return a deterministic 0..1 compliance rate for fixed standards."""
+    if checks.keys() != weights.keys():
+        raise ValueError("评分检查项与固定权重不一致")
+    if abs(sum(weights.values()) - 1.0) > 0.000001:
+        raise ValueError("固定权重合计必须为100%")
+    return round(sum(weights[name] for name, passed in checks.items() if passed), 6)
 
 
 def q33_required_fields(
@@ -230,11 +246,15 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
     self_consistent = visit.self_assessment is not None and visit.self_assessment == achievement
 
     next_contact_date = visit.next_contact_date
+    next_action_purpose_present = _purpose_present(
+        visit.next_action_purpose, visit.next_action_other_purpose
+    )
+    next_action_result_present = _has_text(visit.next_action_expected_result)
+    next_contact_date_valid = bool(next_contact_date and next_contact_date > visit.visit_date)
     concrete_next_action = bool(
-        _purpose_present(visit.next_action_purpose, visit.next_action_other_purpose)
-        and _has_text(visit.next_action_expected_result)
-        and next_contact_date
-        and next_contact_date > visit.visit_date
+        next_action_purpose_present
+        and next_action_result_present
+        and next_contact_date_valid
     )
     segment_gate = True
     segment_gate_name = "none"
@@ -256,6 +276,36 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
         )
         segment_gate_name = "different_quarter"
     next_action_qualified = concrete_next_action and facts.next_action_logic_ok and segment_gate
+
+    # The current controlled semantic contract intentionally keeps closely
+    # related judgements together.  key_result_quality_ok covers both KR
+    # specificity/verifiability and purpose alignment.  Achievement evidence
+    # is accepted only when both the KR and recorded customer facts are sound.
+    self_standard_checks = {
+        "appointment_standard": appointment_standard_met,
+        "key_result_quality_and_purpose_alignment": facts.key_result_quality_ok,
+        "process_customer_facts": facts.process_fact_based,
+        "achievement_evidence_support": (
+            facts.key_result_quality_ok and facts.process_fact_based
+        ),
+        "system_self_assessment_consistency": self_consistent,
+    }
+    self_standard_rate = _weighted_standard_rate(
+        self_standard_checks, Q34_SELF_EVALUATION_WEIGHTS
+    )
+    self_band = band_score(self_standard_rate, Q34_WEIGHTED_THRESHOLDS)
+
+    next_action_standard_checks = {
+        "purpose_present": next_action_purpose_present,
+        "expected_result_present": next_action_result_present,
+        "contact_date_valid": next_contact_date_valid,
+        "customer_type_standard": segment_gate,
+        "semantic_logic_and_continuity": facts.next_action_logic_ok,
+    }
+    next_action_standard_rate = _weighted_standard_rate(
+        next_action_standard_checks, Q34_NEXT_ACTION_WEIGHTS
+    )
+    action_band = band_score(next_action_standard_rate, Q34_WEIGHTED_THRESHOLDS)
 
     checks = (
         ("Q34_APPOINTMENT_STANDARD_NOT_MET", appointment_standard_met, ["is_appointment"]),
@@ -282,8 +332,8 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                 )
             )
 
-    self_points = float(CONSISTENCY_MAX_SCORE) if self_consistent else 0.0
-    action_points = float(NEXT_ACTION_MAX_SCORE) if next_action_qualified else 0.0
+    self_points = round(self_band / 4 * CONSISTENCY_MAX_SCORE, 2)
+    action_points = round(action_band / 4 * NEXT_ACTION_MAX_SCORE, 2)
     return (
         QuestionScore(
             question_code="Q34",
@@ -296,9 +346,9 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                     name="系统事实判断与自评一致",
                     score=self_points,
                     max_score=CONSISTENCY_MAX_SCORE,
-                    rate=1.0 if self_consistent else 0.0,
-                    band_score=4 if self_consistent else 0,
-                    passed=self_consistent,
+                    rate=self_standard_rate,
+                    band_score=self_band,
+                    passed=self_band == 4,
                     details={
                         "appointment_standard_met": appointment_standard_met,
                         "appointment_projection_note": (
@@ -311,6 +361,9 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                         "system_self_assessment": (
                             visit.self_assessment.value if visit.self_assessment else None
                         ),
+                        "weighted_policy_version": Q34_WEIGHTED_POLICY_VERSION,
+                        "standard_checks": self_standard_checks,
+                        "standard_weights": Q34_SELF_EVALUATION_WEIGHTS,
                     },
                 ),
                 ScoreComponent(
@@ -318,20 +371,28 @@ def score_q34(visit: VisitDraftInput, facts: Q34SemanticFacts) -> tuple[Question
                     name="下一行动合理性",
                     score=action_points,
                     max_score=NEXT_ACTION_MAX_SCORE,
-                    rate=1.0 if next_action_qualified else 0.0,
-                    band_score=4 if next_action_qualified else 0,
-                    passed=next_action_qualified,
+                    rate=next_action_standard_rate,
+                    band_score=action_band,
+                    passed=action_band == 4,
                     details={
                         "concrete_next_action": concrete_next_action,
+                        "purpose_present": next_action_purpose_present,
+                        "expected_result_present": next_action_result_present,
+                        "contact_date_valid": next_contact_date_valid,
                         "semantic_logic_ok": facts.next_action_logic_ok,
                         "segment_gate": segment_gate,
                         "segment_gate_name": segment_gate_name,
                         "customer_consensus_met": facts.customer_consensus_met,
+                        "weighted_policy_version": Q34_WEIGHTED_POLICY_VERSION,
+                        "standard_checks": next_action_standard_checks,
+                        "standard_weights": Q34_NEXT_ACTION_WEIGHTS,
                     },
                 ),
             ],
             calculation_trace={
-                "formula": "自评一致性35分 + 下一行动15分",
+                "formula": "两项单条记录标准符合率分档：档位分÷4×分项满分",
+                "weighted_policy_version": Q34_WEIGHTED_POLICY_VERSION,
+                "single_record_thresholds": list(Q34_WEIGHTED_THRESHOLDS),
                 "single_record_projection": True,
                 "included_in_q40_formal_aggregate": (
                     visit.visit_method is not None and visit.visit_method.value == "face_to_face"
