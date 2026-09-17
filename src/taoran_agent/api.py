@@ -1733,6 +1733,22 @@ def _enhance_front_suggestions(
         for field in analysis_fields
         if visit_snapshot.get(field) not in (None, "", [])
     }
+    # The visit-purpose fields are controlled selections in Jiandaoyun, not
+    # free-text goals.  Give the front reviewer the exact active option set so
+    # it can assess the selected value without inventing a replacement that is
+    # absent from the customer-type/purpose mapping table.
+    for standard in taoran_context.get("standard_provenance", []):
+        mapping = standard.get("structured_mapping") if isinstance(standard, dict) else None
+        if isinstance(mapping, dict):
+            visit_analysis_context["_purpose_selection_policy"] = {
+                "source": "拜访目的设置表（客户类型和拜访目的对照表）",
+                "allowed_purposes": [
+                    str(value) for value in mapping.get("allowed_purposes", []) if str(value).strip()
+                ],
+                "selected_purpose": visit_snapshot.get("purpose_code"),
+                "selected_next_purpose": visit_snapshot.get("next_action_purpose"),
+            }
+            break
     if experimental and visit_analysis_context.get("next_contact_at"):
         contact = datetime.fromisoformat(str(visit_analysis_context["next_contact_at"]))
         if contact.tzinfo is not None:
