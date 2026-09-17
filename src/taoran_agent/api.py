@@ -1740,10 +1740,14 @@ def _enhance_front_suggestions(
             visit_analysis_context.pop(stage_field, None)
     confirmed_findings = []
     provisional_codes = pending_finding_codes(field_checks) if experimental else set()
+    if experimental:
+        from .front_v46.feedback_consistency import front_rule_issue_superseded
     for issue in response.issues:
         if issue.source == "system" or issue.severity == Severity.INFO:
             continue
         if issue.code in provisional_codes:
+            continue
+        if experimental and front_rule_issue_superseded(issue.code, visit_analysis_context):
             continue
         finding = str(issue.message).strip()
         if finding and finding not in confirmed_findings:
@@ -1771,6 +1775,7 @@ def _enhance_front_suggestions(
         and issue.severity != Severity.INFO
         and issue.dimension in {"C", "T", "A1", "O_KR", "R", "A2", "N"}
         and issue.field_paths
+        and not (experimental and front_rule_issue_superseded(issue.code, visit_analysis_context))
     }.values())
     if required_advice:
         taoran_snapshot["required_advice"] = required_advice

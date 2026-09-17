@@ -16,6 +16,7 @@ previous = {
     '1.0.6rc6': '1.0.6rc5',
     '1.0.6rc7': '1.0.6rc6',
     '1.0.6rc8': '1.0.6rc7',
+    '1.0.6rc9': '1.0.6rc8',
 }[release]
 old = f'taoran-submit-test:{previous}-20260916'
 new = f'taoran-submit-test:{release}-20260916'

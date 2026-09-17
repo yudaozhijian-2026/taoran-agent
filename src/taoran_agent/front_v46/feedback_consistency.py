@@ -24,7 +24,10 @@ GUIDANCE = """
 """
 
 
-_ROLE_OR_OPTIONAL = re.compile(r"负责人|联系人|姓名|职务|决策人|采购人|对接人|设备型号|产品型号|具体型号")
+_ROLE_OR_OPTIONAL = re.compile(
+    r"负责人|联系人|姓名|职务|决策人|采购人|对接人|设备型号|产品型号|具体型号"
+    r"|沟通方式|交流方式|沟通渠道|联系渠道|电话|微信"
+)
 _DEMAND = re.compile(
     r"未(?:记录|明确|确认|取得|提供|说明|体现)|缺少|不足以判断|"
     r"(?:建议|请|需要|应当|必须|需)(?:再|进一步)?(?:补充|填写|核实|确认|说明|明确)"
@@ -43,6 +46,13 @@ _EXTRA_COMPLETION = re.compile(
 _WHOLE_GOAL_ACHIEVED = re.compile(r"(?:本次|原定|该)?目标(?:已经|已)?达成|本次目标已经完成")
 _WHOLE_GOAL_NOT_ACHIEVED = re.compile(r"(?:本次|原定|该)?目标(?:尚未|未能|没有|未)达成|无法判断(?:本次|原定|该)?目标是否达成")
 _KNOWN_CODES = {"C", "T", "A1", "O_KR", "R", "A2", "N"}
+_CUSTOMER_FACT = re.compile(
+    r"客户.{0,28}(?:表示|反馈|说明|确认|提供|发送|发来|同意|拒绝|提出|补充|承诺|回复)"
+    r"|(?:表示|反馈|说明|确认|提供|发送|发来|同意|拒绝|提出|补充|承诺|回复).{0,28}客户"
+)
+_OBSERVABLE_NEXT_RESULT = re.compile(
+    r"(?:确认|核实|获取|收到|约定|完成|提交|提供|反馈|安排|解决|明确).{1,40}"
+)
 
 
 def _source(context: dict, fields: tuple[str, ...]) -> str:
@@ -92,6 +102,22 @@ def information_goal_completion_expansion(text: str, context: dict, code: str = 
 def contradictory_goal_summary(texts: list[str]) -> bool:
     body = "。".join(texts)
     return bool(_WHOLE_GOAL_ACHIEVED.search(body) and _WHOLE_GOAL_NOT_ACHIEVED.search(body))
+
+
+def front_rule_issue_superseded(code: str, context: dict) -> bool:
+    """Suppress only high-confidence front-end false positives, never scoring rules."""
+    process = str(context.get("process_description") or "")
+    expected = str(context.get("expected_key_result") or "")
+    next_result = str(context.get("next_action_expected_result") or "")
+    has_customer_fact = bool(_CUSTOMER_FACT.search(process))
+    if code == "TAORAN_RESULT_NOT_FACT_BASED" and has_customer_fact:
+        return True
+    if code == "TAORAN_ASSESSMENT_NOT_EVIDENCED" and has_customer_fact and expected.strip():
+        return True
+    return bool(
+        code == "TAORAN_NSA_RESULT_NOT_ACTIONABLE"
+        and _OBSERVABLE_NEXT_RESULT.search(next_result)
+    )
 
 
 def candidate_errors(raw: dict, context: dict) -> list[dict]:

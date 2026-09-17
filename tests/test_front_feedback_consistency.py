@@ -5,6 +5,7 @@ from taoran_agent.config import Settings
 from taoran_agent.front_v46.confirmation_shape import ConfirmationShapeError, normalize
 from taoran_agent.front_v46.feedback_consistency import (
     candidate_errors,
+    front_rule_issue_superseded,
     information_goal_completion_expansion,
     non_actionable_advice,
     preview_errors,
@@ -82,6 +83,7 @@ def test_positive_observation_can_precede_a_real_action_in_one_item():
 @pytest.mark.parametrize("text", [
     "请补充设备型号，以便判断目标是否达成。",
     "当前未记录客户对接人，请补充。",
+    "建议补充本次沟通方式，例如电话或微信。",
 ])
 def test_optional_details_are_not_universal_requirements(text):
     assert unsupported_optional_requirement(text, context())
@@ -235,3 +237,15 @@ def test_preview_cannot_claim_whole_record_needs_nothing_when_date_is_empty():
     assert preview_errors("本次目标已达成，当前记录未反映需要补充的缺口。", value) == [
         {"code": "known_gap_declared_complete"},
     ]
+
+
+def test_customer_fact_and_observable_next_result_do_not_create_front_false_gaps():
+    value = context(
+        expected_key_result="确认两处电源当前准备状态",
+        process_description="客户明确表示两处电源尚未准备，计划本周五完成。",
+        next_action_expected_result="确认两处电源是否按计划完成",
+    )
+    assert front_rule_issue_superseded("TAORAN_RESULT_NOT_FACT_BASED", value)
+    assert front_rule_issue_superseded("TAORAN_ASSESSMENT_NOT_EVIDENCED", value)
+    assert front_rule_issue_superseded("TAORAN_NSA_RESULT_NOT_ACTIONABLE", value)
+    assert not front_rule_issue_superseded("TAORAN_NSA_TIME_MISSING", value)
