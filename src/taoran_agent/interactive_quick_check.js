@@ -51,9 +51,55 @@ const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成最终AI反馈意见';
-const finalStreamMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-final-analysis-stream-v1-20260917';
+const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917'].includes(frontPolicy);
+const typewriterMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-final-analysis-typewriter-v1-20260917';
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
+let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
+const analysisCharacterDelay = 18;
+function stopAnalysisTyping() {
+  clearTimeout(analysisTypingTimer);
+  analysisTypingTimer = undefined;
+}
+function typeAnalysisCharacter() {
+  analysisTypingTimer = undefined;
+  if (disposed || !analysisQueue) return;
+  const character = Array.from(analysisQueue)[0];
+  analysisQueue = analysisQueue.slice(character.length);
+  if (content.textContent === waitingText) content.textContent = '';
+  content.textContent += character;
+  if (character.trim()) markVisible('first_text_visible_ms');
+  if (analysisQueue) analysisTypingTimer = setTimeout(typeAnalysisCharacter, analysisCharacterDelay);
+}
+function startAnalysisTyping() {
+  if (analysisTypingTimer === undefined && analysisQueue) typeAnalysisCharacter();
+}
+function syncAnalysisTarget(text) {
+  if (!typewriterMode || typeof text !== 'string') return false;
+  if (text === analysisTarget) return true;
+  if (text.startsWith(analysisTarget)) analysisQueue += text.slice(analysisTarget.length);
+  else {
+    stopAnalysisTyping();
+    content.textContent = '';
+    analysisQueue = text;
+  }
+  analysisTarget = text;
+  startAnalysisTyping();
+  return true;
+}
+function appendAnalysisText(text) {
+  if (!typewriterMode) return false;
+  analysisTarget += text;
+  analysisQueue += text;
+  startAnalysisTyping();
+  return true;
+}
+function flushAnalysisText(text) {
+  stopAnalysisTyping();
+  analysisTarget = text;
+  analysisQueue = '';
+  content.textContent = text;
+}
 if (versionedMode) {
   content.textContent = waitingText;
   previewComplete = !(dualMode || finalStreamMode);
@@ -101,6 +147,7 @@ function splitFinalText(text) {
 function stopTransport() {
   if (source) source.close();
   clearTimeout(pollTimer);
+  stopAnalysisTyping();
 }
 function settle() {
   if (finalDone && previewComplete) { done = true; stopTransport(); }
@@ -109,8 +156,10 @@ function previewSnapshot(text, state) {
   if ((versionedMode && !(dualMode || finalStreamMode)) || previewComplete) return;
   if (typeof text === 'string') {
     // An empty snapshot can retract an incomplete attempt before format retry.
-    content.textContent = text || (dualMode ? waitingText : '');
-    if (text.trim()) markVisible('first_text_visible_ms');
+    if (!syncAnalysisTarget(text)) {
+      content.textContent = text || (dualMode ? waitingText : '');
+      if (text.trim()) markVisible('first_text_visible_ms');
+    }
     if ((dualMode || finalStreamMode) && previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析';
   }
   previewSucceeded = state === 'completed';
@@ -151,7 +200,7 @@ function finish(text) {
   finalDone = true;
   if (finalStreamMode) {
     const parts = splitFinalText(text);
-    if (parts.analysis) content.textContent = parts.analysis;
+    if (parts.analysis) flushAnalysisText(parts.analysis);
     previewComplete = true;
     previewSucceeded = true;
     finalContent.textContent = parts.tail || '本次没有需要补充的智能填写建议或需确认补充事项。';
@@ -245,10 +294,12 @@ source.addEventListener('preview_snapshot', event => decode(event, data => {
 }));
 source.addEventListener('preview_delta', event => decode(event, data => {
   if (!previewComplete && typeof data.text === 'string') {
-    if (content.textContent === waitingText) content.textContent = '';
-    content.textContent += data.text;
+    if (!appendAnalysisText(data.text)) {
+      if (content.textContent === waitingText) content.textContent = '';
+      content.textContent += data.text;
+    }
     if (finalStreamMode) stage('正在分析本次拜访，并核对填写建议…');
-    if (data.text.trim()) markVisible('first_text_visible_ms');
+    if (!typewriterMode && data.text.trim()) markVisible('first_text_visible_ms');
   }
 }));
 source.addEventListener('preview_complete', event => decode(event, data => {
@@ -280,6 +331,7 @@ if (resume) resume.addEventListener('click', async () => {
     if (!response.ok || response.data.check_id !== checkId) throw new Error('resume_failed');
     ack.hidden = true; ack.disabled = true;
     done = false; finalDone = false; finalFailed = false; previewComplete = false; previewSucceeded = false;
+    stopAnalysisTyping(); analysisTarget = ''; analysisQueue = '';
     content.textContent = versionedMode ? waitingText : ''; finalContent.textContent = ''; finalPanel.hidden = true;
     if (versionedMode) { previewComplete = !(dualMode || finalStreamMode); if (previewLabel) previewLabel.textContent = finalStreamMode ? '本次拜访分析' : 'AI实时分析'; }
     resume.hidden = true; status.className = 'status';

@@ -24,13 +24,19 @@ VERSION = "TAORAN-FRONT-V46-CONSISTENCY-V5-20260917"
 
 
 class _AnalysisPointStream:
-    """Extract completed analysis point strings from the streamed JSON safely."""
+    """Decode analysis text incrementally without exposing JSON syntax."""
 
     def __init__(self, emit=None):
         self.emit = emit
         self.buffer = ""
         self.cursor = 0
         self.started = False
+        self.in_text = False
+        self.scan_cursor = 0
+        self.escaped = False
+        self.unicode_digits: str | None = None
+        self.point_started = False
+        self.last_character = ""
 
     def feed(self, chunk: str) -> None:
         if self.emit is None or not chunk:
@@ -42,22 +48,80 @@ class _AnalysisPointStream:
                 return
             self.started = True
             self.cursor = match.end()
+        emitted: list[str] = []
         while True:
-            items_at = re.search(r'"items"\s*:', self.buffer[self.cursor:])
-            text_match = re.search(r'"text"\s*:\s*', self.buffer[self.cursor:])
-            if text_match is None:
-                return
-            absolute = self.cursor + text_match.end()
-            if items_at is not None and self.cursor + items_at.start() < absolute:
-                return
-            try:
-                value, end = json.JSONDecoder().raw_decode(self.buffer[absolute:])
-            except json.JSONDecodeError:
-                return
-            self.cursor = absolute + end
-            if isinstance(value, str) and value.strip():
-                text = value.strip()
-                self.emit(text if text.endswith(("。", "！", "？", "；")) else text + "。")
+            if not self.in_text:
+                items_at = re.search(r'"items"\s*:', self.buffer[self.cursor:])
+                text_match = re.search(r'"text"\s*:\s*', self.buffer[self.cursor:])
+                if text_match is None:
+                    break
+                absolute = self.cursor + text_match.end()
+                if items_at is not None and self.cursor + items_at.start() < absolute:
+                    break
+                if absolute >= len(self.buffer):
+                    break
+                if self.buffer[absolute] != '"':
+                    self.cursor = absolute + 1
+                    continue
+                self.in_text = True
+                self.scan_cursor = absolute + 1
+                self.escaped = False
+                self.unicode_digits = None
+                self.point_started = False
+                self.last_character = ""
+
+            closed = False
+            while self.scan_cursor < len(self.buffer):
+                character = self.buffer[self.scan_cursor]
+                self.scan_cursor += 1
+                decoded = ""
+                if self.unicode_digits is not None:
+                    self.unicode_digits += character
+                    if len(self.unicode_digits) < 4:
+                        continue
+                    try:
+                        decoded = chr(int(self.unicode_digits, 16))
+                    except ValueError:
+                        decoded = ""
+                    self.unicode_digits = None
+                    self.escaped = False
+                elif self.escaped:
+                    if character == "u":
+                        self.unicode_digits = ""
+                        continue
+                    decoded = {
+                        '"': '"',
+                        "\\": "\\",
+                        "/": "/",
+                        "b": "\b",
+                        "f": "\f",
+                        "n": "\n",
+                        "r": "\r",
+                        "t": "\t",
+                    }.get(character, character)
+                    self.escaped = False
+                elif character == "\\":
+                    self.escaped = True
+                    continue
+                elif character == '"':
+                    self.in_text = False
+                    self.cursor = self.scan_cursor
+                    if self.point_started and self.last_character not in "。！？；":
+                        emitted.append("。")
+                        self.last_character = "。"
+                    closed = True
+                    break
+                else:
+                    decoded = character
+
+                if decoded and (self.point_started or decoded.strip()):
+                    emitted.append(decoded)
+                    self.point_started = True
+                    self.last_character = decoded[-1]
+            if not closed:
+                break
+        if emitted:
+            self.emit("".join(emitted))
 
 
 class Shape(BaseModel):

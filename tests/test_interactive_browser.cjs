@@ -46,12 +46,18 @@ function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboar
 }
 const pending = () => ({check_id: 'qc_test', status: 'processing'});
 test('final-analysis stream shows analysis first and reveals validated tail together', async () => {
-  const policy='front-v46-final-analysis-stream-v1-20260917';
+  const policy='front-v46-final-analysis-typewriter-v1-20260917';
   const feedback='本次拜访分析：\n客户已确认设备清单。\n\n智能填写建议：\n1、补充下次联系时间。\n\n需确认补充事项：\n1、核对电源准备状态。';
-  const h=harness([{check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',preview_feedback_text:'客户已确认设备清单。',final_feedback_text:feedback}],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  const h=harness([
+    {check_id:'qc_test',input_hash:'v1',status:'processing',preview_status:'processing',preview_feedback_text:''},
+    {check_id:'qc_test',input_hash:'v1',status:'completed',preview_status:'completed',preview_feedback_text:'客户已确认设备清单。',final_feedback_text:feedback},
+  ],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  await new Promise(resolve=>setImmediate(resolve));
   assert.equal(h.nodes.previewLabel.textContent,'本次拜访分析');
   assert.equal(h.nodes.finalLabel.textContent,'智能填写建议与需确认补充事项');
   h.source.emit('preview_delta',{text:'客户已确认设备清单。'});
+  assert.equal(h.nodes.content.textContent,'客');
+  for (let i=0;i<20;i++) await h.tick(18);
   assert.equal(h.nodes.content.textContent,'客户已确认设备清单。');
   assert.equal(h.nodes.finalPanel.hidden,true);
   assert.equal(h.nodes.ack.hidden,true);
