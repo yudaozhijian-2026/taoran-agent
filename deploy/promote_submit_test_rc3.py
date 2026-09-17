@@ -9,7 +9,11 @@ from pathlib import Path
 
 root = Path('/TAORAN agent/isolated-submit-test-20260916')
 release = sys.argv[1] if len(sys.argv) > 1 else '1.0.6rc3'
-previous = {'1.0.6rc3': '1.0.6rc2', '1.0.6rc4': '1.0.6rc3'}[release]
+previous = {
+    '1.0.6rc3': '1.0.6rc2',
+    '1.0.6rc4': '1.0.6rc3',
+    '1.0.6rc5': '1.0.6rc4',
+}[release]
 old = f'taoran-submit-test:{previous}-20260916'
 new = f'taoran-submit-test:{release}-20260916'
 info = json.loads(subprocess.check_output(['docker', 'inspect', 'taoran-submit-test-agent']))[0]

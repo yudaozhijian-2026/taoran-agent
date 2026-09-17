@@ -41,6 +41,8 @@ def normalize(raw, context):
         for index, item in enumerate(value.get(root, [])):
             if isinstance(item, dict) and unsupported_role_requirement(str(item.get(key, "")), context):
                 errors.append({"location": f"{root}.{index}", "code": "unsupported_role_requirement"})
+    from .feedback_consistency import candidate_errors
+    errors.extend(candidate_errors(value, context))
     for index, item in enumerate(value.get("confirmations", [])):
         if not isinstance(item, dict) or not isinstance(item.get("field"), str):
             continue

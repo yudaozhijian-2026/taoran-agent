@@ -19,7 +19,8 @@ def case():
         {'kind': 'customer_fact', 'text': '客户承诺下周一发清单。', 'proofs': []},
         {'kind': 'judgment_gap', 'text': '原文未记录负责人信息，不足以判断负责人是否明确。',
          'requires_followup': True, 'proofs': [{'field': 'process_description', 'quote': context['process_description']}]},
-    ], 'items': [{'code': 'N', 'suggestion': '请具体说明下次希望取得的结果。'}],
+    ], 'items': [{'code': 'N', 'suggestion': '请具体说明下次希望取得的结果。',
+                  'proofs': [{'field': 'expected_key_result', 'quote': '项目顺利实施'}]}],
         'confirmations': [{'kind': 'missing_field', 'field': 'process_description',
                            'question': '是否已确认负责人信息？', 'impact': '影响判断'}],
         'suggestion_status': 'has_suggestions', 'suggestion_reason': '需补充'}
@@ -85,6 +86,9 @@ def test_provider_local_repair_and_safe_fallback(tmp_path, repair_ok):
 
     _, raw = case()
     raw['items'][0]['code'] = 'R'
+    raw['items'][0]['proofs'] = [
+        {'field': 'expected_key_result', 'quote': '沟通订单和调价'}
+    ]
     patch = {'patches': [{'path': 'analysis_points.1', 'value': None},
                          {'path': 'confirmations.0', 'value': None}]}
     result, text, calls = execute(tmp_path, raw, patch if repair_ok else {'patches': []})
