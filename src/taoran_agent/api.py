@@ -1761,15 +1761,19 @@ def _enhance_front_suggestions(
     # phrase and consolidate them, but must not silently turn them into a
     # no-change result. One natural suggestion per affected TAORAN dimension
     # is sufficient, so repeated rule messages do not create repeated advice.
-    required_advice_codes = list(dict.fromkeys(
-        issue.dimension
+    required_advice = list({
+        (issue.dimension, issue.field_paths[0]): {
+            "code": issue.dimension,
+            "field": issue.field_paths[0],
+        }
         for issue in response.issues
         if issue.source != "system"
         and issue.severity != Severity.INFO
         and issue.dimension in {"C", "T", "A1", "O_KR", "R", "A2", "N"}
-    ))
-    if required_advice_codes:
-        taoran_snapshot["required_advice_codes"] = required_advice_codes
+        and issue.field_paths
+    }.values())
+    if required_advice:
+        taoran_snapshot["required_advice"] = required_advice
     if experimental:
         taoran_snapshot["experimental_speaker_hints"] = attribution_hints(str(visit_snapshot.get("process_description") or ""))
     # Keep an exact wording for an unchanged form under the same judgment basis.

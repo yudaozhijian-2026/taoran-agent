@@ -157,6 +157,10 @@ def preview_errors(text: str, context: dict) -> list[dict]:
         errors.append({"code": "unsupported_optional_requirement"})
     if contradictory_goal_summary([text]):
         errors.append({"code": "goal_summary_contradiction"})
+    presence = (context.get("_record_contract") or {}).get("presence", {})
+    if (presence.get("next_contact_at") == "empty"
+            and re.search(r"(?:当前|本次|整条)?记录.{0,16}(?:无需|无须|不需要)(?:再)?补充|未发现.{0,12}(?:缺口|需要改善)", text)):
+        errors.append({"code": "known_gap_declared_complete"})
     return errors
 
 

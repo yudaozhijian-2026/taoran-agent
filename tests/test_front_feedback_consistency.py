@@ -168,7 +168,7 @@ def test_confirmed_rule_gap_cannot_be_silently_changed_to_no_change(tmp_path):
             [{"code": "N"}],
             {
                 "visit_analysis_context": context(),
-                "required_advice_codes": ["N"],
+                "required_advice": [{"code": "N", "field": "next_contact_at"}],
             },
             30,
         )
@@ -179,3 +179,56 @@ def test_confirmed_rule_gap_cannot_be_silently_changed_to_no_change(tmp_path):
     assert result.suggestion_status == "has_suggestions"
     assert result.recovered_after_retry
     assert [value.code for value in result.items] == ["N"]
+
+
+def test_each_distinct_required_field_must_remain_covered(tmp_path):
+    first = {
+        **payload(),
+        "items": [item(
+            "请将保持联系细化为具体跟进事项。",
+            code="N", field="next_action_expected_result", quote="保持联系",
+        )],
+        "suggestion_status": "has_suggestions",
+        "suggestion_reason": "下一步内容需要细化。",
+    }
+    fixed = {
+        "items": [
+            first["items"][0],
+            item("请补充下一次联系客户时间安排。", code="N", field="next_contact_at", quote=""),
+        ],
+        "confirmations": [],
+        "suggestion_status": "has_suggestions",
+        "suggestion_reason": "下一步内容和联系时间均需完善。",
+    }
+    calls = []
+
+    def provider(request):
+        calls.append(request)
+        value = first if len(calls) == 1 else fixed
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": __import__("json").dumps(value)},
+                         "finish_reason": "stop"}],
+        })
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path / "db"), llm_model="test",
+                        llm_api_url="https://example.test/chat", llm_api_key="test")
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(reviewer, [{"code": "N"}], {
+            "visit_analysis_context": context(),
+            "required_advice": [
+                {"code": "N", "field": "next_action_expected_result"},
+                {"code": "N", "field": "next_contact_at"},
+            ],
+        }, 30)
+    finally:
+        reviewer.close()
+    assert len(calls) == 2 and result.recovered_after_retry
+    assert {i.suggestion for i in result.items} == {i["suggestion"] for i in fixed["items"]}
+
+
+def test_preview_cannot_claim_whole_record_needs_nothing_when_date_is_empty():
+    value = context(_record_contract={"presence": {"next_contact_at": "empty"}})
+    assert preview_errors("本次目标已达成，当前记录无需再补充。", value) == [
+        {"code": "known_gap_declared_complete"},
+    ]
