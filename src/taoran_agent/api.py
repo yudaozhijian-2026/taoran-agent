@@ -2669,10 +2669,11 @@ def _quick_check_run_final_once(
 
 @usage_stage("frontend_preview")
 def _quick_check_run_preview(visit, settings, events):
-    """Shared live wording channel; failures never discard the formal result."""
+    """Generate and validate the analysis module before advice generation starts."""
     from .front_v46.experimental_semantic_streaming_v22 import stream_semantic_preview_v22
 
     lease = None
+    pieces: list[str] = []
     try:
         reviewer = get_agent(settings).semantic_reviewer
         if isinstance(reviewer, ChatModelReviewer):
@@ -2680,17 +2681,24 @@ def _quick_check_run_preview(visit, settings, events):
             if lease is None:
                 raise TimeoutError("preview_queue_timeout")
         preview = stream_semantic_preview_v22(
-            settings, visit,
-            lambda text: events.put({"type": "preview_delta", "text": text}),
-            interactive=True, live=True,
-            reset=lambda: events.put({"type": "preview_reset"}),
+            settings,
+            visit,
+            pieces.append,
+            interactive=True,
         )
     except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
         preview = {"status": "failed", "failure_category": "preview_service_error"}
     finally:
         if lease is not None:
             lease.release()
-    events.put({"type": "preview_complete", **preview})
+    analysis = "".join(pieces).strip()
+    if preview.get("status") == "completed" and analysis:
+        preview = {**preview, "feedback_text": analysis}
+        events.put({"type": "preview_replace", "text": analysis})
+        events.put({"type": "preview_complete", "status": "completed"})
+    else:
+        preview = {**preview, "status": "failed"}
+        events.put({"type": "preview_complete", "status": "unavailable"})
     return preview
 
 
@@ -2703,89 +2711,79 @@ def _quick_check_run(
 ) -> dict[str, Any]:
     from .content_cache import run_with_knowledge_basis
     started = monotonic()
-    stream_state = {"text": "", "first_ms": None, "retrying": False, "retry_text": ""}
-    suggestion_state = {"text": "", "first_ms": None, "retrying": False, "retry_text": ""}
+    # Stage 1 is a self-contained analysis request.  Its model output remains
+    # private until the module has passed its own structure, evidence and
+    # business-wording checks.  Only then is the validated paragraph released.
+    analysis_started = monotonic()
+    analysis_stage = _quick_check_run_preview(canonical_request.visit, settings, events)
+    analysis_elapsed = int((monotonic() - analysis_started) * 1000)
+    validated_analysis = str(analysis_stage.get("feedback_text") or "").strip()
 
-    def emit_analysis(text: str) -> None:
-        if not isinstance(text, str) or not text.strip():
-            return
-        if stream_state["first_ms"] is None:
-            stream_state["first_ms"] = int((monotonic() - started) * 1000)
-        if stream_state["retrying"]:
-            stream_state["retry_text"] += text
-            return
-        # Model output is provisional until the complete response has passed
-        # structure, evidence and cross-section consistency validation.  Keep
-        # it server-side so the user never reads text that may later change.
-        stream_state["text"] += text
-
-    def reset_analysis() -> None:
-        if stream_state["text"]:
-            stream_state.update(retrying=True, retry_text="")
-            events.put({"type": "validation_started"})
-        else:
-            stream_state.update(text="", first_ms=None, retrying=False, retry_text="")
-
-    def emit_suggestion(text: str) -> None:
-        if not isinstance(text, str) or not text:
-            return
-        if suggestion_state["first_ms"] is None and text.strip():
-            suggestion_state["first_ms"] = int((monotonic() - started) * 1000)
-        if suggestion_state["retrying"]:
-            suggestion_state["retry_text"] += text
-            return
-        # As with the analysis paragraph, advice is released only after the
-        # authoritative combined result has passed validation.
-        suggestion_state["text"] += text
-
-    def reset_suggestion() -> None:
-        if suggestion_state["text"]:
-            suggestion_state.update(retrying=True, retry_text="")
-            events.put({"type": "validation_started"})
-        else:
-            suggestion_state.update(text="", first_ms=None, retrying=False, retry_text="")
-
+    # Stage 2 starts only after Stage 1 has finished.  The existing final
+    # reviewer remains the authority for suggestions and confirmations; its
+    # provisional analysis is never displayed or allowed to replace the
+    # already validated Stage-1 paragraph.
+    suggestion_started = monotonic()
     try:
         final = run_with_knowledge_basis(
             _quick_check_run_final,
             canonical_request,
             settings,
             knowledge_basis,
-            analysis_emit=emit_analysis,
-            analysis_reset=reset_analysis,
-            suggestion_emit=emit_suggestion,
-            suggestion_reset=reset_suggestion,
+            analysis_emit=None,
+            analysis_reset=None,
+            suggestion_emit=None,
+            suggestion_reset=None,
         )
     except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
         final = {"status": "failed", "failure_category": "final_service_error"}
+    suggestion_elapsed = int((monotonic() - suggestion_started) * 1000)
     elapsed = int((monotonic() - started) * 1000)
     if final.get("status") == "completed":
-        final_analysis = _quick_check_final_analysis(final.get("feedback_text", ""))
-        if final_analysis:
-            # Publish only the validated module.  The browser then gives this
-            # final text a typewriter presentation; it is not a live draft.
-            stream_state.update(text=final_analysis, first_ms=stream_state["first_ms"])
+        final_analysis = validated_analysis or _quick_check_final_analysis(
+            final.get("feedback_text", "")
+        )
+        if not validated_analysis and final_analysis:
             events.put({"type": "preview_replace", "text": final_analysis})
+            events.put({"type": "preview_complete", "status": "completed"})
         final_suggestion = _quick_check_final_suggestion(final.get("feedback_text", ""))
-        suggestion_state.update(text=final_suggestion, first_ms=suggestion_state["first_ms"])
+        if final_analysis:
+            combined = f"本次拜访分析：{final_analysis}"
+            if final_suggestion:
+                combined += f"\n\nAI改善建议：\n{final_suggestion}"
+            final["feedback_text"] = combined
+            final["final_feedback_hash"] = hashlib.sha256(combined.encode()).hexdigest()
         events.put({"type": "suggestion_replace", "text": final_suggestion})
         events.put({"type": "suggestion_complete", "status": "completed"})
         preview = {
             "status": "completed",
             "feedback_hash": hashlib.sha256(final_analysis.encode()).hexdigest(),
-            "first_real_ai_text_ms": stream_state["first_ms"],
-            "semantic_complete_ms": elapsed,
-            "attempt_count": final.get("model_attempt_count", 1),
-            "recovered_after_retry": final.get("recovered_after_retry", False),
+            "first_real_ai_text_ms": analysis_stage.get("first_real_ai_text_ms"),
+            "semantic_complete_ms": analysis_elapsed,
+            "attempt_count": analysis_stage.get("attempt_count", 1),
+            "recovered_after_retry": analysis_stage.get("recovered_after_retry", False),
         }
     else:
         events.put({"type": "suggestion_complete", "status": "unavailable"})
         preview = {
-            "status": "failed",
-            "failure_category": final.get("failure_category", "final_service_error"),
-            "first_real_ai_text_ms": stream_state["first_ms"],
-            "semantic_complete_ms": elapsed,
+            **analysis_stage,
+            "status": "completed" if validated_analysis else "failed",
+            "failure_category": (
+                None if validated_analysis
+                else analysis_stage.get("failure_category", "analysis_service_error")
+            ),
+            "semantic_complete_ms": analysis_elapsed,
         }
+    final["phase_timings"] = {
+        **final.get("phase_timings", {}),
+        "two_stage": {
+            "analysis_ms": analysis_elapsed,
+            "suggestion_ms": suggestion_elapsed,
+            "total_ms": elapsed,
+            "analysis_status": analysis_stage.get("status", "failed"),
+            "suggestion_status": final.get("status", "failed"),
+        },
+    }
     events.put({"type": "preview_complete", **preview})
     return {"preview": preview, "final": final}
 

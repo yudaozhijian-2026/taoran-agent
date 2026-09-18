@@ -45,26 +45,36 @@ def test_multiple_readers_receive_same_snapshot_without_consuming_it():
     assert all(r['preview_feedback_text'] == '同一份建议' for r in results)
 
 
-def test_v46_mode_streams_authoritative_final_analysis_without_preview_call(monkeypatch):
-    from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as preview
+def test_v46_mode_finishes_validated_analysis_before_starting_advice(monkeypatch):
     calls=[]
-    def generate(settings, visit, emit, **kwargs):
-        assert kwargs['live'] is True and callable(kwargs['reset'])
-        calls.append('preview')
-        emit('V4.6实时意见')
-        return {'status':'completed'}
-    monkeypatch.setattr(preview,'stream_semantic_preview_v22',generate)
-    monkeypatch.setattr(api,'_quick_check_run_final',lambda *args, **kwargs: calls.append('final') or {'status':'completed','feedback_text':'本次拜访分析：最终意见'})
+    def generate_analysis(_visit, _settings, events):
+        calls.append('analysis')
+        events.put({'type':'preview_replace','text':'第一阶段分析'})
+        events.put({'type':'preview_complete','status':'completed'})
+        return {'status':'completed','feedback_text':'第一阶段分析','first_real_ai_text_ms':8}
+    def generate_advice(*args, **kwargs):
+        assert calls == ['analysis']
+        assert kwargs['analysis_emit'] is None
+        assert kwargs['suggestion_emit'] is None
+        calls.append('advice')
+        return {'status':'completed','feedback_text':'本次拜访分析：第二阶段内部分析\n\nAI改善建议：\n补充联系时间。'}
+    monkeypatch.setattr(api,'_quick_check_run_preview',generate_analysis)
+    monkeypatch.setattr(api,'_quick_check_run_final',generate_advice)
     events=task()['events']
     outcome=api._quick_check_run(SimpleNamespace(visit=None),None,events)
     assert outcome['preview']['status']=='completed'
-    assert calls==['final']
-    assert outcome['final']['feedback_text']=='本次拜访分析：最终意见'
+    assert calls==['analysis','advice']
+    assert outcome['final']['feedback_text']==(
+        '本次拜访分析：第一阶段分析\n\nAI改善建议：\n补充联系时间。'
+    )
     queued=[]
     while not events.empty():
         queued.append(events.get())
-    assert any(item.get('type') == 'preview_replace' and item.get('text') == '最终意见' for item in queued)
-    assert not any(item.get('text') == 'V4.6实时意见' for item in queued)
+    analysis_index = next(i for i,item in enumerate(queued) if item.get('type')=='preview_complete')
+    advice_index = next(i for i,item in enumerate(queued) if item.get('type')=='suggestion_replace')
+    assert analysis_index < advice_index
+    assert any(item.get('type') == 'preview_replace' and item.get('text') == '第一阶段分析' for item in queued)
+    assert any(item.get('type') == 'suggestion_replace' and item.get('text') == '补充联系时间。' for item in queued)
 
 
 def test_failed_final_does_not_remove_preview():
@@ -107,20 +117,22 @@ def test_validated_analysis_replaces_draft_atomically_without_empty_snapshot():
     assert snapshot['text']
 
 
-def test_validation_retry_keeps_all_attempts_private_until_validated(monkeypatch):
-    def generate(_request, _settings, **kwargs):
-        kwargs['analysis_emit']('第一版分析。')
-        kwargs['suggestion_emit']('第一版建议。')
-        kwargs['analysis_reset']()
-        kwargs['suggestion_reset']()
-        kwargs['analysis_emit']('修正后分析。')
-        kwargs['suggestion_emit']('修正后建议。')
+def test_each_stage_releases_only_its_validated_module(monkeypatch):
+    def analysis(_visit, _settings, events):
+        events.put({'type':'preview_replace','text':'校验后的分析。'})
+        events.put({'type':'preview_complete','status':'completed'})
+        return {'status':'completed','feedback_text':'校验后的分析。'}
+
+    def advice(_request, _settings, **kwargs):
+        assert kwargs['analysis_emit'] is None
+        assert kwargs['suggestion_emit'] is None
         return {
             'status': 'completed',
-            'feedback_text': '本次拜访分析：修正后分析。\n\nAI改善建议：\n修正后建议。',
+            'feedback_text': '本次拜访分析：第二阶段内部分析。\n\nAI改善建议：\n校验后的建议。',
         }
 
-    monkeypatch.setattr(api, '_quick_check_run_final', generate)
+    monkeypatch.setattr(api, '_quick_check_run_preview', analysis)
+    monkeypatch.setattr(api, '_quick_check_run_final', advice)
     events = Queue()
     result = api._quick_check_run(SimpleNamespace(visit=None), None, events)
     queued = []
@@ -130,16 +142,18 @@ def test_validation_retry_keeps_all_attempts_private_until_validated(monkeypatch
     assert result['final']['status'] == 'completed'
     assert not any(item['type'] == 'preview_delta' for item in queued)
     assert not any(item['type'] == 'suggestion_delta' for item in queued)
-    assert sum(item['type'] == 'validation_started' for item in queued) == 2
+    assert not any(item['type'] == 'validation_started' for item in queued)
     assert not any(item['type'] in {'preview_reset', 'suggestion_reset'} for item in queued)
     assert any(
-        item == {'type': 'preview_replace', 'text': '修正后分析。'}
+        item == {'type': 'preview_replace', 'text': '校验后的分析。'}
         for item in queued
     )
     assert any(
-        item == {'type': 'suggestion_replace', 'text': '修正后建议。'}
+        item == {'type': 'suggestion_replace', 'text': '校验后的建议。'}
         for item in queued
     )
+    assert result['final']['feedback_text'].startswith('本次拜访分析：校验后的分析。')
+    assert result['final']['phase_timings']['two_stage']['analysis_status']=='completed'
 
 
 def test_validation_status_preserves_retained_snapshot_until_final_replace():

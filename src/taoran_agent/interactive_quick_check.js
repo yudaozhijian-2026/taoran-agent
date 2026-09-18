@@ -65,9 +65,12 @@ const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成AI改善建议';
 const suggestionWaitingText = '改善建议生成中';
 const validationWaitingText = '正在校验并完善AI意见……';
-const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918','front-v46-validated-module-typewriter-v7-20260918'].includes(frontPolicy);
-const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918','front-v46-validated-module-typewriter-v7-20260918'].includes(frontPolicy);
-const suggestionStreamMode = typeof frontPolicy === 'string' && ['front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918','front-v46-validated-module-typewriter-v7-20260918'].includes(frontPolicy);
+const twoStageMode = typeof frontPolicy === 'string'
+  && frontPolicy === 'front-v46-two-stage-validated-modules-v8-20260918';
+const adviceStageStatusText = twoStageMode ? '本次拜访分析已生成，正在生成AI改善建议…' : finalWaitingText;
+const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918','front-v46-validated-module-typewriter-v7-20260918','front-v46-two-stage-validated-modules-v8-20260918'].includes(frontPolicy);
+const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918','front-v46-validated-module-typewriter-v7-20260918','front-v46-two-stage-validated-modules-v8-20260918'].includes(frontPolicy);
+const suggestionStreamMode = typeof frontPolicy === 'string' && ['front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918','front-v46-validated-module-typewriter-v7-20260918','front-v46-two-stage-validated-modules-v8-20260918'].includes(frontPolicy);
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
@@ -125,6 +128,9 @@ function startSuggestionTyping() {
 }
 function syncSuggestionTarget(text, state = 'processing') {
   if (!suggestionStreamMode || typeof text !== 'string') return false;
+  // A delayed processing snapshot must not erase advice that has already
+  // arrived through the event stream.
+  if (!text && suggestionTarget && state === 'processing') return true;
   if (state === 'completed' || state === 'unavailable' || state === 'failed') suggestionComplete = true;
   if (text !== suggestionTarget) {
     if (text.startsWith(suggestionTarget)) suggestionQueue += text.slice(suggestionTarget.length);
@@ -215,7 +221,7 @@ try { parentOrigin = new URL(document.referrer).origin; } catch (_) { /* fail cl
 function stage(text) {
   if (!disposed) status.textContent = validationInProgress
     ? validationWaitingText
-    : (previewSucceeded && !finalDone ? finalWaitingText : text);
+    : (previewSucceeded && !finalDone ? adviceStageStatusText : text);
 }
 function setValidationInProgress(active) {
   validationInProgress = active === true;
@@ -234,12 +240,12 @@ function showFinalWaiting() {
     if (!suggestionTarget && !suggestionQueue) finalContent.textContent = suggestionWaitingText;
     finalPanel.hidden = false;
     startSuggestionTyping();
-    stage(finalWaitingText);
+    stage(adviceStageStatusText);
     return;
   }
   finalContent.textContent = typewriterMode ? suggestionWaitingText : finalWaitingText;
   finalPanel.hidden = false;
-  stage(finalWaitingText);
+  stage(adviceStageStatusText);
 }
 function revealTypewriterFinal() {
   if (!typewriterMode || pendingSuggestionText === null || analysisQueue || content.textContent !== analysisTarget) return;
@@ -367,9 +373,15 @@ function fail(code, message, terminal = false) {
     if (ack) ack.hidden = true;
     if (retryCheck) retryCheck.hidden = false;
     if (continueSubmit) continueSubmit.hidden = false;
-    if (previewLabel) previewLabel.textContent = 'AI检查暂未完成';
-    content.textContent = 'AI服务暂时未完成本次分析，这不代表拜访记录存在问题。您可以重新检测、返回修改，或继续提交本次记录。';
-    finalPanel.hidden = true;
+    if (twoStageMode && previewSucceeded) {
+      if (previewLabel) previewLabel.textContent = '本次拜访分析';
+      finalContent.textContent = 'AI改善建议暂未生成成功，可重新检测或继续提交。';
+      finalPanel.hidden = false;
+    } else {
+      if (previewLabel) previewLabel.textContent = 'AI检查暂未完成';
+      content.textContent = 'AI服务暂时未完成本次分析，这不代表拜访记录存在问题。您可以重新检测、返回修改，或继续提交本次记录。';
+      finalPanel.hidden = true;
+    }
   }
   // Content-mode retries must capture the current form and effective versions.
   if (resume) resume.hidden = terminal || Boolean(openingId);
@@ -481,7 +493,7 @@ async function poll() {
     }
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);
-    else stage((dualMode || finalStreamMode) && previewSucceeded ? finalWaitingText : 'AI任务正在运行，请等待分析结果。');
+    else stage((dualMode || finalStreamMode) && previewSucceeded ? adviceStageStatusText : 'AI任务正在运行，请等待分析结果。');
   } catch (_) { stage('连接暂时中断，正在查询原任务；后台生成不会因此取消。'); }
   finally {
     polling = false;

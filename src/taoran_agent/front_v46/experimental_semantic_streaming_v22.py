@@ -40,6 +40,11 @@ _UNCERTAIN_PREFIX = re.compile(
     r"(?:尚未|未曾|并未|没有|无法|不能|未|尚不足以|不足以)(?:明确)?"
     r"(?:体现|记录|证实|确认|显示|表明|证明|看到|提及|认为|认定|视为|视作|当作|理解为)$"
 )
+_ADVICE_DIRECTIVE = re.compile(
+    r"(?:建议.{0,8}(?:补充|填写|修改|核实|确认|说明|明确|选择|调整))"
+    r"|(?:^|[。！？；\n])\s*(?:请|需要|应当|必须|需)(?:再|进一步)?"
+    r"(?:补充|填写|修改|核实|确认|说明|明确|选择|调整)"
+)
 
 
 def _normalize(value: str) -> str:
@@ -141,11 +146,13 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
          "但不得把具体其他目的误当成拜访目的下拉选项。"
          "如确需换选且无法确定具体允许项，只说‘请从系统当前提供的适用选项中重新选择’。"
          "_purpose_selection_policy只是系统约束，不得当作拜访事实或证据输出。"
-         + "保留简洁自然中文实时意见，不输出分数或内部枚举。只有影响结论的歧义才用‘需确认：’提出中性核对问题。"
+         + "本阶段只生成‘本次拜访分析’，说明当前记录中的实际情况；不得提出修改、补充、填写、选择或确认要求，"
+         "不得输出‘建议’‘请补充’‘需要填写’等改善意见。改善建议由后续独立阶段生成。"
+         "保留简洁自然中文分析，不输出分数、标题或内部枚举。遇到影响结论的歧义，只客观说明现有记录尚不足以判断什么。"
          "客户类型只能使用表单原选项‘潜力客户、目标客户、商机客户’，不得改称潜在客户、目标型客户或机会客户；"
          "拜访方式只能使用表单原选项‘面对面拜访、视频会议、电话拜访、微信/邮件/QQ沟通’，"
          "不得概括成异步沟通、同步沟通、线上沟通或线下沟通。"
-         "输出简洁完整的实际分析正文，围绕本次原定目标说明已记录事实、不足以判断的部分及必要建议。"
+         "输出简洁完整的实际分析正文，围绕本次原定目标说明已记录事实和不足以判断的部分。"
          "直接输出自然中文，不写标题、占位说明或格式示例。信息不足时说明具体缺少什么，不补造事实。"},
         {"role": "user", "content": json.dumps({"untrusted_visit_data": snapshot}, ensure_ascii=False)},
     ]
@@ -154,10 +161,12 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
 def _interactive_preview_safe(text: str, snapshot: dict[str, Any]) -> bool:
     if salesperson_feedback_hits(text):
         return False
+    if _ADVICE_DIRECTIVE.search(text):
+        return False
     if boundary_issues(text, snapshot):
         return False
-    # Preview includes future advice: the Final-only scope/extent guards cannot
-    # be applied to the entire assistive paragraph (e.g. "下次充分沟通").
+    # The analysis may describe a future plan already recorded in the form;
+    # only an actual purpose substitution is unsafe here.
     if goal_violation(text, snapshot) == "purpose_substituted_for_goal":
         return False
     allowed = set(snapshot.get("opportunity_stages", []))
