@@ -41,7 +41,7 @@ _FIELD_VALUE_LABELS = {
         "face_to_face": "面对面拜访",
         "video": "视频会议",
         "phone": "电话拜访",
-        "asynchronous_message": "微信/QQ/邮件沟通",
+        "asynchronous_message": "微信/邮件/QQ沟通",
     },
     "self_assessment": {
         "achieved": "达到目的",
@@ -108,8 +108,8 @@ def normalize_generated_business_terms(value: str, context: dict[str, Any] | Non
             "面对面拜访": "face_to_face",
             "视频会议": "video",
             "电话拜访": "phone",
-            "微信/QQ/邮件沟通": "asynchronous_message",
             "微信/邮件/QQ沟通": "asynchronous_message",
+            "微信/QQ/邮件沟通": "asynchronous_message",
         }.get(str(method_key or ""))
     if method_key in _METHOD_ALIASES:
         exact = business_field_value("visit_method", method_key)
@@ -151,8 +151,8 @@ def _active_generated_aliases(context: dict[str, Any] | None = None) -> tuple[st
             "面对面拜访": "face_to_face",
             "视频会议": "video",
             "电话拜访": "phone",
-            "微信/QQ/邮件沟通": "asynchronous_message",
             "微信/邮件/QQ沟通": "asynchronous_message",
+            "微信/QQ/邮件沟通": "asynchronous_message",
         }.get(str(method_key or ""))
     aliases.extend(_METHOD_ALIASES.get(method_key, ()))
     return tuple(aliases)

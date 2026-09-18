@@ -305,6 +305,6 @@ def test_generated_aliases_are_returned_as_actual_form_options(tmp_path):
         reviewer.close()
     assert result.status == "completed"
     assert "潜力客户" in result.visit_analysis
-    assert "微信/QQ/邮件沟通" in result.visit_analysis
+    assert "微信/邮件/QQ沟通" in result.visit_analysis
     assert "潜在客户" not in result.visit_analysis
     assert "异步沟通" not in result.visit_analysis

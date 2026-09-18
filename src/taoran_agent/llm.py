@@ -130,7 +130,7 @@ _ENUM_LABELS = {
     "face_to_face": "面对面拜访",
     "video": "视频会议",
     "phone": "电话拜访",
-    "asynchronous_message": "微信/QQ/邮件沟通",
+    "asynchronous_message": "微信/邮件/QQ沟通",
     "achieved": "达到目的",
     "partially_achieved": "部分达到",
     "not_achieved": "未达到",

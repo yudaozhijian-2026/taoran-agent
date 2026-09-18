@@ -63,7 +63,7 @@ def test_model_facing_visit_snapshot_uses_exact_form_options():
     result = model_facing_visit_snapshot(source)
     assert result == {
         "customer_type_ii": "潜力客户",
-        "visit_method": "微信/QQ/邮件沟通",
+        "visit_method": "微信/邮件/QQ沟通",
         "is_appointment": "未预约",
         "self_assessment": "部分达到目的",
         "process_description": "客户通过微信反馈。",
@@ -85,9 +85,9 @@ def test_customer_type_aliases_are_normalized(alias):
 ])
 def test_visit_method_aliases_use_actual_form_option(alias):
     result = normalize_generated_business_terms(
-        f"本次采用{alias}。", {"visit_method": "微信/QQ/邮件沟通"},
+        f"本次采用{alias}。", {"visit_method": "微信/邮件/QQ沟通"},
     )
-    assert result == "本次采用微信/QQ/邮件沟通。"
+    assert result == "本次采用微信/邮件/QQ沟通。"
 
 
 def test_unknown_visit_method_does_not_guess_alias_meaning():
@@ -105,10 +105,10 @@ def test_payload_wording_changes_only_model_text_not_source_quotes():
         "suggestion_reason": "异步沟通结果不清楚。",
     }
     result = normalize_generated_payload_wording(raw, {
-        "customer_type_ii": "潜力客户", "visit_method": "微信/QQ/邮件沟通",
+        "customer_type_ii": "潜力客户", "visit_method": "微信/邮件/QQ沟通",
     })
-    assert result["analysis_points"][0]["text"] == "潜力客户采用微信/QQ/邮件沟通。"
-    assert result["items"][0]["suggestion"] == "请完善微信/QQ/邮件沟通的结果。"
+    assert result["analysis_points"][0]["text"] == "潜力客户采用微信/邮件/QQ沟通。"
+    assert result["items"][0]["suggestion"] == "请完善微信/邮件/QQ沟通的结果。"
     assert result["analysis_points"][0]["proofs"][0]["quote"] == "潜在客户采用异步沟通"
     assert raw["analysis_points"][0]["text"] == "潜在客户采用异步沟通。"
 
@@ -116,12 +116,12 @@ def test_payload_wording_changes_only_model_text_not_source_quotes():
 def test_stream_normalizes_aliases_split_across_chunks():
     output = []
     stream = BusinessWordingStream(output.append, {
-        "visit_method": "微信/QQ/邮件沟通",
+        "visit_method": "微信/邮件/QQ沟通",
     })
     for chunk in ("本次为潜", "在客户，采用异", "步沟", "通。"):
         stream.feed(chunk)
     stream.flush()
-    assert "".join(output) == "本次为潜力客户，采用微信/QQ/邮件沟通。"
+    assert "".join(output) == "本次为潜力客户，采用微信/邮件/QQ沟通。"
 
 
 def test_stream_fragments_do_not_expose_internal_flags(tmp_path, monkeypatch):
