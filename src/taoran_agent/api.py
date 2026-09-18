@@ -1708,6 +1708,7 @@ def _enhance_front_suggestions(
     analysis_reset=None,
     suggestion_emit=None,
     suggestion_reset=None,
+    decision_ledger: dict[str, Any] | None = None,
 ) -> PrecheckResponse:
     if not response.knowledge_snapshot_hash or not response.knowledge_references:
         return response
@@ -1787,22 +1788,39 @@ def _enhance_front_suggestions(
         "visit_analysis_context": visit_analysis_context,
         "field_specificity_checks": field_checks,
     }
+    if experimental and decision_ledger:
+        taoran_snapshot["decision_ledger"] = decision_ledger
     # The rules identify areas that definitely need attention; the model may
     # phrase and consolidate them, but must not silently turn them into a
     # no-change result. One natural suggestion per affected TAORAN dimension
     # is sufficient, so repeated rule messages do not create repeated advice.
+    # Composite findings (especially N) list every field participating in the
+    # dimension.  The old field_paths[0] shortcut could therefore require an
+    # otherwise valid purpose to be changed when the actual gap was only the
+    # expected result or contact date.  Start from the field-level ledger and
+    # accept rule findings directly only when they identify one exact field.
     required_advice_by_field = {
-        (issue.dimension, issue.field_paths[0]): {
-            "code": issue.dimension,
-            "field": issue.field_paths[0],
+        (str(item["code"]), str(item["field"])): {
+            "code": str(item["code"]),
+            "field": str(item["field"]),
         }
-        for issue in response.issues
-        if issue.source != "system"
-        and issue.severity != Severity.INFO
-        and issue.dimension in {"C", "T", "A1", "O_KR", "R", "A2", "N"}
-        and issue.field_paths
-        and not (experimental and front_rule_issue_superseded(issue.code, visit_analysis_context))
+        for item in (decision_ledger or {}).get("required_advice", [])
+        if isinstance(item, dict) and item.get("code") and item.get("field")
     }
+    for issue in response.issues:
+        if (
+            issue.source == "system"
+            or issue.severity == Severity.INFO
+            or issue.dimension not in {"C", "T", "A1", "O_KR", "R", "A2", "N"}
+            or len(issue.field_paths) != 1
+            or (experimental and front_rule_issue_superseded(issue.code, visit_analysis_context))
+        ):
+            continue
+        field = issue.field_paths[0]
+        required_advice_by_field[(issue.dimension, field)] = {
+            "code": issue.dimension,
+            "field": field,
+        }
     for check in field_checks:
         if check.get("local_specificity") == "not_specific":
             required_advice_by_field[(str(check["code"]), str(check["field"]))] = {
@@ -2106,6 +2124,7 @@ def _execute_knowledge_button_feedback(
     analysis_reset=None,
     suggestion_emit=None,
     suggestion_reset=None,
+    decision_ledger: dict[str, Any] | None = None,
 ) -> PrecheckResponse:
     """执行可独立返回的实时知识库分支和受控AI表达。"""
     started = monotonic()
@@ -2178,6 +2197,7 @@ def _execute_knowledge_button_feedback(
                     analysis_reset=analysis_reset,
                     suggestion_emit=suggestion_emit,
                     suggestion_reset=suggestion_reset,
+                    decision_ledger=decision_ledger,
                 )
         else:
             if isinstance(reviewer, ChatModelReviewer):
@@ -2233,6 +2253,7 @@ def _execute_unified_button_feedback(
     analysis_reset=None,
     suggestion_emit=None,
     suggestion_reset=None,
+    decision_ledger: dict[str, Any] | None = None,
 ) -> PrecheckResponse:
     """唯一反馈链：确定性规则为底座，实时知识与轻量AI只做增强。"""
     enhanced = _execute_knowledge_button_feedback(
@@ -2243,6 +2264,7 @@ def _execute_unified_button_feedback(
         analysis_reset=analysis_reset,
         suggestion_emit=suggestion_emit,
         suggestion_reset=suggestion_reset,
+        decision_ledger=decision_ledger,
     )
     if enhanced.knowledge_snapshot_hash:
         return enhanced.model_copy(
@@ -2569,7 +2591,7 @@ def _quick_check_cleanup(now: float) -> None:
 
 def _quick_check_run_final(
     canonical_request, settings, *, analysis_emit=None, analysis_reset=None,
-    suggestion_emit=None, suggestion_reset=None,
+    suggestion_emit=None, suggestion_reset=None, decision_ledger=None,
 ):
     """Keep bounded transient retries around the restored V4.6 policy."""
     from time import sleep
@@ -2584,6 +2606,7 @@ def _quick_check_run_final(
                 analysis_reset=analysis_reset,
                 suggestion_emit=suggestion_emit,
                 suggestion_reset=suggestion_reset,
+                decision_ledger=decision_ledger,
             )
         result = _quick_check_run_final_once(
             canonical_request,
@@ -2614,6 +2637,7 @@ def _quick_check_run_final_once(
     analysis_reset=None,
     suggestion_emit=None,
     suggestion_reset=None,
+    decision_ledger=None,
 ) -> dict[str, Any]:
     """Run candidate-only Final presentation on validated model wording."""
     from .front_v46.experimental_final_diagnostics import audit as experimental_final_audit
@@ -2630,6 +2654,7 @@ def _quick_check_run_final_once(
             analysis_reset=analysis_reset,
             suggestion_emit=suggestion_emit,
             suggestion_reset=suggestion_reset,
+            decision_ledger=decision_ledger,
         )
         final = UnifiedButtonPrecheckResponse.from_precheck(
             result,
@@ -2668,7 +2693,7 @@ def _quick_check_run_final_once(
 
 
 @usage_stage("frontend_preview")
-def _quick_check_run_preview(visit, settings, events):
+def _quick_check_run_preview(visit, settings, events, decision_ledger=None):
     """Generate and validate the analysis module before advice generation starts."""
     from .front_v46.experimental_semantic_streaming_v22 import stream_semantic_preview_v22
 
@@ -2685,6 +2710,7 @@ def _quick_check_run_preview(visit, settings, events):
             visit,
             pieces.append,
             interactive=True,
+            decision_ledger=decision_ledger,
         )
     except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
         preview = {"status": "failed", "failure_category": "preview_service_error"}
@@ -2710,12 +2736,27 @@ def _quick_check_run(
     knowledge_basis: dict | None = None,
 ) -> dict[str, Any]:
     from .content_cache import run_with_knowledge_basis
+    from .front_v46.decision_ledger import build as build_decision_ledger
+    from .front_v46.decision_ledger import with_validated_analysis
+    from .front_v46.joint_consistency import errors as joint_consistency_errors
     started = monotonic()
+    decision_ledger = (
+        build_decision_ledger(canonical_request.visit)
+        if hasattr(canonical_request.visit, "model_dump") else {}
+    )
     # Stage 1 is a self-contained analysis request.  Its model output remains
     # private until the module has passed its own structure, evidence and
     # business-wording checks.  Only then is the validated paragraph released.
     analysis_started = monotonic()
-    analysis_stage = _quick_check_run_preview(canonical_request.visit, settings, events)
+    preview_kwargs = {}
+    if "decision_ledger" in inspect.signature(_quick_check_run_preview).parameters:
+        preview_kwargs["decision_ledger"] = decision_ledger
+    analysis_stage = _quick_check_run_preview(
+        canonical_request.visit,
+        settings,
+        events,
+        **preview_kwargs,
+    )
     analysis_elapsed = int((monotonic() - analysis_started) * 1000)
     validated_analysis = str(analysis_stage.get("feedback_text") or "").strip()
 
@@ -2724,6 +2765,7 @@ def _quick_check_run(
     # provisional analysis is never displayed or allowed to replace the
     # already validated Stage-1 paragraph.
     suggestion_started = monotonic()
+    shared_ledger = with_validated_analysis(decision_ledger, validated_analysis)
     try:
         final = run_with_knowledge_basis(
             _quick_check_run_final,
@@ -2734,6 +2776,7 @@ def _quick_check_run(
             analysis_reset=None,
             suggestion_emit=None,
             suggestion_reset=None,
+            decision_ledger=shared_ledger,
         )
     except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
         final = {"status": "failed", "failure_category": "final_service_error"}
@@ -2747,6 +2790,75 @@ def _quick_check_run(
             events.put({"type": "preview_replace", "text": final_analysis})
             events.put({"type": "preview_complete", "status": "completed"})
         final_suggestion = _quick_check_final_suggestion(final.get("feedback_text", ""))
+        joint_errors = joint_consistency_errors(
+            final_analysis,
+            final_suggestion,
+            shared_ledger,
+        )
+        if joint_errors:
+            # Keep the already validated analysis fixed.  A conflict starts one
+            # hidden advice-only repair attempt with a distinct cache key; the
+            # user never sees the rejected suggestion or a second analysis.
+            repair_ledger = with_validated_analysis(
+                decision_ledger,
+                final_analysis,
+                repair_errors=joint_errors,
+            )
+            try:
+                repaired = run_with_knowledge_basis(
+                    _quick_check_run_final,
+                    canonical_request,
+                    settings,
+                    knowledge_basis,
+                    analysis_emit=None,
+                    analysis_reset=None,
+                    suggestion_emit=None,
+                    suggestion_reset=None,
+                    decision_ledger=repair_ledger,
+                )
+            except Exception:  # noqa: BLE001 - isolated advice repair is optional
+                repaired = {"status": "failed", "failure_category": "final_service_error"}
+            if repaired.get("status") == "completed":
+                repaired_suggestion = _quick_check_final_suggestion(
+                    repaired.get("feedback_text", "")
+                )
+                repaired_errors = joint_consistency_errors(
+                    final_analysis,
+                    repaired_suggestion,
+                    repair_ledger,
+                )
+                if not repaired_errors:
+                    repaired["joint_repaired"] = True
+                    repaired["joint_initial_errors"] = joint_errors
+                    final = repaired
+                    final_suggestion = repaired_suggestion
+                    joint_errors = []
+            if joint_errors:
+                final = {
+                    **final,
+                    "status": "failed",
+                    "failure_category": "final_joint_consistency_failed",
+                    "joint_errors": joint_errors,
+                }
+        if final.get("status") != "completed":
+            events.put({"type": "suggestion_complete", "status": "unavailable"})
+            preview = {
+                **analysis_stage,
+                "status": "completed" if validated_analysis else "failed",
+                "semantic_complete_ms": analysis_elapsed,
+            }
+            final["phase_timings"] = {
+                **final.get("phase_timings", {}),
+                "two_stage": {
+                    "analysis_ms": analysis_elapsed,
+                    "suggestion_ms": int((monotonic() - suggestion_started) * 1000),
+                    "total_ms": int((monotonic() - started) * 1000),
+                    "analysis_status": analysis_stage.get("status", "failed"),
+                    "suggestion_status": "failed",
+                },
+            }
+            events.put({"type": "preview_complete", **preview})
+            return {"preview": preview, "final": final}
         if final_analysis:
             combined = f"本次拜访分析：{final_analysis}"
             if final_suggestion:

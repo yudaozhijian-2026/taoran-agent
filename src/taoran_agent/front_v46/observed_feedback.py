@@ -445,6 +445,11 @@ def configure(messages, schema):
         "required_advice是规则已确认存在真实缺口的TAORAN维度及字段；每个不同field都必须得到明确处理。"
         "如合并表达，建议正文必须逐一说清每个字段的实际问题，并为所有相关字段分别提供proofs；否则分成不同items。"
         "每个code和field都必须由items中同code建议及proofs.field覆盖。字段为空时proofs.quote为空字符串。"
+        "decision_ledger是服务端本地规则生成的统一判断底稿；required_advice中的字段是必须处理的实际缺口，"
+        "不得把同一维度的其他已填字段自动当成必改字段。"
+        "decision_ledger.validated_analysis是前一阶段已通过校验并展示给用户的固定分析；"
+        "当该值存在时，本阶段的items、suggestion_reason和confirmations必须与其一致，不得改写、否定或重新判定该分析。"
+        "如decision_ledger.joint_repair_errors存在，只修复这些冲突对应的改善建议，不重新生成分析结论。"
         "不得输出no_change_needed，也不得用达标描述代替改善建议；不同字段的真实缺口不能因去重而丢失。"
         "只返回JSON，格式：" + json.dumps(schema, ensure_ascii=False)
     )

@@ -294,6 +294,27 @@ test('v8 keeps validated analysis visible when the independent advice stage fail
   assert.equal(h.nodes.retryCheck.hidden,false);
   assert.equal(h.nodes.continueSubmit.hidden,false);
 });
+test('v9 shared-ledger policy keeps the two validated modules presentation', async () => {
+  const policy='front-v46-shared-ledger-joint-check-v9-20260918';
+  const analysis='统一判断底稿下的本次拜访分析。';
+  const advice='1、只修改已确认的缺口。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n${advice}`;
+  const h=harness([new Error('initial transport unavailable'), {
+    check_id:'qc_test',input_hash:'v1',status:'completed',content_complete:true,final_usable:true,
+    preview_status:'completed',preview_feedback_text:analysis,
+    suggestion_status:'completed',suggestion_feedback_text:advice,
+    final_feedback_text:feedback,
+  }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  await new Promise(resolve=>setImmediate(resolve));
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:analysis,status:'completed'});
+  for (let i=0;i<analysis.length;i++) await h.tick(18);
+  assert.equal(h.nodes.finalContent.textContent,'改善建议生成中');
+  h.source.emit('suggestion_snapshot',{check_id:'qc_test',text:advice,status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
+  for (let i=0;i<advice.length;i++) await h.tick(18);
+  assert.equal(h.nodes.finalContent.textContent,advice);
+  assert.equal(h.nodes.ack.disabled,false);
+});
 test('cached v4 result is displayed immediately without suggestion replay', async () => {
   const policy='front-v46-taoran-advice-v4-20260917';
   const analysis='客户已确认设备清单。';

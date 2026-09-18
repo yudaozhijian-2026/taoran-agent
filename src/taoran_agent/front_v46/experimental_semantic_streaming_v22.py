@@ -88,7 +88,10 @@ def _messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _interactive_snapshot(visit: VisitDraftInput) -> dict[str, Any]:
+def _interactive_snapshot(
+    visit: VisitDraftInput,
+    decision_ledger: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """0.27 candidate only: preserve full text and actual current subform stages."""
     raw = visit.model_dump(mode="json")
     from ..record_contract import visit_contract
@@ -113,6 +116,8 @@ def _interactive_snapshot(visit: VisitDraftInput) -> dict[str, Any]:
             "selected_purpose": visit.purpose_code,
             "selected_next_purpose": visit.next_action_purpose,
         }
+    if decision_ledger:
+        snapshot["_decision_ledger"] = decision_ledger
     return snapshot
 
 
@@ -148,6 +153,8 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
          "_purpose_selection_policy只是系统约束，不得当作拜访事实或证据输出。"
          + "本阶段只生成‘本次拜访分析’，说明当前记录中的实际情况；不得提出修改、补充、填写、选择或确认要求，"
          "不得输出‘建议’‘请补充’‘需要填写’等改善意见。改善建议由后续独立阶段生成。"
+         "_decision_ledger是服务端本地规则生成的统一判断底稿，其已确认的字段状态是本次分析与后续改善建议的共同边界；"
+         "不得与其已确认结论矛盾，不得向用户输出底稿名称、内部字段键或规则代码。"
          "保留简洁自然中文分析，不输出分数、标题或内部枚举。遇到影响结论的歧义，只客观说明现有记录尚不足以判断什么。"
          "客户类型只能使用表单原选项‘潜力客户、目标客户、商机客户’，不得改称潜在客户、目标型客户或机会客户；"
          "拜访方式只能使用表单原选项‘面对面拜访、视频会议、电话拜访、微信/邮件/QQ沟通’，"
@@ -299,11 +306,15 @@ def detect_unsupported_specific_facts(
 def _stream_semantic_preview_once(
     settings: Settings, visit: VisitDraftInput, emit: Callable[[str], None],
     *, interactive: bool = False, repair: bool = False,
+    decision_ledger: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     started = monotonic()
     if not (settings.llm_enabled and settings.llm_api_url and settings.llm_api_key and settings.llm_model):
         return {"status": "failed", "failure_category": "upstream_service_error"}
-    snapshot = _interactive_snapshot(visit) if interactive else _snapshot(visit)
+    snapshot = (
+        _interactive_snapshot(visit, decision_ledger)
+        if interactive else _snapshot(visit)
+    )
     body = {
         "model": settings.llm_model,
         "messages": _interactive_messages(snapshot) if interactive else _messages(snapshot),
@@ -417,6 +428,7 @@ def _stream_semantic_preview_once(
 
 def stream_semantic_preview_v22(
     settings, visit, emit, *, interactive=False, live=False, reset=None,
+    decision_ledger=None,
 ):
     """Stream live prose when the consumer can retract failed attempts.
 
@@ -433,7 +445,14 @@ def stream_semantic_preview_v22(
             chunks.append(piece)
             if live:
                 emit(piece)
-        result = _stream_semantic_preview_once(settings, visit, publish, interactive=interactive, repair=attempt > 0)
+        result = _stream_semantic_preview_once(
+            settings,
+            visit,
+            publish,
+            interactive=interactive,
+            repair=attempt > 0,
+            decision_ledger=decision_ledger,
+        )
         attempts.append(dict(result))
         if result["status"] == "completed":
             if not live:
