@@ -60,9 +60,9 @@ const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重�
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成AI改善建议';
 const suggestionWaitingText = '改善建议生成中';
-const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917'].includes(frontPolicy);
-const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917'].includes(frontPolicy);
-const suggestionStreamMode = typeof frontPolicy === 'string' && frontPolicy === 'front-v46-taoran-advice-v4-20260917';
+const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918'].includes(frontPolicy);
+const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918'].includes(frontPolicy);
+const suggestionStreamMode = typeof frontPolicy === 'string' && ['front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918'].includes(frontPolicy);
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
@@ -430,8 +430,9 @@ async function poll() {
     markTiming('task_received_ms');
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
+    const usableSubmitResult = submitMode && task.final_usable === true;
     if (cachedOpening && task.status === 'completed') {
-      finish(task.final_feedback_text, task.content_complete !== false);
+      finish(task.final_feedback_text, task.content_complete !== false || usableSubmitResult);
       if (resume) resume.hidden = !task.recoverable;
       return;
     }
@@ -441,9 +442,9 @@ async function poll() {
     // previews back off, otherwise several generated sentences arrive at once.
     if ((dualMode || finalStreamMode) && !previewComplete) retryDelay = 1000;
     if (task.status === 'completed') {
-      finish(task.final_feedback_text, task.content_complete !== false);
+      finish(task.final_feedback_text, task.content_complete !== false || usableSubmitResult);
       if (resume) resume.hidden = !task.recoverable;
-      if (task.recoverable) stage('部分分析未完成，任务已保留，可恢复本次分析。');
+      if (task.recoverable && !usableSubmitResult) stage('部分分析未完成，任务已保留，可恢复本次分析。');
     }
     else if (task.status === 'failed') { fail(task.failure_category || 'final_service_error'); if (resume) resume.hidden = !task.recoverable; }
     else if (task.status === 'expired') fail('task_expired', undefined, true);

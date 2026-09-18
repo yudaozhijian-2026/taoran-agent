@@ -2928,12 +2928,24 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
     )
     result["suggestion_status"] = suggestion_snapshot["status"]
     result["suggestion_feedback_text"] = suggestion_snapshot["text"]
+    final_usable = (
+        task['status'] == 'completed'
+        and result.get('final_status') == 'completed'
+        and isinstance(result.get('final_feedback_text'), str)
+        and bool(result['final_feedback_text'].strip())
+    )
     content_incomplete = task['status'] == 'completed' and (
         preview_snapshot['status'] in {'unavailable', 'failed'}
         or (result.get('diagnostics') or {}).get('suggestion_status') == 'incomplete'
     )
+    result['final_usable'] = final_usable
     result['content_complete'] = task['status'] == 'completed' and not content_incomplete and preview_snapshot['status'] == 'completed'
-    result['recoverable'] = (task['status'] == 'failed' or content_incomplete) and bool(task.get('request_snapshot'))
+    # A task pinned to the knowledge/configuration snapshot used for its
+    # content fingerprint cannot be resumed in place.  A fresh form submit is
+    # the only safe way to capture current content and effective versions.
+    # Do not advertise a recovery action that the endpoint must reject.
+    resume_supported = bool(task.get('request_snapshot')) and not bool(task.get('knowledge_basis'))
+    result['recoverable'] = (task['status'] == 'failed' or content_incomplete) and resume_supported
     result['attempt'] = task.get('attempt',1)
     result['phase_timings'] = {**task.get('phase_timings',{}), **((outcome or {}).get('final',{}).get('phase_timings',{}))}
     preview_timing = (outcome or {}).get('preview', {})

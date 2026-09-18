@@ -153,6 +153,28 @@ test('v4 streams improvement advice after analysis and reconciles the final tail
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.status.textContent,'AI检测完成');
 });
+
+test('v5 submit confirmation accepts a usable final even when internal advice audit is incomplete', async () => {
+  const policy='front-v46-taoran-advice-v5-20260918';
+  const analysis='客户已确认设备安装位置。';
+  const advice='1、补充下一次联系时间。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n${advice}`;
+  const h=harness([{
+    check_id:'qc_test',input_hash:'v1',status:'completed',recoverable:false,
+    content_complete:false,final_usable:true,preview_status:'completed',
+    preview_feedback_text:analysis,suggestion_status:'completed',
+    suggestion_feedback_text:advice,final_feedback_text:feedback,
+  }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+
+  await new Promise(resolve=>setImmediate(resolve));
+  for (let i=0;i<200;i++) await h.tick(18);
+
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalContent.textContent,advice);
+  assert.equal(h.nodes.resume.hidden,true);
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
 test('cached v4 result is displayed immediately without suggestion replay', async () => {
   const policy='front-v46-taoran-advice-v4-20260917';
   const analysis='客户已确认设备清单。';

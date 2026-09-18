@@ -319,3 +319,30 @@ def test_partial_feedback_remains_visible_and_can_resume_same_version(recovery, 
     assert not result['recoverable'] and result['content_complete']
     api.resume_interactive_quick_check_task(task['check_id'], 'b' * 40)
     assert len(calls) == 2
+
+
+def test_pinned_partial_final_is_usable_without_advertising_unsupported_resume(
+    recovery, monkeypatch
+):
+    settings, _store, request, task = recovery
+
+    monkeypatch.setattr(
+        api,
+        "_quick_check_run",
+        lambda *args: {
+            "preview": {"status": "completed"},
+            "final": {
+                "status": "completed",
+                "feedback_text": "本次拜访分析：已有事实。\n\nAI改善建议：补充下一步时间。",
+                "diagnostics": {"suggestion_status": "incomplete"},
+            },
+        },
+    )
+    task["knowledge_basis"] = {"implementation": "pinned"}
+    api._quick_check_schedule(task, request, settings)
+
+    result = api.get_interactive_quick_check_task(task["check_id"], "b" * 40)
+
+    assert result["final_usable"] is True
+    assert result["content_complete"] is False
+    assert result["recoverable"] is False
