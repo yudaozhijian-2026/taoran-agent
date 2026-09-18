@@ -5,7 +5,13 @@ import httpx
 import pytest
 from test_post_policy import visit
 
-from taoran_agent.business_wording import business_wording
+from taoran_agent.business_wording import (
+    BusinessWordingStream,
+    business_wording,
+    model_facing_visit_snapshot,
+    normalize_generated_business_terms,
+    normalize_generated_payload_wording,
+)
 from taoran_agent.config import Settings
 from taoran_agent.feedback import _clean_experimental_front_text, build_evaluation_feedback
 from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as preview
@@ -44,6 +50,78 @@ def test_formal_feedback_does_not_mutate_scoring_facts():
 def test_business_names_and_layout_survive():
     text = 'LKXA、5kg、BD、P2、API、product_code_X\n客户尚未批准预算。'
     assert business_wording(text) == text
+
+
+def test_model_facing_visit_snapshot_uses_exact_form_options():
+    source = {
+        "customer_type_ii": "potential",
+        "visit_method": "asynchronous_message",
+        "is_appointment": False,
+        "self_assessment": "partially_achieved",
+        "process_description": "客户通过微信反馈。",
+    }
+    result = model_facing_visit_snapshot(source)
+    assert result == {
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/QQ/邮件沟通",
+        "is_appointment": "未预约",
+        "self_assessment": "部分达到目的",
+        "process_description": "客户通过微信反馈。",
+    }
+    assert source["customer_type_ii"] == "potential"
+
+
+@pytest.mark.parametrize("alias", [
+    "潜在客户", "潜在型客户", "目标型客户", "机会客户", "商机型客户",
+])
+def test_customer_type_aliases_are_normalized(alias):
+    result = normalize_generated_business_terms(f"本次对象为{alias}。")
+    assert alias not in result
+    assert any(label in result for label in ("潜力客户", "目标客户", "商机客户"))
+
+
+@pytest.mark.parametrize("alias", [
+    "异步沟通", "异步交流", "异步拜访", "异步消息沟通", "线上文字沟通", "即时通讯沟通",
+])
+def test_visit_method_aliases_use_actual_form_option(alias):
+    result = normalize_generated_business_terms(
+        f"本次采用{alias}。", {"visit_method": "微信/QQ/邮件沟通"},
+    )
+    assert result == "本次采用微信/QQ/邮件沟通。"
+
+
+def test_unknown_visit_method_does_not_guess_alias_meaning():
+    assert normalize_generated_business_terms("本次采用线上沟通。", {}) == "本次采用线上沟通。"
+
+
+def test_payload_wording_changes_only_model_text_not_source_quotes():
+    raw = {
+        "analysis_points": [{
+            "text": "潜在客户采用异步沟通。",
+            "proofs": [{"field": "process_description", "quote": "潜在客户采用异步沟通"}],
+        }],
+        "items": [{"suggestion": "请完善异步沟通的结果。", "proofs": []}],
+        "confirmations": [],
+        "suggestion_reason": "异步沟通结果不清楚。",
+    }
+    result = normalize_generated_payload_wording(raw, {
+        "customer_type_ii": "潜力客户", "visit_method": "微信/QQ/邮件沟通",
+    })
+    assert result["analysis_points"][0]["text"] == "潜力客户采用微信/QQ/邮件沟通。"
+    assert result["items"][0]["suggestion"] == "请完善微信/QQ/邮件沟通的结果。"
+    assert result["analysis_points"][0]["proofs"][0]["quote"] == "潜在客户采用异步沟通"
+    assert raw["analysis_points"][0]["text"] == "潜在客户采用异步沟通。"
+
+
+def test_stream_normalizes_aliases_split_across_chunks():
+    output = []
+    stream = BusinessWordingStream(output.append, {
+        "visit_method": "微信/QQ/邮件沟通",
+    })
+    for chunk in ("本次为潜", "在客户，采用异", "步沟", "通。"):
+        stream.feed(chunk)
+    stream.flush()
+    assert "".join(output) == "本次为潜力客户，采用微信/QQ/邮件沟通。"
 
 
 def test_stream_fragments_do_not_expose_internal_flags(tmp_path, monkeypatch):

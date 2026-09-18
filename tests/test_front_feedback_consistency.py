@@ -277,3 +277,34 @@ def test_customer_fact_and_observable_next_result_do_not_create_front_false_gaps
     assert front_rule_issue_superseded("TAORAN_ASSESSMENT_NOT_EVIDENCED", value)
     assert front_rule_issue_superseded("TAORAN_NSA_RESULT_NOT_ACTIONABLE", value)
     assert not front_rule_issue_superseded("TAORAN_NSA_TIME_MISSING", value)
+
+
+def test_generated_aliases_are_returned_as_actual_form_options(tmp_path):
+    raw = payload(points=[{
+        "kind": "visit_context",
+        "text": "本次为潜在客户异步沟通，当前信息已记录。",
+        "proofs": [],
+    }])
+
+    def provider(request):
+        return httpx.Response(200, json={
+            "choices": [{"message": {"content": __import__("json").dumps(raw)},
+                         "finish_reason": "stop"}],
+        })
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path / "db"), llm_model="test",
+                        llm_api_url="https://example.test/chat", llm_api_key="test")
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(reviewer, [], {
+            "visit_analysis_context": context(
+                customer_type_ii="potential", visit_method="asynchronous_message",
+            ),
+        }, 30)
+    finally:
+        reviewer.close()
+    assert result.status == "completed"
+    assert "潜力客户" in result.visit_analysis
+    assert "微信/QQ/邮件沟通" in result.visit_analysis
+    assert "潜在客户" not in result.visit_analysis
+    assert "异步沟通" not in result.visit_analysis

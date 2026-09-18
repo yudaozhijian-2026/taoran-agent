@@ -11,7 +11,6 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from .token_usage import UsageClient
 
 from .config import Settings
 from .experimental_assessment import goal_violation
@@ -19,6 +18,7 @@ from .experimental_record_state import boundary_issues, build
 from .models import VisitDraftInput
 from .recommendation_repairs import repair_preview_text
 from .record_contract import visit_contract
+from .token_usage import UsageClient
 
 _OPEN = "<USER_FEEDBACK>"
 _CLOSE = "</USER_FEEDBACK>"
@@ -96,13 +96,8 @@ def _interactive_snapshot(visit: VisitDraftInput) -> dict[str, Any]:
     } | ({str(visit.opportunity_stage)} if visit.opportunity_stage else set()))
     snapshot["opportunity_stages"] = stages
     snapshot["opportunity_stage"] = "、".join(stages) if stages else "不适用或当前未提供"
-    snapshot["customer_type_ii"] = {
-        "opportunity": "商机客户", "potential": "潜力客户", "target": "目标客户",
-    }.get(raw.get("customer_type_ii"), raw.get("customer_type_ii"))
-    snapshot["self_assessment"] = {
-        "achieved": "达到目的", "partially_achieved": "部分达到目的",
-        "not_achieved": "未达到目的",
-    }.get(raw.get("self_assessment"), raw.get("self_assessment"))
+    from .business_wording import model_facing_visit_snapshot
+    snapshot = model_facing_visit_snapshot(snapshot)
     if visit.next_contact_at is not None:
         snapshot["next_contact_at"] = visit.next_contact_at.astimezone(
             ZoneInfo("Asia/Shanghai"),

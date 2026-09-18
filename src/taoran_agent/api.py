@@ -1735,6 +1735,10 @@ def _enhance_front_suggestions(
         for field in analysis_fields
         if visit_snapshot.get(field) not in (None, "", [])
     }
+    # Models must see the exact Jiandaoyun business options, never internal
+    # enums such as potential/asynchronous_message that invite mistranslation.
+    from .business_wording import model_facing_visit_snapshot
+    visit_analysis_context = model_facing_visit_snapshot(visit_analysis_context)
     # The visit-purpose fields are controlled selections in Jiandaoyun, not
     # free-text goals.  Give the front reviewer the exact active option set so
     # it can assess the selected value without inventing a replacement that is

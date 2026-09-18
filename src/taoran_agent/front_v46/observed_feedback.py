@@ -407,6 +407,9 @@ def configure(messages, schema):
         + "若规则已确认选择不匹配，只能引用允许选项；无法确定具体允许项时，仅提示‘请从系统当前提供的适用选项中重新选择’。"
         + "_purpose_selection_policy是系统约束，不是拜访事实，不得出现在proofs、用户文案或需确认事项中。"
         + "内部字段及真假值仅用于评分和日志；分析、建议、需确认事项只用中文业务说明，不输出字段键、布尔值或内部枚举。保留业务产品名和型号。"
+        + "客户类型只能使用表单原选项‘潜力客户、目标客户、商机客户’，不得改称潜在客户、目标型客户或机会客户；"
+        + "拜访方式只能使用表单原选项‘面对面拜访、视频会议、电话拜访、微信/QQ/邮件沟通’，"
+        + "不得概括成异步沟通、同步沟通、线上沟通或线下沟通。"
         + "输出由本次拜访分析、AI改善建议、按需出现的需确认事项组成。analysis_points用自然中文逐项目标分析，"
         "本次拜访分析固定按实际有内容的四类信息组织：拜访背景（客户类型、方式、已选拜访目的、商机阶段）；"
         "目标与结果（想取得的关键结果是否具体，过程事实支持到什么程度）；"
@@ -614,8 +617,11 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             body["thinking"] = {"type": "disabled"}
         request_started = monotonic()
         probe = TransportProbe(reviewer.settings, source)
-        analysis_stream = _AnalysisPointStream(analysis_emit)
-        suggestion_stream = _SuggestionStream(suggestion_emit)
+        from ..business_wording import BusinessWordingStream
+        analysis_wording_stream = BusinessWordingStream(analysis_emit, source)
+        suggestion_wording_stream = BusinessWordingStream(suggestion_emit, source)
+        analysis_stream = _AnalysisPointStream(analysis_wording_stream.feed)
+        suggestion_stream = _SuggestionStream(suggestion_wording_stream.feed)
         def stream_content(chunk):
             analysis_stream.feed(chunk)
             suggestion_stream.feed(chunk)
@@ -628,6 +634,8 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
                                                        timeout=timeout, max_bytes=None,
                                                        content_callback=stream_content)
             probe.completed(envelope, first, last)
+        analysis_wording_stream.flush()
+        suggestion_wording_stream.flush()
         telemetry.update(model_first_byte_ms=first, model_complete_ms=last)
         choice = envelope["choices"][0]
         if choice.get("finish_reason") == "length":
@@ -686,7 +694,10 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
 
 
 def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started):
-    raw = normalize(raw, snapshot.get("visit_analysis_context") or {})
+    context = snapshot.get("visit_analysis_context") or {}
+    from ..business_wording import normalize_generated_payload_wording
+    raw = normalize_generated_payload_wording(raw, context)
+    raw = normalize(raw, context)
     payload = Payload.model_validate(raw)
     # Missing suggestions mean no suggestion, never an invented positive judgment.
     item_observations = []
@@ -706,7 +717,6 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     analysis = "。".join(p.text.strip().rstrip("。") for p in payload.analysis_points)
     if not analysis.strip():
         raise ValueError("wording_analysis_points_shape")
-    context = snapshot.get("visit_analysis_context") or {}
     from ..post_quality import quality_hits
     from ..shared_semantic_checks import semantic_hits
     from .experimental_record_state import boundary_issues

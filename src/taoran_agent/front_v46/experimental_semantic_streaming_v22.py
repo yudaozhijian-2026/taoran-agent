@@ -94,13 +94,8 @@ def _interactive_snapshot(visit: VisitDraftInput) -> dict[str, Any]:
     } | ({str(visit.opportunity_stage)} if visit.opportunity_stage else set()))
     snapshot["opportunity_stages"] = stages
     snapshot["opportunity_stage"] = "、".join(stages) if stages else "不适用或当前未提供"
-    snapshot["customer_type_ii"] = {
-        "opportunity": "商机客户", "potential": "潜力客户", "target": "目标客户",
-    }.get(raw.get("customer_type_ii"), raw.get("customer_type_ii"))
-    snapshot["self_assessment"] = {
-        "achieved": "达到目的", "partially_achieved": "部分达到目的",
-        "not_achieved": "未达到目的",
-    }.get(raw.get("self_assessment"), raw.get("self_assessment"))
+    from ..business_wording import model_facing_visit_snapshot
+    snapshot = model_facing_visit_snapshot(snapshot)
     if visit.next_contact_at is not None:
         snapshot["next_contact_at"] = visit.next_contact_at.astimezone(
             ZoneInfo("Asia/Shanghai"),
@@ -145,6 +140,9 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
          "如确需换选且无法确定具体允许项，只说‘请从系统当前提供的适用选项中重新选择’。"
          "_purpose_selection_policy只是系统约束，不得当作拜访事实或证据输出。"
          + "保留简洁自然中文实时意见，不输出分数或内部枚举。只有影响结论的歧义才用‘需确认：’提出中性核对问题。"
+         "客户类型只能使用表单原选项‘潜力客户、目标客户、商机客户’，不得改称潜在客户、目标型客户或机会客户；"
+         "拜访方式只能使用表单原选项‘面对面拜访、视频会议、电话拜访、微信/QQ/邮件沟通’，"
+         "不得概括成异步沟通、同步沟通、线上沟通或线下沟通。"
          "输出简洁完整的实际分析正文，围绕本次原定目标说明已记录事实、不足以判断的部分及必要建议。"
          "直接输出自然中文，不写标题、占位说明或格式示例。信息不足时说明具体缺少什么，不补造事实。"},
         {"role": "user", "content": json.dumps({"untrusted_visit_data": snapshot}, ensure_ascii=False)},
@@ -309,11 +307,13 @@ def _stream_semantic_preview_once(
     emitted = 0
     displayed = []
     recommendation_repairs = []
-    def emit_piece(piece):
-        from ..business_wording import business_wording
-        piece = business_wording(piece)
+    def emit_normalized_piece(piece):
         displayed.append(piece)
         emit(piece)
+    from ..business_wording import BusinessWordingStream, business_wording
+    wording_stream = BusinessWordingStream(emit_normalized_piece, snapshot)
+    def emit_piece(piece):
+        wording_stream.feed(business_wording(piece))
     first_text_ms: int | None = None
     try:
         with UsageClient(settings, follow_redirects=False) as client, client.stream(
@@ -361,6 +361,7 @@ def _stream_semantic_preview_once(
         stream_body = _stream_feedback_body(raw, interactive=interactive)
         if emitted < len(stream_body):
             emit_piece(stream_body[emitted:])
+        wording_stream.flush()
         feedback = "".join(displayed).strip()
         from ..semantic_observation import observe
         findings = observe(boundary_issues, feedback, snapshot, scope="preview")
