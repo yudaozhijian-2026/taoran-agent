@@ -1,0 +1,46 @@
+{
+  "release_version": "1.0.6rc39",
+  "scope": "isolated-submit-test-only",
+  "git_candidate_commit": "48ac23f",
+  "git_tag": "submit-test-1.0.6rc39-20260918",
+  "image": "taoran-submit-test:1.0.6rc39-20260918",
+  "image_id": "sha256:05fc7a22b467f7561a1101dddb2a63649b88892579ee2c6538934319fe3c778b",
+  "wheel_sha256": "a37265ff0ae71b50de5cab0f3d4d2cc1cdc2658fb605c3198274bbeb65705054",
+  "front_policy": "front-v46-advice-only-local-repair-v10-20260918",
+  "verification": {
+    "python_tests": 632,
+    "browser_tests": 70,
+    "targeted_ruff": "passed",
+    "compose_validation": "passed",
+    "server_image_build": "passed",
+    "internal_health": "passed",
+    "external_health": "passed",
+    "database_integrity": "ok",
+    "active_evaluation_tasks": 0,
+    "active_model_calls_after_test": 0,
+    "container_restart_count": 0,
+    "real_input_cases": 5,
+    "real_input_completed": 5,
+    "analysis_average_ms": 5025.4,
+    "suggestion_average_ms": 4660.4,
+    "suggestion_median_ms": 3515,
+    "total_average_ms": 9687,
+    "total_median_ms": 8258,
+    "joint_model_repairs": 0,
+    "format_recoveries": 1
+  },
+  "runtime_configuration_sha256": {
+    "compose.yaml": "960085f87b45fa7e882df7c2cfa347c44a22ff1a8f70ff1584cd6902612176ce",
+    "agent.env": "25356756fa6fc5afdba842634bbe6c8b6be329f2ce6b6c2dfd05a55ba5b3e6d9",
+    "tenant_registry.json": "e4aa0f347795d4b75509cc35c7cf6f0fca4cdb7896121e6078b3451953115622",
+    "field_mapping.json": "c979d1d89198305cc1dbdb0d65bea7bba4de7660e9c31cca2ef70ed7df6a1d5e"
+  },
+  "formal_service_observation": {
+    "changed_by_this_deployment": false,
+    "image": "dsm-taoran-v2:1.0.8-feedback-repair-20260918",
+    "image_id": "sha256:10b2e72f7286694b7c9afe2308322f06f7a14a0066d77dd5b944a75b0fe8c776",
+    "status": "healthy",
+    "restart_count": 0
+  },
+  "rollback_path": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc39-20260918"
+}
