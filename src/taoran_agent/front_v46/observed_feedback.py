@@ -501,6 +501,14 @@ def generate(
     if not incomplete and first.failure_reason not in {"invalid_contract", "invalid_json", "output_truncated"}:
         return first
     paths = [] if incomplete else repair_paths(holder.get("candidate"), first.validation_errors)
+    # Tell the presentation layer that the visible first attempt is being
+    # validated before starting the hidden repair.  In submit-confirmation v6
+    # these callbacks retain the visible wording and only change the status;
+    # the repaired wording is reconciled atomically after validation.
+    if callable(analysis_reset):
+        analysis_reset()
+    if callable(suggestion_reset):
+        suggestion_reset()
     second = _generate_once(reviewer, items, snapshot, timeout_seconds,
                             repair_errors=first.validation_errors or [{"code": "suggestion_completeness" if incomplete else first.failure_reason}],
                             repair_candidate=holder.get("candidate") if incomplete or paths else None,

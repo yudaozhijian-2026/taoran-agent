@@ -61,8 +61,14 @@ def test_suggestion_rendering_and_empty_decision(tmp_path, monkeypatch, mode):
     settings=Settings(_env_file=None,database_path=str(tmp_path/'db'),llm_model='test',llm_api_url='https://example.test/chat',llm_api_key='test')
     reviewer=FrontReviewer(settings,None,transport=httpx.MockTransport(provider))
     monkeypatch.setattr(reviewer,'_experimental_audit_wording',lambda *a,**k:None)
+    resets = []
     try:
-        result=generate(reviewer,[{'code':'R'}],{'visit_analysis_context':{'process_description':'收集信息'}},30)
+        result=generate(
+            reviewer,[{'code':'R'}],
+            {'visit_analysis_context':{'process_description':'收集信息'}},30,
+            analysis_reset=lambda: resets.append('analysis'),
+            suggestion_reset=lambda: resets.append('suggestion'),
+        )
         request=PrecheckRequest(context=RequestContext(tenant_id='test',request_id='front',user_id='test'),visit=visit())
         precheck = TaoranAgent().precheck(request)
         text=build_front_ai_suggestions_with_model(precheck,result,experimental=True)
@@ -74,6 +80,10 @@ def test_suggestion_rendering_and_empty_decision(tmp_path, monkeypatch, mode):
         assert diagnostics['suggestion_count'] == sum(bool(i.suggestion.strip()) for i in result.items)
         assert result.status=='completed'
         assert len(calls)==(2 if mode in {'repair','persistent','contradiction'} else 1)
+        assert resets == (
+            ['analysis', 'suggestion']
+            if mode in {'repair', 'persistent', 'contradiction'} else []
+        )
         if mode in {'advice','repair'}:
             assert result.items[0].specific is None
             assert good['items'][0]['suggestion'] in text
