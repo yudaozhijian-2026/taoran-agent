@@ -5,8 +5,8 @@ const assert = require('node:assert/strict');
 const {test} = require('node:test');
 const code = readFileSync('src/taoran_agent/interactive_quick_check.js', 'utf8');
 function harness(responses = [], referrer = 'https://www.jiandaoyun.com/dashboard', initial = {}) {
-  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalLabel','finalContent','ack','resume','timings','versionNote','returnNotice','cancelSubmit'].map(id => [id, {
-    textContent: id === 'previewLabel' ? 'AI实时分析' : '', hidden: id === 'ack' || id === 'finalPanel', disabled: id === 'ack',
+  const nodes = Object.fromEntries(['status','content','previewLabel','finalPanel','finalLabel','finalContent','ack','resume','timings','versionNote','returnNotice','cancelSubmit','retryCheck','continueSubmit'].map(id => [id, {
+    textContent: id === 'previewLabel' ? 'AI实时分析' : '', hidden: ['ack','finalPanel','retryCheck','continueSubmit'].includes(id), disabled: id === 'ack',
     addEventListener(name, fn) { this[name] = fn; },
   }]));
   let serial = 0, calls = 0;
@@ -154,7 +154,7 @@ test('v4 streams improvement advice after analysis and reconciles the final tail
   assert.equal(h.nodes.status.textContent,'AI检测完成');
 });
 
-test('v5 submit confirmation accepts a usable final even when internal advice audit is incomplete', async () => {
+test('submit confirmation with incomplete validation shows retry and continue instead of partial content', async () => {
   const policy='front-v46-taoran-advice-v5-20260918';
   const analysis='客户已确认设备安装位置。';
   const advice='1、补充下一次联系时间。';
@@ -167,13 +167,13 @@ test('v5 submit confirmation accepts a usable final even when internal advice au
   }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
 
   await new Promise(resolve=>setImmediate(resolve));
-  for (let i=0;i<200;i++) await h.tick(18);
-
-  assert.equal(h.nodes.content.textContent,analysis);
-  assert.equal(h.nodes.finalContent.textContent,advice);
+  assert.equal(h.nodes.content.textContent,'AI服务暂时未完成本次分析，这不代表拜访记录存在问题。您可以重新检测、返回修改，或继续提交本次记录。');
+  assert.equal(h.nodes.finalPanel.hidden,true);
   assert.equal(h.nodes.resume.hidden,true);
-  assert.equal(h.nodes.ack.disabled,false);
-  assert.equal(h.nodes.status.textContent,'AI检测完成');
+  assert.equal(h.nodes.ack.hidden,true);
+  assert.equal(h.nodes.retryCheck.hidden,false);
+  assert.equal(h.nodes.continueSubmit.hidden,false);
+  assert.equal(h.nodes.status.textContent,'AI意见暂未生成成功。');
 });
 test('v6 keeps completed-looking draft visible while a repair is validated in background', async () => {
   const policy='front-v46-taoran-advice-v6-20260918';
@@ -282,11 +282,11 @@ test('grounded policy keeps realtime and final separate and blocks partial confi
   ], undefined, {submitConfirmation:true,taskVersion:'v1',openingId:'opening',
                  frontPolicy:'front-v46-grounded-confirmation-20260916'});
   await h.tick();
-  assert.equal(h.nodes.content.textContent,'实时建议');
-  assert.equal(h.nodes.finalContent.textContent,'有效分析；部分内容尚未完成');
-  assert.match(h.nodes.status.textContent,/部分分析未完成/);
-  assert.equal(h.nodes.ack.disabled,true);
-  await h.nodes.ack.click();
+  assert.match(h.nodes.content.textContent,/AI服务暂时未完成/);
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal(h.nodes.ack.hidden,true);
+  assert.equal(h.nodes.retryCheck.hidden,false);
+  assert.equal(h.nodes.continueSubmit.hidden,false);
   assert.equal(h.messages.length,0);
 });
 test('isolated submit mode can return while pending without confirming', () => {
@@ -300,15 +300,50 @@ test('isolated submit mode can return while pending without confirming', () => {
   assert.equal(h.messages[0][0].pluginMessage.input_hash,'v1');
   assert.equal(h.messages[0][0].pluginMessage.submit_confirmed,undefined);
 });
-test('isolated submit mode keeps confirmation visible but disabled after failure', async () => {
+test('isolated submit mode offers return retry and continue after failure', async () => {
   const h = harness(
     [{check_id:'qc_test',input_hash:'v1',status:'failed',failure_category:'model_failed'}],
     undefined,
     {submitConfirmation:true,taskVersion:'v1',openingId:'opening'},
   );
   await new Promise(resolve=>setImmediate(resolve));
-  assert.equal(h.nodes.ack.hidden,false);
+  assert.equal(h.nodes.ack.hidden,true);
   assert.equal(h.nodes.ack.disabled,true);
+  assert.equal(h.nodes.cancelSubmit.hidden,false);
+  assert.equal(h.nodes.retryCheck.hidden,false);
+  assert.equal(h.nodes.continueSubmit.hidden,false);
+  assert.match(h.nodes.content.textContent,/不代表拜访记录存在问题/);
+});
+test('retry sends only the current opening identity and never confirms submit', async () => {
+  const h = harness(
+    [{check_id:'qc_test',input_hash:'v1',status:'failed',failure_category:'model_failed'}],
+    undefined,
+    {submitConfirmation:true,taskVersion:'v1',openingId:'opening'},
+  );
+  await new Promise(resolve=>setImmediate(resolve));
+  h.nodes.retryCheck.click();
+  const payload=h.messages[0][0].pluginMessage;
+  assert.equal(payload.type,'taoran_submit_retry');
+  assert.equal(payload.check_id,'qc_test');
+  assert.equal(payload.opening_id,'opening');
+  assert.equal(payload.input_hash,'v1');
+  assert.equal(payload.submit_confirmed,undefined);
+});
+test('continue submits immediately while bypass audit remains best effort', async () => {
+  const h = harness(
+    [{check_id:'qc_test',input_hash:'v1',status:'failed',failure_category:'model_failed'},
+     {check_id:'qc_test',status:'bypassed'}],
+    undefined,
+    {submitConfirmation:true,taskVersion:'v1',openingId:'opening'},
+  );
+  await new Promise(resolve=>setImmediate(resolve));
+  h.nodes.continueSubmit.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  const payload=h.messages[0][0].pluginMessage;
+  assert.equal(payload.type,'taoran_submit_bypassed');
+  assert.equal(payload.submit_confirmed,true);
+  assert.equal(payload.input_hash,'v1');
+  assert.ok(h.calls >= 2);
 });
 test('reopened completed preview shows final waiting until matching final arrives', async () => {
   const h = harness([

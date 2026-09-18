@@ -35,16 +35,30 @@ let pendingOpeningId = '';
 let pendingInputHash = '';
 let returnedFeedback = '';
 let acceptingFeedback = false;
+let retryRequested = false;
+let bypassConfirmed = false;
 
 const onFeedbackMessage = (message) => {
   if (!acceptingFeedback || returnedFeedback) return;
   const payload = message && typeof message === 'object' && message.pluginMessage
     ? message.pluginMessage
     : message;
-  if (!payload || !['taoran_quick_check_acknowledged','taoran_submit_cancelled'].includes(payload.type)) return;
+  if (!payload || !['taoran_quick_check_acknowledged','taoran_submit_cancelled','taoran_submit_retry','taoran_submit_bypassed'].includes(payload.type)) return;
   if (payload.check_id !== pendingCheckId) return;
   if (payload.opening_id !== pendingOpeningId || payload.input_hash !== pendingInputHash) return;
   if (payload.type === 'taoran_submit_cancelled') { acceptingFeedback = false; $g.utils.closeModal(); return; }
+  if (payload.type === 'taoran_submit_retry') {
+    retryRequested = true;
+    acceptingFeedback = false;
+    $g.utils.closeModal();
+    return;
+  }
+  if (payload.type === 'taoran_submit_bypassed' && payload.submit_confirmed === true) {
+    bypassConfirmed = true;
+    acceptingFeedback = false;
+    $g.utils.closeModal();
+    return;
+  }
   if (payload.submit_confirmed !== true) return;
   if (typeof payload.feedback_text !== 'string' || !payload.feedback_text.trim() || payload.feedback_text.length > 20000) return;
   returnedFeedback = payload.feedback_text;
@@ -52,29 +66,40 @@ const onFeedbackMessage = (message) => {
   $g.utils.closeModal();
 };
 
-const callResult = await $g.utils.callFunction({ name: backendFunctionId, data: taskInput });
-const launch = callResult && callResult.result && typeof callResult.result === 'object' ? callResult.result : callResult;
-if (!launch || typeof launch.quick_check_id !== 'string' || typeof launch.quick_check_launch_url !== 'string' || !launch.quick_check_id || !launch.quick_check_launch_url) {
-  const reason = launch && typeof launch.quick_check_message === 'string'
-    ? launch.quick_check_message.trim()
-    : '';
-  throw new Error(reason || 'AI检查未能启动：候选调用未返回任务（返回字段：' + (launch && typeof launch === 'object' ? Object.keys(launch).join(',') : typeof launch) + '）。');
-}
-const launchUrl = new URL(launch.quick_check_launch_url);
-pendingOpeningId = launchUrl.searchParams.get('opening_id') || '';
-pendingInputHash = launchUrl.searchParams.get('input_hash') || '';
-if (!/^[A-Za-z0-9_-]{32}$/.test(pendingOpeningId) || !/^[a-f0-9]{64}$/.test(pendingInputHash)) {
-  throw new Error('AI检查插件与服务版本不一致，请管理员同步更新。');
-}
-pendingCheckId = launch.quick_check_id;
-acceptingFeedback = true;
-$g.ui.onmessage = onFeedbackMessage;
-try {
-  await $g.utils.openModal({ title: 'AI检查 · 提交前确认', url: launch.quick_check_launch_url });
-} finally {
-  acceptingFeedback = false;
-  // Dispose only this opening's listener; never clear a newer opening's handler.
-  if ($g.ui.onmessage === onFeedbackMessage) $g.ui.onmessage = () => {};
+do {
+  retryRequested = false;
+  const callResult = await $g.utils.callFunction({ name: backendFunctionId, data: taskInput });
+  const launch = callResult && callResult.result && typeof callResult.result === 'object' ? callResult.result : callResult;
+  if (!launch || typeof launch.quick_check_id !== 'string' || typeof launch.quick_check_launch_url !== 'string' || !launch.quick_check_id || !launch.quick_check_launch_url) {
+    const reason = launch && typeof launch.quick_check_message === 'string'
+      ? launch.quick_check_message.trim()
+      : '';
+    throw new Error(reason || 'AI检查未能启动：候选调用未返回任务（返回字段：' + (launch && typeof launch === 'object' ? Object.keys(launch).join(',') : typeof launch) + '）。');
+  }
+  const launchUrl = new URL(launch.quick_check_launch_url);
+  pendingOpeningId = launchUrl.searchParams.get('opening_id') || '';
+  pendingInputHash = launchUrl.searchParams.get('input_hash') || '';
+  if (!/^[A-Za-z0-9_-]{32}$/.test(pendingOpeningId) || !/^[a-f0-9]{64}$/.test(pendingInputHash)) {
+    throw new Error('AI检查插件与服务版本不一致，请管理员同步更新。');
+  }
+  pendingCheckId = launch.quick_check_id;
+  acceptingFeedback = true;
+  $g.ui.onmessage = onFeedbackMessage;
+  try {
+    await $g.utils.openModal({ title: 'AI检查 · 提交前确认', url: launch.quick_check_launch_url });
+  } finally {
+    acceptingFeedback = false;
+    // Dispose only this opening's listener; never clear a newer opening's handler.
+    if ($g.ui.onmessage === onFeedbackMessage) $g.ui.onmessage = () => {};
+  }
+} while (retryRequested && !returnedFeedback && !bypassConfirmed);
+
+if (bypassConfirmed) {
+  return {
+    resText: draft.existing_feedback == null ? '' : draft.existing_feedback,
+    quick_check_id: pendingCheckId,
+    submit_decision: '已确认提交',
+  };
 }
 
 if (!returnedFeedback) {

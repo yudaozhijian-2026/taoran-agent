@@ -2929,6 +2929,8 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
         "created_at": task["created_at"],
         "completed_at": task.get("completed_at"),
         "acknowledged_at": task.get("acknowledged_at"),
+        "bypassed_at": task.get("bypassed_at"),
+        "bypass_reason": task.get("bypass_reason"),
     }
     if outcome is not None:
         preview, final = outcome["preview"], outcome["final"]
@@ -3202,23 +3204,43 @@ async def _interactive_quick_check_events(
         suggestion_snapshot = dict(task.get(
             "suggestion_snapshot", {"text": "", "status": "processing", "kind": "ai"},
         ))
-        if snapshot != last_snapshot:
-            yield _quick_check_sse("preview_snapshot", {"check_id": task["check_id"], **snapshot})
-            last_snapshot = snapshot
-        if (suggestion_snapshot != last_suggestion_snapshot
-                and (suggestion_snapshot.get("text")
-                     or suggestion_snapshot.get("status") != "processing")):
-            yield _quick_check_sse(
-                "suggestion_snapshot", {"check_id": task["check_id"], **suggestion_snapshot},
+        final_content_complete = None
+        if outcome is not None and outcome["final"].get("status") == "completed":
+            diagnostics = outcome["final"].get("diagnostics") or {}
+            final_content_complete = (
+                snapshot["status"] == "completed"
+                and diagnostics.get("suggestion_status") != "incomplete"
             )
-            last_suggestion_snapshot = suggestion_snapshot
+        visible_snapshot = snapshot
+        visible_suggestion = suggestion_snapshot
+        if final_content_complete is False:
+            # Never expose a partial final before the browser can switch to
+            # the non-blocking retry/continue-submit fallback.
+            visible_snapshot = {"text": "", "status": "unavailable"}
+            visible_suggestion = {"text": "", "status": "unavailable", "kind": "ai"}
+        if visible_snapshot != last_snapshot:
+            yield _quick_check_sse(
+                "preview_snapshot", {"check_id": task["check_id"], **visible_snapshot}
+            )
+            last_snapshot = visible_snapshot
+        if (visible_suggestion != last_suggestion_snapshot
+                and (visible_suggestion.get("text")
+                     or visible_suggestion.get("status") != "processing")):
+            yield _quick_check_sse(
+                "suggestion_snapshot", {"check_id": task["check_id"], **visible_suggestion},
+            )
+            last_suggestion_snapshot = visible_suggestion
         if outcome is not None and not final_sent:
             final = outcome["final"]
             final_sent = True
-            if final.get("status") != "completed":
+            if final.get("status") != "completed" or final_content_complete is False:
                 yield _quick_check_sse("final_failed", {
                     "check_id": task["check_id"],
-                    "code": final.get("failure_category", "final_service_error"),
+                    "code": (
+                        "final_validation_incomplete"
+                        if final_content_complete is False
+                        else final.get("failure_category", "final_service_error")
+                    ),
                     "recoverable": bool(task.get("request_snapshot")),
                     "phase_timings": final.get("phase_timings",{}),
                 })
@@ -3234,6 +3256,7 @@ async def _interactive_quick_check_events(
                     "model_attempt_count": final.get("model_attempt_count"),
                     "diagnostics": final.get("diagnostics"),
                     "recovered_after_retry": final.get("recovered_after_retry"),
+                    "content_complete": final_content_complete,
                 })
         if (final_sent and snapshot["status"] != "processing"
                 and suggestion_snapshot["status"] != "processing"):
@@ -3310,7 +3333,11 @@ def acknowledge_interactive_quick_check_task(
     result = _quick_check_task_response(task)
     if result.get("superseded"):
         raise HTTPException(status_code=409,detail="该意见属于旧记录版本，请打开最新版本的分析")
-    if result["status"] != "completed" or "final_feedback_text" not in result:
+    if (
+        result["status"] != "completed"
+        or "final_feedback_text" not in result
+        or result.get("content_complete") is not True
+    ):
         raise HTTPException(status_code=409, detail="AI检测尚未完成")
     if task.pop('return_failure', None):
         _quick_check_persist(task)
@@ -3329,6 +3356,34 @@ def acknowledge_interactive_quick_check_task(
         "acknowledged_at": task["acknowledged_at"],
         "input_hash":task["input_hash"],"generated_at":result.get("generated_at"),
         "final_feedback_text": result["final_feedback_text"],
+    }
+
+
+@app.post("/api/v1/quick-check/tasks/{check_id}/bypass")
+def bypass_interactive_quick_check_task(
+    check_id: str,
+    stream_token: str = Query(min_length=32, max_length=256),
+) -> dict[str, Any]:
+    """Record a user-authorized submit after AI generation could not finish."""
+    task = _quick_check_task(check_id, stream_token)
+    result = _quick_check_task_response(task)
+    if result.get("superseded"):
+        raise HTTPException(status_code=409, detail="该任务属于旧记录版本")
+    if result["status"] == "processing":
+        raise HTTPException(status_code=409, detail="AI检测仍在进行")
+    if result.get("content_complete") is True:
+        raise HTTPException(status_code=409, detail="AI意见已完成，请使用确认提交")
+    with _quick_check_lock:
+        if task.get("bypassed_at") is None:
+            task["bypassed_at"] = datetime.now(UTC).isoformat()
+            task["bypass_reason"] = (
+                result.get("failure_category") or "final_validation_incomplete"
+            )
+            _quick_check_persist(task)
+    return {
+        "check_id": check_id,
+        "status": "bypassed",
+        "bypassed_at": task["bypassed_at"],
     }
 
 
@@ -3372,14 +3427,14 @@ def interactive_quick_check_page(
     public_path_json = json.dumps(public_path).replace("<", "\\u003c")
     html = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>TAORAN AI检测</title>
-<style>body{font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#172033;background:#fff}main{padding:22px;max-width:760px;margin:auto}h1{font-size:20px;margin:0 0 12px}.status{color:#15803d;font-weight:700;margin:8px 0 16px}.panel{background:#f5f8fa;border-radius:10px;padding:14px;white-space:pre-wrap;line-height:1.65;min-height:68px}.label{font-weight:600;margin:16px 0 8px}button{margin-top:18px;background:#0b9e95;color:#fff;border:0;border-radius:7px;padding:10px 20px;font-size:15px;cursor:pointer}button[disabled]{opacity:.55;cursor:default}.actions{display:flex;align-items:center;gap:16px;margin-top:18px}.actions button{margin-top:0}.error{color:#b42318}</style></head><body><main>
+<style>body{font:15px -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;margin:0;color:#172033;background:#fff}main{padding:22px;max-width:760px;margin:auto}h1{font-size:20px;margin:0 0 12px}.status{color:#15803d;font-weight:700;margin:8px 0 16px}.panel{background:#f5f8fa;border-radius:10px;padding:14px;white-space:pre-wrap;line-height:1.65;min-height:68px}.label{font-weight:600;margin:16px 0 8px}button{margin-top:18px;background:#0b9e95;color:#fff;border:0;border-radius:7px;padding:10px 20px;font-size:15px;cursor:pointer}button[disabled]{opacity:.55;cursor:default}.actions{display:flex;align-items:center;gap:16px;margin-top:18px}.actions button{margin-top:0}.actions .secondary{background:#fff;color:#0b756f;border:1px solid #0b9e95}.error{color:#b42318}</style></head><body><main>
 <h1>TAORAN V1 · AI检测</h1>
 <p id="returnNotice" role="note" style="background:#fff7e6;padding:12px;border-radius:7px;line-height:1.6">分析完成后，请点击“已读并返回修改”，可将 AI 最终反馈带回拜访记录填写页面。直接关闭弹窗不会同步反馈。</p>
 <div id="status" class="status">正在连接检测任务…</div>
 <button id="resume" hidden type="button">恢复本次分析</button>
 <div id="previewLabel" class="label">AI实时分析</div><div id="content" class="panel" aria-live="polite">AI正在分析，请稍候。</div>
 <section id="finalPanel" hidden><div id="finalLabel" class="label">AI改善建议</div><div id="finalContent" class="panel" aria-live="polite"></div></section>
-<div class="actions"><button id="cancelSubmit" hidden>返回修改</button><button id="ack" hidden disabled>已读并返回修改</button></div></main><script>
+<div class="actions"><button id="cancelSubmit" hidden>返回修改</button><button id="retryCheck" class="secondary" hidden>重新检测</button><button id="continueSubmit" class="secondary" hidden>继续提交</button><button id="ack" hidden disabled>已读并返回修改</button></div></main><script>
 const submitConfirmation=__TAORAN_SUBMIT_CONFIRMATION__;
 const publicPath=__TAORAN_PUBLIC_PATH__;
 const sessionToken=__TAORAN_SESSION_TOKEN__;

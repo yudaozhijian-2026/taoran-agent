@@ -223,7 +223,12 @@ def test_first_html_shows_waiting_without_saved_basic_feedback(
     assert "点击“已读并返回修改”" in html
     assert "AI正在分析" in html
     assert '.actions{display:flex;align-items:center;gap:16px' in html
-    assert html.index('id="cancelSubmit"') < html.index('id="ack"')
+    assert (
+        html.index('id="cancelSubmit"')
+        < html.index('id="retryCheck"')
+        < html.index('id="continueSubmit"')
+        < html.index('id="ack"')
+    )
     assert 'id="timings"' not in html and 'id="versionNote"' not in html
     assert response.headers["referrer-policy"] == "no-referrer"
 
@@ -319,6 +324,51 @@ def test_partial_feedback_remains_visible_and_can_resume_same_version(recovery, 
     assert not result['recoverable'] and result['content_complete']
     api.resume_interactive_quick_check_task(task['check_id'], 'b' * 40)
     assert len(calls) == 2
+
+
+def test_incomplete_result_cannot_be_acknowledged_but_user_bypass_is_audited(
+    recovery, monkeypatch
+):
+    settings, store, request, task = recovery
+    monkeypatch.setattr(
+        api,
+        "_quick_check_run",
+        lambda *args: {
+            "preview": {"status": "completed"},
+            "final": {
+                "status": "completed",
+                "feedback_text": "不完整的内部结果不应回填",
+                "diagnostics": {"suggestion_status": "incomplete"},
+            },
+        },
+    )
+    api._quick_check_schedule(task, request, settings)
+
+    with pytest.raises(HTTPException) as denied:
+        api.acknowledge_interactive_quick_check_task(task["check_id"], "b" * 40)
+    assert denied.value.status_code == 409
+
+    result = api.bypass_interactive_quick_check_task(task["check_id"], "a" * 40)
+    assert result["status"] == "bypassed"
+    saved = store.get_quick_check(task["check_id"])
+    assert saved["bypassed_at"] == result["bypassed_at"]
+    assert saved["bypass_reason"] == "final_validation_incomplete"
+
+
+def test_complete_result_cannot_use_failure_bypass(recovery, monkeypatch):
+    settings, _store, request, task = recovery
+    monkeypatch.setattr(
+        api,
+        "_quick_check_run",
+        lambda *args: {
+            "preview": {"status": "completed"},
+            "final": {"status": "completed", "feedback_text": "完整反馈"},
+        },
+    )
+    api._quick_check_schedule(task, request, settings)
+    with pytest.raises(HTTPException) as denied:
+        api.bypass_interactive_quick_check_task(task["check_id"], "a" * 40)
+    assert denied.value.status_code == 409
 
 
 def test_pinned_partial_final_is_usable_without_advertising_unsupported_resume(

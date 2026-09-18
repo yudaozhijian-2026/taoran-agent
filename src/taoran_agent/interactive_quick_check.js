@@ -11,6 +11,8 @@ const resume = document.querySelector('#resume');
 const returnNotice = document.querySelector('#returnNotice');
 const submitMode = typeof submitConfirmation !== 'undefined' && submitConfirmation === true;
 const cancelSubmit = document.querySelector('#cancelSubmit');
+const retryCheck = document.querySelector('#retryCheck');
+const continueSubmit = document.querySelector('#continueSubmit');
 const cachedOpening = typeof reusedOpening !== 'undefined' && reusedOpening === true;
 function setConfirmReady(ready) {
   if (!ack) return;
@@ -30,6 +32,8 @@ if (submitMode) {
         check_id:checkId,opening_id:openingId,input_hash:taskVersion}},parentOrigin);
     });
   }
+  if (retryCheck) retryCheck.hidden = true;
+  if (continueSubmit) continueSubmit.hidden = true;
 }
 let feedbackHandedOff = false;
 const viewStarted = typeof performance !== 'undefined' ? performance.now() : Date.now();
@@ -356,10 +360,23 @@ function fail(code, message, terminal = false) {
   pendingSuggestionText = null;
   if ([finalWaitingText, suggestionWaitingText].includes(finalContent.textContent)) { finalContent.textContent = ''; finalPanel.hidden = true; }
   setConfirmReady(false);
+  const safeToBypass = submitMode && ![
+    'access_denied','task_mismatch','record_version_mismatch','superseded'
+  ].includes(code);
+  if (safeToBypass) {
+    if (ack) ack.hidden = true;
+    if (retryCheck) retryCheck.hidden = false;
+    if (continueSubmit) continueSubmit.hidden = false;
+    if (previewLabel) previewLabel.textContent = 'AI检查暂未完成';
+    content.textContent = 'AI服务暂时未完成本次分析，这不代表拜访记录存在问题。您可以重新检测、返回修改，或继续提交本次记录。';
+    finalPanel.hidden = true;
+  }
   // Content-mode retries must capture the current form and effective versions.
   if (resume) resume.hidden = terminal || Boolean(openingId);
   const expired = code === 'task_or_token_expired' || code === 'task_expired';
-  stage(expired
+  stage(safeToBypass
+    ? 'AI意见暂未生成成功。'
+    : expired
     ? '检测链接已失效或任务已过期。' + restartText
     : (message || '本次分析未完成。') + restartText);
   status.className = 'status error';
@@ -443,6 +460,9 @@ async function poll() {
     markTiming('task_received_ms');
     if (!applyVersion(task)) return;
     if (task.check_id !== checkId) return fail('task_mismatch', undefined, true);
+    if (submitMode && task.status === 'completed' && task.content_complete === false) {
+      return fail('final_validation_incomplete');
+    }
     const usableSubmitResult = submitMode && task.final_usable === true;
     if (cachedOpening && task.status === 'completed') {
       finish(task.final_feedback_text, task.content_complete !== false || usableSubmitResult);
@@ -517,6 +537,7 @@ source.addEventListener('suggestion_snapshot', event => decode(event, data => {
 }));
 source.addEventListener('final_completed', event => decode(event, data => {
   if (data.check_id !== checkId) return fail('task_mismatch', undefined, true);
+  if (submitMode && data.content_complete === false) return fail('final_validation_incomplete');
   if (versionedMode) { recover(); return; }
   finish(data.feedback_text);
 }));
@@ -546,6 +567,30 @@ if (resume) resume.addEventListener('click', async () => {
     retryDelay = 1000; recover();
   } catch (_) { stage('恢复请求暂未确认。' + restartText); }
   finally { resume.disabled = false; }
+});
+if (retryCheck) retryCheck.addEventListener('click', () => {
+  if (disposed || returning || !allowedParents.has(parentOrigin)) return;
+  returning = true;
+  retryCheck.disabled = true;
+  if (continueSubmit) continueSubmit.disabled = true;
+  feedbackHandedOff = true;
+  window.parent.postMessage({pluginMessage:{type:'taoran_submit_retry',
+    check_id:checkId,opening_id:openingId,input_hash:taskVersion}},parentOrigin);
+});
+if (continueSubmit) continueSubmit.addEventListener('click', () => {
+  if (disposed || returning || !allowedParents.has(parentOrigin)) return;
+  returning = true;
+  continueSubmit.disabled = true;
+  if (retryCheck) retryCheck.disabled = true;
+  // Audit is best effort and must not turn a model failure into a submit block.
+  // keepalive allows the write to finish even when the modal closes immediately.
+  try {
+    fetch(base + '/bypass' + query, {method:'POST',cache:'no-store',keepalive:true})
+      .catch(() => {});
+  } catch (_) { /* continue */ }
+  feedbackHandedOff = true;
+  window.parent.postMessage({pluginMessage:{type:'taoran_submit_bypassed',
+    check_id:checkId,opening_id:openingId,input_hash:taskVersion,submit_confirmed:true}},parentOrigin);
 });
 // Both a named server failure and a broken SSE are resolved through the result API.
 source.addEventListener('error', recover);

@@ -19,6 +19,8 @@ FIELDS = (
     "created_at",
     "completed_at",
     "acknowledged_at",
+    "bypassed_at",
+    "bypass_reason",
     "stream_token",
     "session_token",
     "request_snapshot",
