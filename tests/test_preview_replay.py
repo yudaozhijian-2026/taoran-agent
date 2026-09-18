@@ -107,6 +107,61 @@ def test_validated_analysis_replaces_draft_atomically_without_empty_snapshot():
     assert snapshot['text']
 
 
+def test_validation_retry_keeps_first_attempt_visible_and_buffers_repair(monkeypatch):
+    def generate(_request, _settings, **kwargs):
+        kwargs['analysis_emit']('第一版分析。')
+        kwargs['suggestion_emit']('第一版建议。')
+        kwargs['analysis_reset']()
+        kwargs['suggestion_reset']()
+        kwargs['analysis_emit']('修正后分析。')
+        kwargs['suggestion_emit']('修正后建议。')
+        return {
+            'status': 'completed',
+            'feedback_text': '本次拜访分析：修正后分析。\n\nAI改善建议：\n修正后建议。',
+        }
+
+    monkeypatch.setattr(api, '_quick_check_run_final', generate)
+    events = Queue()
+    result = api._quick_check_run(SimpleNamespace(visit=None), None, events)
+    queued = []
+    while not events.empty():
+        queued.append(events.get())
+
+    assert result['final']['status'] == 'completed'
+    assert [item['text'] for item in queued if item['type'] == 'preview_delta'] == ['第一版分析。']
+    assert [item['text'] for item in queued if item['type'] == 'suggestion_delta'] == ['第一版建议。']
+    assert sum(item['type'] == 'validation_started' for item in queued) == 2
+    assert not any(item['type'] in {'preview_reset', 'suggestion_reset'} for item in queued)
+    assert any(
+        item == {'type': 'preview_replace', 'text': '修正后分析。'}
+        for item in queued
+    )
+    assert any(
+        item == {'type': 'suggestion_replace', 'text': '修正后建议。'}
+        for item in queued
+    )
+
+
+def test_validation_status_preserves_retained_snapshot_until_final_replace():
+    t = task({'status': 'processing'})
+    t['future'] = Future()
+    t['events'].put({'type': 'preview_delta', 'text': '已显示的第一版。'})
+    assert api._quick_check_preview_snapshot(t)['text'] == '已显示的第一版。'
+
+    t['events'].put({'type': 'validation_started'})
+    validating = api._quick_check_preview_snapshot(t)
+    assert validating == {
+        'text': '已显示的第一版。', 'status': 'processing', 'validating': True,
+    }
+
+    t['events'].put({'type': 'preview_replace', 'text': '最终修正版。'})
+    t['events'].put({'type': 'suggestion_complete', 'status': 'completed'})
+    t['events'].put({'type': 'preview_complete', 'status': 'completed'})
+    assert api._quick_check_preview_snapshot(t) == {
+        'text': '最终修正版。', 'status': 'completed',
+    }
+
+
 def test_sse_delivers_partial_snapshot_while_final_is_pending():
     t = task({'status': 'processing'})
     t['future'] = Future()

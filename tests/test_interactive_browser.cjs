@@ -175,6 +175,41 @@ test('v5 submit confirmation accepts a usable final even when internal advice au
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.status.textContent,'AI检测完成');
 });
+test('v6 keeps completed-looking draft visible while a repair is validated in background', async () => {
+  const policy='front-v46-taoran-advice-v6-20260918';
+  const analysis='第一版本次拜访分析。';
+  const advice='第一版AI改善建议。';
+  const repairedAnalysis='校验后的本次拜访分析。';
+  const repairedAdvice='校验后的AI改善建议。';
+  const feedback=`本次拜访分析：${repairedAnalysis}\n\nAI改善建议：\n${repairedAdvice}`;
+  const h=harness([new Error('initial transport unavailable'), {
+    check_id:'qc_test',input_hash:'v1',status:'completed',final_usable:true,
+    preview_status:'completed',preview_feedback_text:repairedAnalysis,
+    suggestion_status:'completed',suggestion_feedback_text:repairedAdvice,
+    final_feedback_text:feedback,
+  }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  await new Promise(resolve=>setImmediate(resolve));
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:analysis,status:'processing'});
+  for (let i=0;i<analysis.length;i++) await h.tick(18);
+  h.source.emit('suggestion_snapshot',{check_id:'qc_test',text:advice,status:'processing'});
+  for (let i=0;i<advice.length;i++) await h.tick(18);
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalContent.textContent,advice);
+
+  h.source.emit('preview_snapshot',{
+    check_id:'qc_test',text:analysis,status:'processing',validating:true,
+  });
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalContent.textContent,advice);
+  assert.equal(h.nodes.status.textContent,'正在校验并完善AI意见……');
+  assert.equal(h.nodes.ack.disabled,true);
+
+  await h.tick();
+  assert.equal(h.nodes.content.textContent,repairedAnalysis);
+  assert.equal(h.nodes.finalContent.textContent,repairedAdvice);
+  assert.equal(h.nodes.status.textContent,'AI检测完成');
+  assert.equal(h.nodes.ack.disabled,false);
+});
 test('cached v4 result is displayed immediately without suggestion replay', async () => {
   const policy='front-v46-taoran-advice-v4-20260917';
   const analysis='客户已确认设备清单。';

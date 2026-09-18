@@ -2699,32 +2699,47 @@ def _quick_check_run(
 ) -> dict[str, Any]:
     from .content_cache import run_with_knowledge_basis
     started = monotonic()
-    stream_state = {"text": "", "first_ms": None}
-    suggestion_state = {"text": "", "first_ms": None}
+    stream_state = {"text": "", "first_ms": None, "retrying": False, "retry_text": ""}
+    suggestion_state = {"text": "", "first_ms": None, "retrying": False, "retry_text": ""}
 
     def emit_analysis(text: str) -> None:
         if not isinstance(text, str) or not text.strip():
             return
         if stream_state["first_ms"] is None:
             stream_state["first_ms"] = int((monotonic() - started) * 1000)
+        if stream_state["retrying"]:
+            # Keep the already visible first attempt stable.  A repaired
+            # attempt is buffered server-side and only reconciled once the
+            # authoritative final result has passed validation.
+            stream_state["retry_text"] += text
+            return
         stream_state["text"] += text
         events.put({"type": "preview_delta", "text": text})
 
     def reset_analysis() -> None:
-        stream_state.update(text="", first_ms=None)
-        events.put({"type": "preview_reset"})
+        if stream_state["text"]:
+            stream_state.update(retrying=True, retry_text="")
+            events.put({"type": "validation_started"})
+        else:
+            stream_state.update(text="", first_ms=None, retrying=False, retry_text="")
 
     def emit_suggestion(text: str) -> None:
         if not isinstance(text, str) or not text:
             return
         if suggestion_state["first_ms"] is None and text.strip():
             suggestion_state["first_ms"] = int((monotonic() - started) * 1000)
+        if suggestion_state["retrying"]:
+            suggestion_state["retry_text"] += text
+            return
         suggestion_state["text"] += text
         events.put({"type": "suggestion_delta", "text": text})
 
     def reset_suggestion() -> None:
-        suggestion_state.update(text="", first_ms=None)
-        events.put({"type": "suggestion_reset"})
+        if suggestion_state["text"]:
+            suggestion_state.update(retrying=True, retry_text="")
+            events.put({"type": "validation_started"})
+        else:
+            suggestion_state.update(text="", first_ms=None, retrying=False, retry_text="")
 
     try:
         final = run_with_knowledge_basis(
@@ -2824,8 +2839,12 @@ def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
                 state.update(text=event["text"], status="processing")
             elif event["type"] == "preview_reset":
                 state.update(text="", status="processing")
+            elif event["type"] == "validation_started":
+                state["validating"] = True
+                suggestion["validating"] = True
             elif event["type"] == "preview_complete":
                 state["status"] = "completed" if event.get("status") == "completed" else "unavailable"
+                state.pop("validating", None)
             elif event["type"] == "suggestion_delta" and suggestion["status"] == "processing":
                 suggestion["text"] += event["text"]
             elif event["type"] == "suggestion_replace":
@@ -2836,6 +2855,7 @@ def _quick_check_preview_snapshot(task: dict[str, Any]) -> dict[str, Any]:
                 suggestion["status"] = (
                     "completed" if event.get("status") == "completed" else "unavailable"
                 )
+                suggestion.pop("validating", None)
         preview = outcome.get("preview", {})
         if state["status"] == "processing" and preview.get("status") not in (None, "processing"):
             state["status"] = "completed" if preview["status"] == "completed" else "unavailable"
@@ -2928,6 +2948,9 @@ def _quick_check_task_response(task: dict[str, Any]) -> dict[str, Any]:
     )
     result["suggestion_status"] = suggestion_snapshot["status"]
     result["suggestion_feedback_text"] = suggestion_snapshot["text"]
+    result["validation_in_progress"] = bool(
+        preview_snapshot.get("validating") or suggestion_snapshot.get("validating")
+    )
     final_usable = (
         task['status'] == 'completed'
         and result.get('final_status') == 'completed'

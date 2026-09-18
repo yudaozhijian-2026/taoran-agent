@@ -60,9 +60,10 @@ const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重�
 const waitingText = 'AI正在分析，请稍候。';
 const finalWaitingText = '正在生成AI改善建议';
 const suggestionWaitingText = '改善建议生成中';
-const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918'].includes(frontPolicy);
-const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918'].includes(frontPolicy);
-const suggestionStreamMode = typeof frontPolicy === 'string' && ['front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918'].includes(frontPolicy);
+const validationWaitingText = '正在校验并完善AI意见……';
+const finalStreamMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-stream-v1-20260917','front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918'].includes(frontPolicy);
+const typewriterMode = typeof frontPolicy === 'string' && ['front-v46-final-analysis-typewriter-v1-20260917','front-v46-final-analysis-typewriter-v2-20260917','front-v46-taoran-advice-v3-20260917','front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918'].includes(frontPolicy);
+const suggestionStreamMode = typeof frontPolicy === 'string' && ['front-v46-taoran-advice-v4-20260917','front-v46-taoran-advice-v5-20260918','front-v46-taoran-advice-v6-20260918'].includes(frontPolicy);
 const dualMode = typeof frontPolicy === 'string' && ['front-v46-restored-20260908','front-v46-observe-20260908','front-v46-complete-20260908','front-v46-no-output-cap-20260908','front-v46-async-observation-20260908','front-v46-suggestion-contract-20260908','front-v46-grounded-confirmation-20260916'].includes(frontPolicy);
 const previewLabel = document.querySelector('#previewLabel');
 let analysisTarget = '', analysisQueue = '', analysisTypingTimer;
@@ -70,6 +71,7 @@ let suggestionTarget = '', suggestionQueue = '', suggestionTypingTimer;
 let suggestionComplete = false, finalResultReceived = false;
 let pendingSuggestionText = null;
 let pendingFinalComplete = false;
+let validationInProgress = false;
 const analysisCharacterDelay = 18;
 function stopAnalysisTyping() {
   clearTimeout(analysisTypingTimer);
@@ -207,7 +209,16 @@ const allowedParents = new Set(['https://www.jiandaoyun.com', 'https://jiandaoyu
 let parentOrigin = '';
 try { parentOrigin = new URL(document.referrer).origin; } catch (_) { /* fail closed */ }
 function stage(text) {
-  if (!disposed) status.textContent = previewSucceeded && !finalDone ? finalWaitingText : text;
+  if (!disposed) status.textContent = validationInProgress
+    ? validationWaitingText
+    : (previewSucceeded && !finalDone ? finalWaitingText : text);
+}
+function setValidationInProgress(active) {
+  validationInProgress = active === true;
+  if (validationInProgress && !disposed && !finalDone) {
+    status.textContent = validationWaitingText;
+    setConfirmReady(false);
+  }
 }
 function showFinalWaiting() {
   if (disposed || finalDone || !previewSucceeded) return;
@@ -306,8 +317,9 @@ function stopTransport() {
 function settle() {
   if (finalDone && previewComplete) { done = true; stopTransport(); }
 }
-function previewSnapshot(text, state) {
+function previewSnapshot(text, state, validating = false) {
   if ((versionedMode && !(dualMode || finalStreamMode)) || previewComplete) return;
+  setValidationInProgress(validating);
   if (typeof text === 'string') {
     // An empty snapshot can retract an incomplete attempt before format retry.
     if (!syncAnalysisTarget(text)) {
@@ -361,6 +373,7 @@ function finish(text, contentComplete = true) {
     return;
   }
   finalResultReceived = true;
+  setValidationInProgress(false);
   finalContentComplete = contentComplete;
   if (finalStreamMode) {
     const parts = splitFinalText(text);
@@ -436,7 +449,7 @@ async function poll() {
       if (resume) resume.hidden = !task.recoverable;
       return;
     }
-    previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'));
+    previewSnapshot(task.preview_feedback_text, task.preview_status || (task.status === 'processing' ? 'processing' : 'unavailable'), task.validation_in_progress === true);
     suggestionSnapshot(task.suggestion_feedback_text, task.suggestion_status || 'processing');
     // Healthy active previews refresh each second; only failures/finished
     // previews back off, otherwise several generated sentences arrive at once.
@@ -473,7 +486,7 @@ source.addEventListener('stage', event => decode(event, data => { if (!finalDone
 source.addEventListener('preview_snapshot', event => decode(event, data => {
   if (data.check_id !== checkId) return fail('task_mismatch', undefined, true);
   if (cachedOpening) return;
-  previewSnapshot(data.text, data.status);
+  previewSnapshot(data.text, data.status, data.validating === true);
 }));
 source.addEventListener('preview_delta', event => decode(event, data => {
   if (cachedOpening) return;
