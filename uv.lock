@@ -65,7 +65,7 @@ wheels = [
 
 [[package]]
 name = "dsm-taoran-agent"
-version = "1.0.6rc35"
+version = "1.0.6rc36"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

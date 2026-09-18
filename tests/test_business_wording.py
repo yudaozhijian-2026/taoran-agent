@@ -11,6 +11,8 @@ from taoran_agent.business_wording import (
     model_facing_visit_snapshot,
     normalize_generated_business_terms,
     normalize_generated_payload_wording,
+    salesperson_feedback_hits,
+    salesperson_wording,
 )
 from taoran_agent.config import Settings
 from taoran_agent.feedback import _clean_experimental_front_text, build_evaluation_feedback
@@ -35,13 +37,16 @@ def test_formal_feedback_does_not_mutate_scoring_facts():
         process_fact_based=True, purpose_achievement='partially_achieved', next_action_logic_ok=True,
         customer_consensus_met=True,
         reason='原目标不够明确，key_result_quality_ok=false。推荐LKXA产品，process_fact_based=true。'
-               '潜力客户不适用共识门槛，customer_consensus_met=true。next_action_logic_ok=true。')
+               '潜力客户不适用共识门槛，customer_consensus_met=true。'
+               'N整体未满足时间门槛。next_action_logic_ok=true。')
     facts.sections = [ModelSectionAnalysis(code=c, verdict='met', reason='有记录', suggestion='', field_paths=[], evidence=[] )
                       for c in ['T', 'A1', 'O_KR', 'R', 'A2', 'N']]
     original = deepcopy(facts.model_dump())
-    output = build_evaluation_feedback(visit(), 40, 20, 60, [], facts)
+    output = build_evaluation_feedback(visit(next_contact_at=None), 40, 20, 60, [], facts)
     assert 'key_result_quality_ok' not in output and '=true' not in output
-    assert '不适用共识门槛' in output and 'LKXA' in output
+    assert '不适用共识门槛' not in output and 'LKXA' in output
+    assert '下一次联系客户时间安排尚未填写' in output
+    assert not salesperson_feedback_hits(output)
     assert '客户已确认' not in output
     assert facts.model_dump() == original
     assert 'key_result_quality_ok' not in _clean_experimental_front_text(facts.reason)
@@ -50,6 +55,67 @@ def test_formal_feedback_does_not_mutate_scoring_facts():
 def test_business_names_and_layout_survive():
     text = 'LKXA、5kg、BD、P2、API、product_code_X\n客户尚未批准预算。'
     assert business_wording(text) == text
+
+
+@pytest.mark.parametrize("text", [
+    "潜力客户不要求客户共识，共识视为满足。",
+    "程序判定 period_met 为否。",
+    "N整体不达标。",
+    "时间门槛未满足。",
+    "请说明跨季度要求不适用的依据。",
+    "authoritative_checks.next_contact_policy显示为false。",
+])
+def test_salesperson_leak_detector_rejects_internal_rule_language(text):
+    assert salesperson_feedback_hits(text)
+
+
+def test_salesperson_wording_uses_recorded_date_fact_and_hides_exemption():
+    text = (
+        "下一步保持联系，但N整体未满足时间门槛。"
+        "潜力客户无客户共识要求，共识视为满足。"
+    )
+    output = salesperson_wording(text, {
+        "customer_type_ii": "潜力客户",
+        "visit_date": "2026-09-17",
+        "next_contact_at": None,
+    })
+    assert output == "下一步保持联系，但下一次联系客户时间安排尚未填写。"
+    assert not salesperson_feedback_hits(output)
+
+
+def test_salesperson_wording_describes_same_quarter_without_threshold_terms():
+    output = salesperson_wording("程序判定 period_met 为否。", {
+        "customer_type_ii": "潜力客户",
+        "visit_date": "2026-09-17",
+        "next_contact_at": "2026-09-30",
+    })
+    assert output == "填写的下一次联系日期与本次拜访仍在同一自然季度。"
+    assert not salesperson_feedback_hits(output)
+
+
+def test_salesperson_wording_removes_exception_explanation_request():
+    output = salesperson_wording(
+        "请说明跨季度要求不适用的依据。另请补充下一次联系客户时间安排。",
+        {"customer_type_ii": "潜力客户", "visit_date": "2026-09-17"},
+    )
+    assert "不适用" not in output and "依据" not in output
+    assert "补充下一次联系客户时间安排" in output
+    assert not salesperson_feedback_hits(output)
+
+
+@pytest.mark.parametrize("text", [
+    "潜力客户不要求客户共识，共识视为满足。",
+    "程序判定 period_met 为否。",
+    "N整体不达标。",
+    "时间门槛未满足。",
+])
+def test_interactive_preview_rejects_internal_rule_narration(text):
+    snapshot = {
+        "customer_type_ii": "潜力客户",
+        "visit_date": "2026-09-17",
+        "next_contact_at": "2026-10-01",
+    }
+    assert preview._interactive_preview_safe(text, snapshot) is False
 
 
 def test_model_facing_visit_snapshot_uses_exact_form_options():

@@ -11,6 +11,18 @@ def test_post_rendering_preserves_business_units_and_translates_boolean():
     assert "P2阶段" in _clean_post_text("商机第二阶段")
 
 
+@pytest.mark.parametrize("text", [
+    "潜力客户不要求客户共识，共识视为满足。",
+    "程序判定period_met为否。",
+    "N整体未满足时间门槛。",
+    "请说明跨季度要求不适用的依据。",
+])
+def test_post_quality_rejects_internal_rule_narration(text):
+    from taoran_agent.post_quality import quality_hits
+    hits = quality_hits(text, "facts.reason", {"record_contract": {"presence": {}}})
+    assert any(hit["rule"] == "salesperson_internal_rule_leak" for hit in hits)
+
+
 def test_post_failed_model_does_not_show_completed_business_advice():
     from taoran_agent.feedback import build_evaluation_feedback
     from taoran_agent.semantic import HeuristicSemanticReviewer

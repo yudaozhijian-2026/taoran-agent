@@ -3,7 +3,11 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 
-from .business_wording import business_wording
+from .business_wording import (
+    business_wording,
+    salesperson_feedback_hits,
+    salesperson_wording,
+)
 from .field_labels import display_field_name, display_form_field_name
 from .models import (
     FrontVisitAnalysisSection,
@@ -732,7 +736,18 @@ def build_evaluation_feedback(
 ) -> str:
     # 分数、六项规则明细继续作为结构化字段保存并回写评分；这里仅保留供销售
     # 代表阅读的本次分析和可执行改善建议。
-    del visit, q33_score, q34_score, total_score
+    del q33_score, q34_score, total_score
+    customer_type = getattr(visit, "customer_type_ii", None)
+    sales_context = {
+        "customer_type_ii": (
+            customer_type.value
+            if customer_type and hasattr(customer_type, "value")
+            else customer_type
+        ),
+        "visit_date": getattr(visit, "visit_date", None),
+        "next_contact_at": getattr(visit, "next_contact_at", None),
+        "_authoritative_checks": semantic_facts.quality_audit.get("authoritative_checks", {}),
+    }
     lines = []
     required_model_sections = {"T", "A1", "O_KR", "R", "A2", "N"}
     completed_sections = {
@@ -763,12 +778,13 @@ def build_evaluation_feedback(
         )
     else:
         analysis_text = _normalize_opportunity_stage_wording(
-            business_wording(semantic_facts.reason.strip()) or "本次拜访未形成可展示的分析结论。"
+            salesperson_wording(semantic_facts.reason.strip(), sales_context)
+            or "本次拜访未形成可展示的分析结论。"
         )
     lines.extend(["", "本次拜访分析：" + analysis_text])
     if semantic_facts.provider.startswith("llm-") and not model_completed:
         # Do not present heuristic fallback advice as completed AI analysis.
-        return business_wording("\n".join(lines))
+        return salesperson_wording("\n".join(lines), sales_context)
     advice_items = _build_post_advice(
         issues,
         semantic_facts,
@@ -779,7 +795,7 @@ def build_evaluation_feedback(
     if advice_items:
         lines.extend(["", "AI改善建议："])
         lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(advice_items, 1))
-    result = "\n".join(lines)
+    result = salesperson_wording("\n".join(lines), sales_context)
     context = semantic_facts.quality_audit.get("authoritative_checks")
     if context:
         from .contact_policy import contact_policy_hits
@@ -790,7 +806,10 @@ def build_evaluation_feedback(
         semantic_facts.quality_audit["final_review"] = final_feedback_observations(
             analysis_text, advice_items, context,
         )
-    return business_wording(result)
+    leaks = salesperson_feedback_hits(result)
+    if leaks:
+        raise ValueError("post_salesperson_internal_rule_leak")
+    return result
 
 
 def _build_post_advice(

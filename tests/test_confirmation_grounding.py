@@ -80,6 +80,24 @@ def test_failed_repair_without_remaining_analysis_is_explicitly_partial():
     assert partial['suggestion_status'] is None
 
 
+@pytest.mark.parametrize(("root", "key", "text"), [
+    ("analysis_points", "text", "N整体不达标。"),
+    ("items", "suggestion", "请说明跨季度要求不适用的依据。"),
+    ("confirmations", "question", "程序判定period_met为否，是否确认？"),
+    ("confirmations", "impact", "潜力客户不要求客户共识，共识视为满足。"),
+])
+def test_internal_rule_language_requires_frontend_repair(root, key, text):
+    context, raw = case()
+    target = raw[root][0]
+    target[key] = text
+    with pytest.raises(ConfirmationShapeError) as error:
+        normalize(raw, context)
+    assert any(
+        item["code"] == "salesperson_internal_rule_leak"
+        for item in error.value.validation_errors
+    )
+
+
 @pytest.mark.parametrize('repair_ok', [True, False])
 def test_provider_local_repair_and_safe_fallback(tmp_path, repair_ok):
     from test_suggestion_contract import execute

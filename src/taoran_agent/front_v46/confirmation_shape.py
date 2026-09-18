@@ -37,6 +37,30 @@ def normalize(raw, context):
     if not isinstance(value, dict) or not isinstance(value.get("confirmations", []), list):
         return value
     errors = []
+    from ..business_wording import salesperson_feedback_hits
+    visible_fields = (
+        ("analysis_points", "text"),
+        ("items", "suggestion"),
+        ("confirmations", "question"),
+        ("confirmations", "impact"),
+    )
+    for root, key in visible_fields:
+        for index, item in enumerate(value.get(root, [])):
+            if not isinstance(item, dict) or not isinstance(item.get(key), str):
+                continue
+            for hit in salesperson_feedback_hits(item[key]):
+                errors.append({
+                    "location": f"{root}.{index}.{key}",
+                    "code": "salesperson_internal_rule_leak",
+                    "detail": hit["code"],
+                })
+    if isinstance(value.get("suggestion_reason"), str):
+        for hit in salesperson_feedback_hits(value["suggestion_reason"]):
+            errors.append({
+                "location": "suggestion_reason",
+                "code": "salesperson_internal_rule_leak",
+                "detail": hit["code"],
+            })
     for root, key in (("analysis_points", "text"), ("items", "suggestion"), ("confirmations", "question")):
         for index, item in enumerate(value.get(root, [])):
             if isinstance(item, dict) and unsupported_role_requirement(str(item.get(key, "")), context):

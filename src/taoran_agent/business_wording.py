@@ -3,6 +3,7 @@
 import re
 from collections.abc import Callable
 from copy import deepcopy
+from datetime import date, datetime
 from typing import Any
 
 from .field_labels import display_form_field_name
@@ -73,6 +74,150 @@ _METHOD_ALIASES = {
     "phone": ("电话沟通方式",),
 }
 
+# These expressions describe implementation details, not useful coaching for a
+# salesperson.  Keep the scoring facts internally, but never expose this
+# vocabulary in the visit analysis, advice or confirmation text.
+_INTERNAL_FEEDBACK_PATTERNS = (
+    ("internal_field", re.compile(
+        r"(?<![A-Za-z0-9_])(?:period_met|after_visit|customer_consensus_required|"
+        r"customer_consensus_met|next_action_logic_ok|authoritative_checks|advice_basis|"
+        r"gap_kind|confirmed_findings)(?![A-Za-z0-9_])",
+        re.IGNORECASE,
+    )),
+    ("internal_dimension", re.compile(
+        r"(?<![A-Za-z0-9_])(?:T|A1|O_KR|R|A2|N)\s*(?:整体|项|维度|检查|判定)",
+        re.IGNORECASE,
+    )),
+    ("threshold_wording", re.compile(r"(?:程序|评分)?(?:时间|日期|共识)?门槛")),
+    ("consensus_exemption", re.compile(
+        r"(?:潜力客户|目标客户).{0,28}(?:无(?:客户)?共识要求|(?:不要求|无需|不强制|不适用).{0,16}(?:客户)?共识)|"
+        r"(?:客户)?共识.{0,16}(?:豁免|视为满足|自动满足|不适用)",
+    )),
+    ("exception_explanation", re.compile(
+        r"(?:说明|解释|提供).{0,24}(?:跨(?:北京时间)?(?:自然)?(?:月|季度)|日期|时间|共识|规则)"
+        r".{0,24}(?:不适用|例外|豁免).{0,12}(?:依据|原因|理由)",
+    )),
+)
+
+SALESPERSON_WORDING_GUIDANCE = (
+    "面向销售的本次拜访分析、改善建议和需确认事项只能描述当前记录中的业务事实、具体缺口和可执行修改方式。"
+    "不得输出内部字段名、布尔值、程序判定过程、TAORAN字母检查代码或‘整体达标/不达标’；"
+    "不得使用‘门槛、豁免、自动视为满足、不适用共识’等内部规则表述。"
+    "某项规则对当前客户类型不适用时直接不提，不要求销售解释例外或提供规则不适用依据。"
+    "联系日期有问题时只描述真实状态，例如未填写、不晚于本次拜访日期、仍处于同一自然月或同一自然季度。"
+)
+
+
+def salesperson_feedback_hits(value: str) -> list[dict[str, str]]:
+    """Return implementation-language leaks found in salesperson-visible text."""
+    text = value or ""
+    hits = []
+    for code, pattern in _INTERNAL_FEEDBACK_PATTERNS:
+        for match in pattern.finditer(text):
+            hits.append({"code": code, "quote": match.group(0)})
+    return hits
+
+
+def _as_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value)).date()
+    except ValueError:
+        return None
+
+
+def _contact_fact_wording(context: dict[str, Any] | None) -> str:
+    """Describe the recorded date state without exposing the policy machinery."""
+    context = context or {}
+    policy = context.get("next_contact_policy")
+    if not isinstance(policy, dict):
+        policy = (context.get("_authoritative_checks") or {}).get("next_contact_policy")
+    if isinstance(policy, dict):
+        if policy.get("date_state") == "missing":
+            return "下一次联系客户时间安排尚未填写"
+        if policy.get("after_visit") is False:
+            return "填写的下一次联系日期不晚于本次拜访日期"
+        if policy.get("period_met") is False:
+            if policy.get("period") == "month":
+                return "填写的下一次联系日期与本次拜访仍在同一自然月"
+            if policy.get("period") == "quarter":
+                return "填写的下一次联系日期与本次拜访仍在同一自然季度"
+
+    current = _as_date(context.get("visit_date"))
+    following = _as_date(context.get("next_contact_at"))
+    customer_type = str(context.get("customer_type_ii") or "")
+    if following is None:
+        presence = (context.get("_record_contract") or {}).get("presence", {})
+        if "next_contact_at" in context or presence.get("next_contact_at") == "empty":
+            return "下一次联系客户时间安排尚未填写"
+        return "下一次联系客户时间安排需要结合当前记录进一步核对"
+    if current is not None and following <= current:
+        return "填写的下一次联系日期不晚于本次拜访日期"
+    if (
+        current is not None
+        and customer_type in {"target", "目标客户"}
+        and (following.year, following.month) == (current.year, current.month)
+    ):
+        return "填写的下一次联系日期与本次拜访仍在同一自然月"
+    if (
+        current is not None
+        and customer_type in {"potential", "潜力客户", "潜在客户"}
+        and (following.year, (following.month - 1) // 3)
+        == (current.year, (current.month - 1) // 3)
+    ):
+        return "填写的下一次联系日期与本次拜访仍在同一自然季度"
+    return "下一次联系客户时间安排需要结合当前记录进一步核对"
+
+
+def salesperson_wording(value: str, context: dict[str, Any] | None = None) -> str:
+    """Remove internal policy narration while preserving actual business findings."""
+    text = business_wording(value or "")
+    contact_fact = _contact_fact_wording(context)
+    text = re.sub(
+        r"(?:程序|系统)?判定\s*[`\"']?period_met[`\"']?\s*(?:为|=|是)?\s*(?:否|false)",
+        contact_fact,
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])N\s*整体(?:仍)?(?:未|不)(?:满足|通过|达标)?(?:程序)?(?:时间|日期)?门槛",
+        contact_fact,
+        text,
+        flags=re.IGNORECASE,
+    )
+    # Applicability decisions stay in audit/scoring.  They are not a finding or
+    # an action for the salesperson, so remove only the matching clause.
+    text = re.sub(
+        r"(?:潜力客户|目标客户)[^。；\n]{0,40}(?:无(?:客户)?共识要求|"
+        r"(?:不要求|无需|不强制|不适用)[^。；\n]{0,20}(?:客户)?共识)"
+        r"[^。；\n]*(?:[。；]|$)",
+        "",
+        text,
+    )
+    text = re.sub(
+        r"(?:客户)?共识[^。；\n]{0,20}(?:豁免|视为满足|自动满足|不适用)[^。；\n]*(?:[。；]|$)",
+        "",
+        text,
+    )
+    text = re.sub(
+        r"[^。；\n]{0,18}(?:说明|解释|提供)[^。；\n]{0,35}"
+        r"(?:跨(?:北京时间)?(?:自然)?(?:月|季度)|日期|时间|共识|规则)[^。；\n]{0,24}"
+        r"(?:不适用|例外|豁免)[^。；\n]{0,12}(?:依据|原因|理由)[^。；\n]*(?:[。；]|$)",
+        "",
+        text,
+    )
+    text = re.sub(r"[；;]\s*[；;]", "；", text)
+    text = re.sub(r"。\s*。", "。", text)
+    text = re.sub(r"(?m)^\s*\d+[.、]\s*$", "", text)
+    text = re.sub(r"(?m)^AI改善建议：\s*\Z", "", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip(" \n；;")
+
 
 def business_field_value(field: str, value: Any) -> Any:
     """Return the exact user-facing option for model-facing visit context."""
@@ -133,10 +278,12 @@ def normalize_generated_payload_wording(raw: Any, context: dict[str, Any] | None
                 continue
             for key in keys:
                 if isinstance(item.get(key), str):
-                    item[key] = normalize_generated_business_terms(item[key], context)
+                    item[key] = salesperson_wording(
+                        normalize_generated_business_terms(item[key], context), context,
+                    )
     if isinstance(result.get("suggestion_reason"), str):
-        result["suggestion_reason"] = normalize_generated_business_terms(
-            result["suggestion_reason"], context,
+        result["suggestion_reason"] = salesperson_wording(
+            normalize_generated_business_terms(result["suggestion_reason"], context), context,
         )
     return result
 

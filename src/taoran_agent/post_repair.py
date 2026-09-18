@@ -2,6 +2,7 @@
 import json
 from copy import deepcopy
 
+from .business_wording import SALESPERSON_WORDING_GUIDANCE
 from .post_quality import POST_EVIDENCE_GUIDANCE
 from .post_review_policy import POLICY
 
@@ -66,7 +67,7 @@ def repair_messages(original_messages, original, targets, details):
         "filled_field_not_missing表示字段已填写但内容可能不足，gap_kind必须改为insufficient_specificity；"
         "missing_value仅允许整个字段为空。缺少客户表达或回应不等于过程详细描述字段为空。"
         "facts_reason仅在指定facts.reason时填写修复后的总体分析，否则必须为空字符串。"
-    )
+    ) + SALESPERSON_WORDING_GUIDANCE
     system += "本次必须返回的section代码为" + json.dumps([t for t in targets if t != 'facts.reason']) + "。"
     if 'facts.reason' not in targets:
         system += '本次facts_reason必须严格输出空字符串""；不得重复或改写原总述。'

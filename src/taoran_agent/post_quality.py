@@ -62,6 +62,16 @@ def quality_context(visit, snapshot):
 def quality_hits(text, target, context):
     hits = advice_hits(text, target)
     hits += field_claim_hits(text, {"_record_contract": context.get("record_contract", {"presence": context.get("field_states", {})})}, target)
+    from .business_wording import salesperson_feedback_hits
+    hits += [
+        {
+            "rule": "salesperson_internal_rule_leak",
+            "target": target,
+            "quote": hit["quote"],
+            "detail": hit["code"],
+        }
+        for hit in salesperson_feedback_hits(text)
+    ]
     for match in re.finditer(r"[^。；\n]+", text):
         clause = match.group()
         rule = None
