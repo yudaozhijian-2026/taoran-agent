@@ -156,6 +156,37 @@ def test_each_stage_releases_only_its_validated_module(monkeypatch):
     assert result['final']['phase_timings']['two_stage']['analysis_status']=='completed'
 
 
+def test_joint_conflict_is_repaired_locally_without_second_model_call(monkeypatch):
+    calls = []
+
+    def analysis(_visit, _settings, events):
+        events.put({'type': 'preview_replace', 'text': '原定目标已达成。'})
+        events.put({'type': 'preview_complete', 'status': 'completed'})
+        return {'status': 'completed', 'feedback_text': '原定目标已达成。'}
+
+    def advice(*args, **kwargs):
+        calls.append(kwargs['decision_ledger'])
+        return {
+            'status': 'completed',
+            'feedback_text': (
+                '本次拜访分析：内部分析不应显示。\n\nAI改善建议：\n'
+                '1、请修改想取得的关键结果。\n2、请补充下一次联系时间。'
+            ),
+        }
+
+    monkeypatch.setattr(api, '_quick_check_run_preview', analysis)
+    monkeypatch.setattr(api, '_quick_check_run_final', advice)
+    result = api._quick_check_run(SimpleNamespace(visit=None), None, Queue())
+
+    assert len(calls) == 1
+    assert result['final']['joint_repair_mode'] == 'local_clause'
+    assert '修改想取得的关键结果' not in result['final']['feedback_text']
+    assert '1、请补充下一次联系时间。' in result['final']['feedback_text']
+    timings = result['final']['phase_timings']['two_stage']
+    assert timings['joint_repair_mode'] == 'local_clause'
+    assert timings['joint_repair_ms'] >= 0
+
+
 def test_validation_status_preserves_retained_snapshot_until_final_replace():
     t = task({'status': 'processing'})
     t['future'] = Future()

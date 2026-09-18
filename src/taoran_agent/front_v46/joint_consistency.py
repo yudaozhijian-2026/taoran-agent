@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-VERSION = "front-joint-consistency-v1-20260918"
+VERSION = "front-joint-consistency-v2-20260918"
 
 _INTERNAL = re.compile(
     r"(?:period_met|customer_consensus_met|next_action_logic_ok|authoritative_checks|"
@@ -35,3 +35,56 @@ def errors(analysis: str, advice: str, ledger: dict[str, Any]) -> list[str]:
     if not str(ledger.get("validated_analysis") or "").strip():
         result.append("validated_analysis_missing")
     return list(dict.fromkeys(result))
+
+
+def repair_advice(analysis: str, advice: str, error_codes: list[str]) -> tuple[str, list[str]]:
+    """Remove only high-confidence conflicting advice clauses locally.
+
+    The validated analysis is immutable.  This helper deliberately handles
+    only the same narrow contradictions detected by :func:`errors`; anything
+    uncertain remains for the bounded advice-only model repair.
+    """
+    if not advice or not error_codes:
+        return advice, []
+
+    predicates = []
+    requested = set(error_codes)
+    if "internal_rule_leak" in requested:
+        predicates.append(("internal_rule_leak", lambda text: bool(_INTERNAL.search(text))))
+    if "goal_achievement_conflict" in requested:
+        predicates.append(("goal_achievement_conflict", lambda text: bool(
+            re.search(_CHANGE + r"[^\n。；]{0,24}(?:原定目标|想取得的关键结果|关键结果)", text)
+        )))
+    if "process_fact_conflict" in requested:
+        predicates.append(("process_fact_conflict", lambda text: bool(
+            re.search(_CHANGE + r"[^\n。；]{0,24}(?:过程事实|客户事实|过程详细描述)", text)
+        )))
+    if "self_assessment_conflict" in requested:
+        predicates.append(("self_assessment_conflict", lambda text: bool(
+            re.search(_CHANGE + r"[^\n。；]{0,20}(?:自评|评价)", text)
+        )))
+    if not predicates:
+        return advice, []
+
+    # Keep punctuation with each clause so removing one conflict does not
+    # rewrite or reorder unrelated suggestions.
+    clauses = re.split(r"(?<=[。！？；])|(?=\n)", advice)
+    kept: list[str] = []
+    applied: list[str] = []
+    for clause in clauses:
+        matched = [code for code, predicate in predicates if predicate(clause)]
+        if matched:
+            applied.extend(matched)
+            continue
+        kept.append(clause)
+    repaired = "".join(kept)
+    repaired = re.sub(r"\n{3,}", "\n\n", repaired).strip()
+    # Renumber only line-leading numbered suggestions after a clause removal.
+    counter = 0
+    lines = []
+    for line in repaired.splitlines():
+        if re.match(r"^\s*\d+[、．.]", line):
+            counter += 1
+            line = re.sub(r"^\s*\d+([、．.])", rf"{counter}\1", line)
+        lines.append(line)
+    return "\n".join(lines).strip(), list(dict.fromkeys(applied))

@@ -2739,6 +2739,7 @@ def _quick_check_run(
     from .front_v46.decision_ledger import build as build_decision_ledger
     from .front_v46.decision_ledger import with_validated_analysis
     from .front_v46.joint_consistency import errors as joint_consistency_errors
+    from .front_v46.joint_consistency import repair_advice as repair_joint_advice
     started = monotonic()
     decision_ledger = (
         build_decision_ledger(canonical_request.visit)
@@ -2780,8 +2781,9 @@ def _quick_check_run(
         )
     except Exception:  # noqa: BLE001 - worker failures become a traceable Final state
         final = {"status": "failed", "failure_category": "final_service_error"}
-    suggestion_elapsed = int((monotonic() - suggestion_started) * 1000)
-    elapsed = int((monotonic() - started) * 1000)
+    initial_suggestion_elapsed = int((monotonic() - suggestion_started) * 1000)
+    joint_repair_ms = 0
+    joint_repair_mode = "none"
     if final.get("status") == "completed":
         final_analysis = validated_analysis or _quick_check_final_analysis(
             final.get("feedback_text", "")
@@ -2796,9 +2798,32 @@ def _quick_check_run(
             shared_ledger,
         )
         if joint_errors:
+            repair_started = monotonic()
+            locally_repaired, locally_applied = repair_joint_advice(
+                final_analysis,
+                final_suggestion,
+                joint_errors,
+            )
+            if locally_applied and locally_repaired:
+                remaining_errors = joint_consistency_errors(
+                    final_analysis,
+                    locally_repaired,
+                    shared_ledger,
+                )
+                if not remaining_errors:
+                    final_suggestion = locally_repaired
+                    final["joint_repaired"] = True
+                    final["joint_repair_mode"] = "local_clause"
+                    final["joint_initial_errors"] = joint_errors
+                    final["joint_local_repairs"] = locally_applied
+                    joint_errors = []
+                    joint_repair_mode = "local_clause"
+            joint_repair_ms = int((monotonic() - repair_started) * 1000)
+        if joint_errors:
             # Keep the already validated analysis fixed.  A conflict starts one
             # hidden advice-only repair attempt with a distinct cache key; the
             # user never sees the rejected suggestion or a second analysis.
+            repair_started = monotonic()
             repair_ledger = with_validated_analysis(
                 decision_ledger,
                 final_analysis,
@@ -2833,6 +2858,8 @@ def _quick_check_run(
                     final = repaired
                     final_suggestion = repaired_suggestion
                     joint_errors = []
+                    joint_repair_mode = "model_advice_only"
+            joint_repair_ms += int((monotonic() - repair_started) * 1000)
             if joint_errors:
                 final = {
                     **final,
@@ -2842,6 +2869,7 @@ def _quick_check_run(
                 }
         if final.get("status") != "completed":
             events.put({"type": "suggestion_complete", "status": "unavailable"})
+            suggestion_elapsed = int((monotonic() - suggestion_started) * 1000)
             preview = {
                 **analysis_stage,
                 "status": "completed" if validated_analysis else "failed",
@@ -2851,7 +2879,10 @@ def _quick_check_run(
                 **final.get("phase_timings", {}),
                 "two_stage": {
                     "analysis_ms": analysis_elapsed,
-                    "suggestion_ms": int((monotonic() - suggestion_started) * 1000),
+                    "suggestion_initial_ms": initial_suggestion_elapsed,
+                    "joint_repair_ms": joint_repair_ms,
+                    "joint_repair_mode": joint_repair_mode,
+                    "suggestion_ms": suggestion_elapsed,
                     "total_ms": int((monotonic() - started) * 1000),
                     "analysis_status": analysis_stage.get("status", "failed"),
                     "suggestion_status": "failed",
@@ -2886,10 +2917,15 @@ def _quick_check_run(
             ),
             "semantic_complete_ms": analysis_elapsed,
         }
+    suggestion_elapsed = int((monotonic() - suggestion_started) * 1000)
+    elapsed = int((monotonic() - started) * 1000)
     final["phase_timings"] = {
         **final.get("phase_timings", {}),
         "two_stage": {
             "analysis_ms": analysis_elapsed,
+            "suggestion_initial_ms": initial_suggestion_elapsed,
+            "joint_repair_ms": joint_repair_ms,
+            "joint_repair_mode": joint_repair_mode,
             "suggestion_ms": suggestion_elapsed,
             "total_ms": elapsed,
             "analysis_status": analysis_stage.get("status", "failed"),

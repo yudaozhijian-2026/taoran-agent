@@ -1,5 +1,5 @@
 from taoran_agent.front_v46.decision_ledger import build, with_validated_analysis
-from taoran_agent.front_v46.joint_consistency import errors
+from taoran_agent.front_v46.joint_consistency import errors, repair_advice
 from taoran_agent.models import VisitDraftInput
 
 
@@ -58,3 +58,22 @@ def test_joint_check_accepts_advice_for_actual_next_step_gaps():
         "请将保持联系写成具体跟进事项，并补充联系时间。",
         ledger,
     )
+
+
+def test_local_joint_repair_removes_only_conflicting_clause():
+    analysis = "原定目标已达成，下一步联系时间未填写。"
+    advice = "1、请修改想取得的关键结果。\n2、请补充下一次联系时间。"
+    repaired, applied = repair_advice(
+        analysis,
+        advice,
+        ["goal_achievement_conflict"],
+    )
+    assert applied == ["goal_achievement_conflict"]
+    assert repaired == "1、请补充下一次联系时间。"
+
+
+def test_local_joint_repair_defers_missing_ledger_to_model():
+    advice = "请补充下一次联系时间。"
+    repaired, applied = repair_advice("", advice, ["validated_analysis_missing"])
+    assert repaired == advice
+    assert applied == []

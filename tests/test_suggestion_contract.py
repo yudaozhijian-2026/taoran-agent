@@ -96,3 +96,92 @@ def test_merge_requires_identical_text_and_source_binding(tmp_path, same_quote):
     assert len(calls) == 1
     assert len(result.items) == (0 if same_quote else 1)
     assert text.count('下次何时联系？') == (1 if same_quote else 2)
+
+
+def test_advice_stage_uses_compact_contract_and_keeps_validated_analysis(tmp_path):
+    calls = []
+    raw = {
+        'items': [{
+            'code': 'R',
+            'suggestion': '请补充客户对调价的明确反馈。',
+            'proofs': [{'field': 'process_description', 'quote': '沟通订单和调价'}],
+        }],
+        'confirmations': [],
+        'suggestion_status': 'has_suggestions',
+        'suggestion_reason': '调价结果尚不具体。',
+    }
+
+    def provider(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={'choices': [{
+            'message': {'content': json.dumps(raw, ensure_ascii=False)},
+            'finish_reason': 'stop',
+        }]})
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path/'db'), llm_model='test',
+                        llm_api_url='https://example.test/chat', llm_api_key='test')
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(
+            reviewer,
+            [{'code': 'R'}],
+            {
+                'visit_analysis_context': {'process_description': '沟通订单和调价'},
+                'decision_ledger': {'validated_analysis': '客户已沟通订单，调价结果尚不具体。'},
+            },
+            30,
+        )
+    finally:
+        reviewer.close()
+
+    assert len(calls) == 1
+    assert result.visit_analysis == '客户已沟通订单，调价结果尚不具体。'
+    assert result.items[0].suggestion == raw['items'][0]['suggestion']
+    prompt = calls[0]['messages'][0]['content']
+    assert '本阶段只生成AI改善建议' in prompt
+    assert 'analysis_points' not in prompt
+    assert '"present"' not in prompt
+
+
+def test_advice_stage_locally_strips_legacy_analysis_shape(tmp_path):
+    calls = []
+    raw = {
+        'analysis_points': [{'kind': 'objective_result', 'text': '不应重复生成的分析。'}],
+        'items': [{
+            'code': 'R',
+            'suggestion': '请补充客户对调价的明确反馈。',
+            'present': [],
+            'proofs': [{'field': 'process_description', 'quote': '沟通订单和调价', 'features': []}],
+        }],
+        'confirmations': [],
+        'suggestion_status': 'has_suggestions',
+        'suggestion_reason': '调价结果尚不具体。',
+    }
+
+    def provider(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={'choices': [{
+            'message': {'content': json.dumps(raw, ensure_ascii=False)},
+            'finish_reason': 'stop',
+        }]})
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path/'db'), llm_model='test',
+                        llm_api_url='https://example.test/chat', llm_api_key='test')
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(
+            reviewer,
+            [{'code': 'R'}],
+            {
+                'visit_analysis_context': {'process_description': '沟通订单和调价'},
+                'decision_ledger': {'validated_analysis': '客户已沟通订单，调价结果尚不具体。'},
+            },
+            30,
+        )
+    finally:
+        reviewer.close()
+
+    assert len(calls) == 1
+    assert result.status == 'completed'
+    assert result.model_attempts[0]['local_format_repair'] is True
+    assert result.visit_analysis == '客户已沟通订单，调价结果尚不具体。'

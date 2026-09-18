@@ -225,7 +225,7 @@ test('v7 reveals only validated modules and types analysis before advice', async
 
   // Provisional generation is not exposed. Only progress is visible.
   h.source.emit('preview_snapshot',{check_id:'qc_test',text:'',status:'processing'});
-  assert.equal(h.nodes.content.textContent,'AI正在分析，请稍候。');
+  assert.equal(h.nodes.content.textContent,'AI任务已创建，AI正在分析本次拜访。');
   assert.equal(h.nodes.finalPanel.hidden,true);
   assert.equal(h.nodes.ack.disabled,true);
 
