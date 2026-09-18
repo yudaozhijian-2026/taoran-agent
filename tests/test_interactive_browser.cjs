@@ -210,6 +210,45 @@ test('v6 keeps completed-looking draft visible while a repair is validated in ba
   assert.equal(h.nodes.status.textContent,'AI检测完成');
   assert.equal(h.nodes.ack.disabled,false);
 });
+test('v7 reveals only validated modules and types analysis before advice', async () => {
+  const policy='front-v46-validated-module-typewriter-v7-20260918';
+  const analysis='校验通过的本次拜访分析。';
+  const advice='校验通过的AI改善建议。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n${advice}`;
+  const h=harness([new Error('initial transport unavailable'), {
+    check_id:'qc_test',input_hash:'v1',status:'completed',final_usable:true,
+    preview_status:'completed',preview_feedback_text:analysis,
+    suggestion_status:'completed',suggestion_feedback_text:advice,
+    final_feedback_text:feedback,
+  }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  await new Promise(resolve=>setImmediate(resolve));
+
+  // Provisional generation is not exposed. Only progress is visible.
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:'',status:'processing'});
+  assert.equal(h.nodes.content.textContent,'AI正在分析，请稍候。');
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  assert.equal(h.nodes.ack.disabled,true);
+
+  // Once validated, the authoritative analysis is typed first.
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:analysis,status:'completed'});
+  h.source.emit('suggestion_snapshot',{check_id:'qc_test',text:advice,status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
+  assert.ok(analysis.startsWith(h.nodes.content.textContent));
+  assert.ok(h.nodes.content.textContent.length < analysis.length);
+  assert.equal(h.nodes.finalPanel.hidden,true);
+  for (let i=0;i<analysis.length;i++) await h.tick(18);
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.ok(advice.startsWith(h.nodes.finalContent.textContent));
+  assert.ok(h.nodes.finalContent.textContent.length < advice.length);
+  assert.equal(h.nodes.ack.disabled,true);
+
+  // The validated advice follows with the same typewriter presentation.
+  for (let i=0;i<advice.length;i++) await h.tick(18);
+  assert.equal(h.nodes.finalContent.textContent,advice);
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
 test('cached v4 result is displayed immediately without suggestion replay', async () => {
   const policy='front-v46-taoran-advice-v4-20260917';
   const analysis='客户已确认设备清单。';

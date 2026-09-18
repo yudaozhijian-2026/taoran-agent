@@ -107,7 +107,7 @@ def test_validated_analysis_replaces_draft_atomically_without_empty_snapshot():
     assert snapshot['text']
 
 
-def test_validation_retry_keeps_first_attempt_visible_and_buffers_repair(monkeypatch):
+def test_validation_retry_keeps_all_attempts_private_until_validated(monkeypatch):
     def generate(_request, _settings, **kwargs):
         kwargs['analysis_emit']('第一版分析。')
         kwargs['suggestion_emit']('第一版建议。')
@@ -128,8 +128,8 @@ def test_validation_retry_keeps_first_attempt_visible_and_buffers_repair(monkeyp
         queued.append(events.get())
 
     assert result['final']['status'] == 'completed'
-    assert [item['text'] for item in queued if item['type'] == 'preview_delta'] == ['第一版分析。']
-    assert [item['text'] for item in queued if item['type'] == 'suggestion_delta'] == ['第一版建议。']
+    assert not any(item['type'] == 'preview_delta' for item in queued)
+    assert not any(item['type'] == 'suggestion_delta' for item in queued)
     assert sum(item['type'] == 'validation_started' for item in queued) == 2
     assert not any(item['type'] in {'preview_reset', 'suggestion_reset'} for item in queued)
     assert any(

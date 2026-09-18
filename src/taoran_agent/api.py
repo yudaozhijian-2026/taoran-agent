@@ -2712,13 +2712,12 @@ def _quick_check_run(
         if stream_state["first_ms"] is None:
             stream_state["first_ms"] = int((monotonic() - started) * 1000)
         if stream_state["retrying"]:
-            # Keep the already visible first attempt stable.  A repaired
-            # attempt is buffered server-side and only reconciled once the
-            # authoritative final result has passed validation.
             stream_state["retry_text"] += text
             return
+        # Model output is provisional until the complete response has passed
+        # structure, evidence and cross-section consistency validation.  Keep
+        # it server-side so the user never reads text that may later change.
         stream_state["text"] += text
-        events.put({"type": "preview_delta", "text": text})
 
     def reset_analysis() -> None:
         if stream_state["text"]:
@@ -2735,8 +2734,9 @@ def _quick_check_run(
         if suggestion_state["retrying"]:
             suggestion_state["retry_text"] += text
             return
+        # As with the analysis paragraph, advice is released only after the
+        # authoritative combined result has passed validation.
         suggestion_state["text"] += text
-        events.put({"type": "suggestion_delta", "text": text})
 
     def reset_suggestion() -> None:
         if suggestion_state["text"]:
@@ -2761,15 +2761,14 @@ def _quick_check_run(
     elapsed = int((monotonic() - started) * 1000)
     if final.get("status") == "completed":
         final_analysis = _quick_check_final_analysis(final.get("feedback_text", ""))
-        if final_analysis and final_analysis.strip() != stream_state["text"].strip():
-            # The streamed draft may differ after local normalization or a
-            # bounded retry. Replace it atomically; never blank and replay it.
+        if final_analysis:
+            # Publish only the validated module.  The browser then gives this
+            # final text a typewriter presentation; it is not a live draft.
             stream_state.update(text=final_analysis, first_ms=stream_state["first_ms"])
             events.put({"type": "preview_replace", "text": final_analysis})
         final_suggestion = _quick_check_final_suggestion(final.get("feedback_text", ""))
-        if final_suggestion.strip() != suggestion_state["text"].strip():
-            suggestion_state.update(text=final_suggestion, first_ms=suggestion_state["first_ms"])
-            events.put({"type": "suggestion_replace", "text": final_suggestion})
+        suggestion_state.update(text=final_suggestion, first_ms=suggestion_state["first_ms"])
+        events.put({"type": "suggestion_replace", "text": final_suggestion})
         events.put({"type": "suggestion_complete", "status": "completed"})
         preview = {
             "status": "completed",
