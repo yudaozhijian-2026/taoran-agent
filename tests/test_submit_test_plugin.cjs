@@ -86,17 +86,6 @@ test('stale retry or bypass from a prior opening is ignored',async()=>{
   assert.deepEqual(await h.promise,{resText:'原意见',submit_decision:'返回修改'});
 });
 
-test('platform deadline closes the modal with a non-confirmed decision',async()=>{
-  const realSetTimeout=global.setTimeout;
-  const realClearTimeout=global.clearTimeout;
-  try {
-    global.setTimeout=(callback)=>{queueMicrotask(callback);return 1;};
-    global.clearTimeout=()=>{};
-    const item=launch(0);
-    const h=start([item],{existing_feedback:'原意见'});
-    assert.deepEqual(await h.promise,{resText:'原意见',submit_decision:'返回修改'});
-  } finally {
-    global.setTimeout=realSetTimeout;
-    global.clearTimeout=realClearTimeout;
-  }
+test('submit interaction has no plugin-owned auto-close deadline',()=>{
+  assert.equal(front.toString().includes('decisionDeadlineMs'),false);
 });

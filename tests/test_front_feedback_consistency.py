@@ -5,6 +5,7 @@ from taoran_agent.config import Settings
 from taoran_agent.front_v46.confirmation_shape import ConfirmationShapeError, normalize
 from taoran_agent.front_v46.feedback_consistency import (
     candidate_errors,
+    contact_date_claim_error,
     front_rule_issue_superseded,
     information_goal_completion_expansion,
     non_actionable_advice,
@@ -136,6 +137,36 @@ def test_goal_summary_contradiction_targets_conflicting_analysis_only():
         "location": "analysis_points.1", "code": "goal_summary_contradiction",
     }]
     assert preview_errors("本次目标已达成，但本次目标未达成。", context())
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("下一次联系日期不晚于本次拜访日期。", "contact_date_not_after_visit_contradiction"),
+    ("下一次联系日期仍在同一自然月。", "contact_date_same_month_contradiction"),
+])
+def test_contact_date_claim_must_match_current_page(text, expected):
+    current = context(
+        customer_type_ii="opportunity",
+        visit_date="2026-09-20",
+        next_contact_at="2026-10-05T10:00:00+08:00",
+    )
+    assert contact_date_claim_error(text, current) == expected
+    assert preview_errors(text, current) == [{"code": expected}]
+    raw = payload(points=[{
+        "kind": "next_action",
+        "text": text,
+        "proofs": [{"field": "next_contact_at", "quote": "2026-10-05T10:00:00+08:00"}],
+    }])
+    assert {error["code"] for error in candidate_errors(raw, current)} == {expected}
+
+
+def test_true_contact_date_claim_remains_allowed():
+    current = context(
+        customer_type_ii="target",
+        visit_date="2026-09-20",
+        next_contact_at="2026-09-28T10:00:00+08:00",
+    )
+    assert contact_date_claim_error("下一次联系日期仍在同一自然月。", current) is None
+    assert not preview_errors("下一次联系日期仍在同一自然月。", current)
 
 
 def test_confirmed_rule_gap_cannot_be_silently_changed_to_no_change(tmp_path):

@@ -9,6 +9,7 @@ optional details, and do not publish non-actionable or duplicate advice.
 from __future__ import annotations
 
 import re
+from datetime import date, datetime
 
 from ..models import VisitDraftInput
 
@@ -54,6 +55,12 @@ _OBSERVABLE_NEXT_RESULT = re.compile(
     r"(?:确认|核实|获取|收到|约定|完成|提交|提供|反馈|安排|解决|明确).{1,40}"
 )
 
+_CONTACT_DATE_CLAIMS = (
+    ("not_after_visit", re.compile(r"(?:下一次|下次)?联系(?:客户)?(?:日期|时间).{0,18}(?:不晚于|早于或等于|未晚于)(?:本次)?拜访(?:日期|时间)?")),
+    ("same_month", re.compile(r"(?:下一次|下次)?联系(?:客户)?(?:日期|时间).{0,24}(?:仍|还)?(?:处于|在|属于)?同一(?:个)?(?:自然)?月")),
+    ("same_quarter", re.compile(r"(?:下一次|下次)?联系(?:客户)?(?:日期|时间).{0,24}(?:仍|还)?(?:处于|在|属于)?同一(?:个)?(?:自然)?季度")),
+)
+
 
 def _source(context: dict, fields: tuple[str, ...]) -> str:
     return "\n".join(str(context.get(field) or "") for field in fields)
@@ -61,6 +68,42 @@ def _source(context: dict, fields: tuple[str, ...]) -> str:
 
 def _clauses(text: str):
     return [part.strip() for part in re.split(r"[。；;！!\n]", str(text or "")) if part.strip()]
+
+
+def _as_date(value) -> date | None:
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return datetime.fromisoformat(value).date()
+        except ValueError:
+            return None
+    return None
+
+
+def contact_date_claim_error(text: str, context: dict) -> str | None:
+    """Reject date claims that directly contradict the current page values."""
+    visit_day = _as_date(context.get("visit_date"))
+    contact_day = _as_date(context.get("next_contact_at"))
+    if visit_day is None or contact_day is None:
+        return None
+    actual = {
+        "not_after_visit": contact_day <= visit_day,
+        "same_month": (contact_day.year, contact_day.month) == (
+            visit_day.year, visit_day.month,
+        ),
+        "same_quarter": (
+            contact_day.year, (contact_day.month - 1) // 3,
+        ) == (
+            visit_day.year, (visit_day.month - 1) // 3,
+        ),
+    }
+    for code, pattern in _CONTACT_DATE_CLAIMS:
+        if pattern.search(str(text or "")) and not actual[code]:
+            return f"contact_date_{code}_contradiction"
+    return None
 
 
 def unsupported_optional_requirement(text: str, context: dict) -> bool:
@@ -133,6 +176,12 @@ def candidate_errors(raw: dict, context: dict) -> list[dict]:
         for index, point in enumerate(analysis):
             if isinstance(point, dict) and _WHOLE_GOAL_NOT_ACHIEVED.search(str(point.get("text") or "")):
                 errors.append({"location": f"analysis_points.{index}", "code": "goal_summary_contradiction"})
+    for index, point in enumerate(analysis):
+        if not isinstance(point, dict):
+            continue
+        error = contact_date_claim_error(str(point.get("text") or ""), context)
+        if error:
+            errors.append({"location": f"analysis_points.{index}", "code": error})
     seen: dict[str, int] = {}
     for index, item in enumerate(items):
         if not isinstance(item, dict):
@@ -148,6 +197,9 @@ def candidate_errors(raw: dict, context: dict) -> list[dict]:
             seen[normalized] = index
         if non_actionable_advice(suggestion):
             errors.append({"location": f"items.{index}", "code": "non_actionable_suggestion"})
+        date_error = contact_date_claim_error(suggestion, context)
+        if date_error:
+            errors.append({"location": f"items.{index}", "code": date_error})
         if unsupported_optional_requirement(suggestion, context):
             errors.append({"location": f"items.{index}", "code": "unsupported_optional_requirement"})
         if information_goal_completion_expansion(suggestion, context, code):
@@ -183,6 +235,9 @@ def preview_errors(text: str, context: dict) -> list[dict]:
         errors.append({"code": "unsupported_optional_requirement"})
     if contradictory_goal_summary([text]):
         errors.append({"code": "goal_summary_contradiction"})
+    date_error = contact_date_claim_error(text, context)
+    if date_error:
+        errors.append({"code": date_error})
     presence = (context.get("_record_contract") or {}).get("presence", {})
     if (presence.get("next_contact_at") == "empty"
             and re.search(

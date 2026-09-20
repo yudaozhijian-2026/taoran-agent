@@ -37,9 +37,6 @@ let returnedFeedback = '';
 let acceptingFeedback = false;
 let retryRequested = false;
 let bypassConfirmed = false;
-// 简道云提交时插件有60秒硬上限。提前安全返回“未确认”，避免平台超时后
-// 沿用表单中可能存在的旧确认值继续提交。再次提交会复用同内容缓存。
-const decisionDeadlineMs = 50000;
 
 const onFeedbackMessage = (message) => {
   if (!acceptingFeedback || returnedFeedback) return;
@@ -88,15 +85,9 @@ do {
   pendingCheckId = launch.quick_check_id;
   acceptingFeedback = true;
   $g.ui.onmessage = onFeedbackMessage;
-  const deadline = setTimeout(() => {
-    if (!acceptingFeedback || returnedFeedback || bypassConfirmed || retryRequested) return;
-    acceptingFeedback = false;
-    $g.utils.closeModal();
-  }, decisionDeadlineMs);
   try {
     await $g.utils.openModal({ title: 'AI检查 · 提交前确认', url: launch.quick_check_launch_url });
   } finally {
-    clearTimeout(deadline);
     acceptingFeedback = false;
     // Dispose only this opening's listener; never clear a newer opening's handler.
     if ($g.ui.onmessage === onFeedbackMessage) $g.ui.onmessage = () => {};
@@ -112,8 +103,9 @@ if (bypassConfirmed) {
 }
 
 if (!returnedFeedback) {
-  // Jiandaoyun clears mapped fields for {} and does not settle undefined.
-  // Preserve the current page value on cancel; never send it to the model.
+  // Keep the current value in the returned contract.  The isolated form does
+  // not map this output on submit, so returning or closing cannot write an AI
+  // opinion before the salesperson confirms the record.
   return { resText: draft.existing_feedback == null ? '' : draft.existing_feedback, submit_decision: '返回修改' };
 }
 
