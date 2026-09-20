@@ -287,6 +287,101 @@ def test_no_knowledge_success_cache_but_active_dedup():
     )
 
 
+def test_remote_failure_pins_released_local_snapshot_for_both_stages(monkeypatch):
+    from taoran_agent import api
+    from taoran_agent.config import Settings
+    from taoran_agent.knowledge import load_taoran_knowledge_snapshot
+    from taoran_agent.models import PrecheckRequest
+
+    settings = Settings(_env_file=None)
+    local = load_taoran_knowledge_snapshot()
+    monkeypatch.setattr(api, "load_taoran_knowledge_snapshot", lambda *_: local)
+    monkeypatch.setattr(
+        api,
+        "_fetch_live_knowledge_snapshot",
+        lambda *_: (_ for _ in ()).throw(ValueError("remote compact schema unavailable")),
+    )
+    monkeypatch.setattr(api, "tenant_mapping", lambda *_: {"source_entry_id": "form"})
+    monkeypatch.setattr(
+        api,
+        "_canonicalize_button_request",
+        lambda request, *_: (
+            PrecheckRequest.model_validate(
+                {
+                    "context": request["context"],
+                    "visit": {
+                        "visit_date": "2026-09-20",
+                        "employee_id": "test",
+                        "process_description": "客户确认安装验收完成。",
+                    },
+                }
+            ),
+            settings,
+        ),
+    )
+
+    _request, _settings, _record, _fingerprint, _user, force, basis = (
+        api._canonicalize_interactive_quick_check(
+            {"form_snapshot": {"process_description": "客户确认安装验收完成。"}},
+            "tenant-a",
+            "secret",
+        )
+    )
+
+    assert force is False
+    assert basis["source"] == "local_fallback"
+    assert basis["local"] == basis["live"] == local.model_dump(mode="json")
+
+
+def test_two_stage_worker_binds_one_knowledge_basis_to_analysis_and_advice(monkeypatch):
+    from queue import Queue
+
+    from taoran_agent import api
+    from taoran_agent.config import Settings
+    from taoran_agent.content_cache import knowledge_basis
+    from taoran_agent.knowledge import load_taoran_knowledge_snapshot
+    from taoran_agent.models import VisitDraftInput
+
+    snapshot = load_taoran_knowledge_snapshot()
+    basis = {
+        "local": snapshot.model_dump(mode="json"),
+        "live": snapshot.model_dump(mode="json"),
+        "source": "remote",
+    }
+    observed = []
+
+    def preview(_visit, _settings, events, decision_ledger=None):
+        del events
+        observed.append(("analysis", knowledge_basis.get(), decision_ledger))
+        return {"status": "completed", "feedback_text": "目标与事实一致。"}
+
+    def final(_request, _settings, **kwargs):
+        observed.append(("advice", knowledge_basis.get(), kwargs["decision_ledger"]))
+        return {
+            "status": "completed",
+            "feedback_text": "本次拜访分析：目标与事实一致。",
+            "final_feedback_hash": "hash",
+            "full_feedback_ms": 1,
+            "diagnostics": {"suggestion_status": "no_change_needed"},
+        }
+
+    monkeypatch.setattr(api, "_quick_check_run_preview", preview)
+    monkeypatch.setattr(api, "_quick_check_run_final", final)
+    from types import SimpleNamespace
+
+    request = SimpleNamespace(visit=VisitDraftInput(
+        visit_date="2026-09-20",
+        employee_id="test",
+        process_description="客户确认安装验收完成。",
+    ))
+    result = api._quick_check_run(request, Settings(_env_file=None), Queue(), basis)
+
+    assert result["final"]["status"] == "completed"
+    assert [item[0] for item in observed] == ["analysis", "advice"]
+    assert all(item[1] == basis for item in observed)
+    assert observed[1][2]["validated_analysis"] == "目标与事实一致。"
+
+
 def test_recovery_preserves_basis_and_cache_expiry():
     from types import SimpleNamespace
 

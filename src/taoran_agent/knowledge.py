@@ -138,14 +138,50 @@ class KnowledgeApiClient:
                     and record.get("status") in ACTIVE_KNOWLEDGE_STATUSES
                 ):
                     records_by_id[record_id] = record
-            records = list(records_by_id.values())
+            retrieved_at = datetime.now(UTC)
+            records = [
+                self._normalize_record(record, retrieved_at)
+                for record in records_by_id.values()
+            ]
         return TaoranKnowledgeSnapshot(
             source=f"{self.base_url}/v1/knowledge/search",
             query=DEFAULT_QUERY,
-            retrieved_at=datetime.now(UTC),
+            retrieved_at=retrieved_at,
             record_count=len(records),
             records=records,
         )
+
+    @staticmethod
+    def _normalize_record(
+        record: dict[str, Any],
+        retrieved_at: datetime,
+    ) -> dict[str, Any]:
+        """Accept the public knowledge API's compact release representation.
+
+        The release API intentionally omits storage-only ``content_hash`` and
+        ``updated_at`` fields.  They are snapshot metadata, not TAORAN business
+        content, so derive a stable hash from the exact returned content and use
+        the retrieval time only when the API exposes no update timestamp.
+        """
+        normalized = dict(record)
+        normalized["id"] = str(
+            normalized.get("id") or normalized.get("knowledge_id") or ""
+        ).strip()
+        normalized["version"] = str(
+            normalized.get("version") or normalized.get("release_version") or ""
+        ).strip()
+        content = str(normalized.get("content") or "")
+        normalized["content_hash"] = str(
+            normalized.get("content_hash")
+            or hashlib.sha256(content.encode("utf-8")).hexdigest()
+        )
+        normalized["updated_at"] = (
+            normalized.get("updated_at")
+            or normalized.get("published_at")
+            or normalized.get("released_at")
+            or retrieved_at
+        )
+        return normalized
 
 
 def write_snapshot(snapshot: TaoranKnowledgeSnapshot, path: Path) -> None:

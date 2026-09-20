@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 
 import httpx
@@ -100,3 +101,33 @@ def test_knowledge_client_reuses_complete_search_items_without_detail_calls() ->
 
     assert snapshot.record_count == 3
     assert [request.url.path for request in requests] == ["/v1/knowledge/search"]
+
+
+def test_knowledge_client_accepts_compact_release_records_without_storage_metadata() -> None:
+    records = [
+        {
+            "id": record_id,
+            "knowledge_id": record_id,
+            "title": record_id,
+            "status": "已确认",
+            "version": "V2",
+            "summary": "摘要",
+            "content": f"{record_id}正式内容",
+            "release_version": "2026-09",
+        }
+        for record_id in ("DSM-BS-01-06", "DSM-BS-01-07")
+    ]
+
+    snapshot = KnowledgeApiClient(
+        "https://knowledge.example.test",
+        "synthetic-key",
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(200, json={"items": records})
+        ),
+    ).fetch_taoran_snapshot()
+
+    assert snapshot.record_count == 2
+    assert snapshot.records[0].content_hash == hashlib.sha256(
+        records[0]["content"].encode("utf-8")
+    ).hexdigest()
+    assert all(record.updated_at == snapshot.retrieved_at for record in snapshot.records)

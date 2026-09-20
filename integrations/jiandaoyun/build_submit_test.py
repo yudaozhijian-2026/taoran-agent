@@ -21,6 +21,7 @@ def main() -> None:
         "taoran_submit_bypassed",
         "do {",
         "submit_decision: '已确认提交'",
+        "decisionDeadlineMs = 50000",
     ):
         assert marker in front, f"submit-test frontend is missing {marker!r}"
     for marker in (

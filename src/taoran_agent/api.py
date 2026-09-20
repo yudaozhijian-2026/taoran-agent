@@ -2496,13 +2496,18 @@ def _canonicalize_interactive_quick_check(
     from .content_cache import fingerprint, implementation_digest
     local = load_taoran_knowledge_snapshot(settings.knowledge_snapshot_path)
     live = None
+    knowledge_source = "remote"
     try:
         live = _fetch_live_knowledge_snapshot(settings, settings.knowledge_fetch_budget_seconds)
         live_hash = live.snapshot_hash
-    except Exception:  # noqa: BLE001 - unavailable knowledge is isolated, never cached as success
-        # Unknown current knowledge must never hit a prior success cache.
-        live_hash = 'unavailable'
-        force = True
+    except Exception:  # noqa: BLE001 - pin the reviewed release snapshot as fallback
+        # The released local snapshot is a complete, reviewed knowledge basis.
+        # Pin it for both generation stages instead of creating a task whose
+        # Final worker cannot call the model at all.  A later remote refresh
+        # naturally changes the content fingerprint when its hash differs.
+        live = local
+        live_hash = local.snapshot_hash
+        knowledge_source = "local_fallback"
     config = settings.model_dump(mode='json')
     config['model_credential_digest'] = hashlib.sha256(
         (settings.llm_api_key.get_secret_value() if settings.llm_api_key else '').encode()
@@ -2526,7 +2531,8 @@ def _canonicalize_interactive_quick_check(
     ):
         raise HTTPException(status_code=422, detail="当前表单快照校验不一致，请重新点击AI检测。")
     basis = {'local': local.model_dump(mode='json'),
-             'live': live.model_dump(mode='json') if live is not None else None,
+             'live': live.model_dump(mode='json'),
+             'source': knowledge_source,
              'implementation': implementation_digest()}
     return canonical_request, settings, record_code, input_hash, user_id, force, basis
 
@@ -2755,10 +2761,16 @@ def _quick_check_run(
     preview_kwargs = {}
     if "decision_ledger" in inspect.signature(_quick_check_run_preview).parameters:
         preview_kwargs["decision_ledger"] = decision_ledger
-    analysis_stage = _quick_check_run_preview(
+    # Bind the exact same immutable knowledge basis around both stages.  The
+    # current analysis worker uses only the decision ledger, but this prevents
+    # a future knowledge lookup from silently observing a newer snapshot than
+    # the advice worker sees.
+    analysis_stage = run_with_knowledge_basis(
+        _quick_check_run_preview,
         canonical_request.visit,
         settings,
-        events,
+        knowledge_basis,
+        events=events,
         **preview_kwargs,
     )
     analysis_elapsed = int((monotonic() - analysis_started) * 1000)

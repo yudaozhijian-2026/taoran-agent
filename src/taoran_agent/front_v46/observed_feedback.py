@@ -1022,6 +1022,9 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     missing_required_codes = required_codes - covered_required_codes
     missing_required_fields = (required_fields - covered_required_fields) | claimed_but_unaddressed_fields
     declared = payload.suggestion_status
+    # An empty advice list can be a valid business result.  Keep it distinct
+    # from an omitted/invalid model response: ``no_change_needed`` is accepted
+    # only when there are no deterministic gaps or unresolved confirmations.
     complete_suggestions = not unknown_codes and bool(payload.suggestion_reason.strip()) and (
         (declared == "has_suggestions" and has_suggestions)
         or (declared == "needs_confirmation" and confirmations)

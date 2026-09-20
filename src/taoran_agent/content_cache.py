@@ -13,7 +13,7 @@ knowledge_basis = ContextVar("interactive_knowledge_basis", default=None)
 
 
 def run_with_knowledge_basis(callback, request, settings, basis, **kwargs):
-    """Bind only the interactive Final worker, never submitted scoring."""
+    """Bind an interactive generation stage, never submitted scoring."""
     token = knowledge_basis.set(basis)
     try:
         parameters = inspect.signature(callback).parameters.values()
