@@ -406,8 +406,13 @@ class AgentStore:
                     """,
                     (tenant_id, input_hash),
                 ).fetchall()
-        if len(rows) != 1:
+                if len(rows) != 1:
+                    return None
+        if not rows:
             return None
+        # Multiple accepted checks from the same user and identical content
+        # are valid history. The newest acknowledgement is authoritative. The
+        # cross-user fallback above remains strict and requires one candidate.
         row = rows[0]
         return {
             "artifact_id": row["artifact_id"],

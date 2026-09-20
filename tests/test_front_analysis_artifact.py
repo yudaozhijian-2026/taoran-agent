@@ -159,6 +159,37 @@ def test_artifact_is_not_eligible_until_acknowledged(tmp_path):
     assert diagnostic.front_artifact_used is True
 
 
+def test_latest_acknowledged_artifact_wins_for_same_user_and_content(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    item = visit()
+    first = artifact(item)
+    second = first.model_copy(
+        update={
+            "artifact_id": "fa_second",
+            "check_id": "qc-second",
+            "quick_check_input_hash": "b" * 64,
+            "analysis_summary": "第二次确认的分析。",
+        }
+    )
+    store.save_front_analysis_artifact(
+        first.model_dump(mode="json"), retention_until=time() + 3600
+    )
+    assert store.acknowledge_front_analysis_artifact(
+        "tenant-a", "qc-test", "a" * 64
+    )
+    store.save_front_analysis_artifact(
+        second.model_dump(mode="json"), retention_until=time() + 3600
+    )
+    assert store.acknowledge_front_analysis_artifact(
+        "tenant-a", "qc-second", "b" * 64
+    )
+    found, diagnostic = load_front_context(store, request(item))
+    assert found is not None
+    assert found.artifact_id == "fa_second"
+    assert found.analysis_summary == "第二次确认的分析。"
+    assert diagnostic.front_artifact_status == "used"
+
+
 def test_mismatch_falls_back_without_blocking(tmp_path):
     store = AgentStore(tmp_path / "agent.db")
     item = visit()
