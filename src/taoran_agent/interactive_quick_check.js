@@ -68,7 +68,7 @@ const suggestionWaitingText = '改善建议生成中';
 const validationWaitingText = '正在校验并完善AI意见……';
 const previousSharedLedgerPolicy = 'front-v46-shared-ledger-joint-check-v9-20260918';
 const previousAdvicePolicy = 'front-v46-advice-only-local-repair-v10-20260918';
-const sharedLedgerPolicy = 'front-v46-field-coverage-plan-v12-20260920';
+const sharedLedgerPolicy = 'front-v46-field-coverage-plan-v13-20260920';
 const twoStageMode = typeof frontPolicy === 'string'
   && ['front-v46-two-stage-validated-modules-v8-20260918', previousSharedLedgerPolicy, previousAdvicePolicy, sharedLedgerPolicy].includes(frontPolicy);
 const adviceStageStatusText = twoStageMode ? '本次拜访分析已生成，正在生成AI改善建议…' : finalWaitingText;

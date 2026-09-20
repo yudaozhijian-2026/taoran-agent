@@ -241,10 +241,27 @@ def _supported_commitment(candidate: str, source: str) -> bool:
     actions = [word for word in ("确认", "同意", "承诺", "完成", "下单", "签约") if word in candidate]
     # A commitment remains a fact claim only when its action and at least one
     # non-generic business term are present together in the source record.
-    terms = re.findall(r"[\u4e00-\u9fff]{2,}", candidate)
-    meaningful = [term for term in terms if term not in {"客户", "已经", "确认", "同意", "承诺", "完成"}]
-    return bool(actions) and any(action in source for action in actions) and any(
-        _normalize(term) in normalized_source for term in meaningful
+    # Compare the business payload after removing only generic commitment
+    # framing.  This accepts faithful paraphrases such as
+    # "客户提供设备清单的承诺" when the record says
+    # "客户承诺下周一提供六台设备清单", while still rejecting a
+    # new product, quantity, date or action that is absent from the record.
+    generic = re.compile(
+        r"客户|已经|已|明确|仅能|取得|确认|同意|承诺|完成|提供|的"
+    )
+    candidate_core = generic.sub("", normalized_candidate)
+    source_core = generic.sub("", normalized_source)
+    completion_actions = {"完成", "下单", "签约"}
+    action_supported = (
+        any(action in source for action in actions)
+        if completion_actions.intersection(actions)
+        else any(action in source for action in ("确认", "同意", "承诺"))
+    )
+    return (
+        bool(actions)
+        and action_supported
+        and len(candidate_core) >= 2
+        and candidate_core in source_core
     )
 
 

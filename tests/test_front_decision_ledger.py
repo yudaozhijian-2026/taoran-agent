@@ -1,4 +1,6 @@
 from taoran_agent.front_v46.decision_ledger import build, with_validated_analysis
+from taoran_agent.front_v46.experimental_record_state import boundary_issues
+from taoran_agent.front_v46.experimental_semantic_streaming_v22 import _supported_commitment
 from taoran_agent.front_v46.joint_consistency import errors, repair_advice
 from taoran_agent.models import VisitDraftInput
 
@@ -77,3 +79,22 @@ def test_local_joint_repair_defers_missing_ledger_to_model():
     repaired, applied = repair_advice("", advice, ["validated_analysis_missing"])
     assert repaired == advice
     assert applied == []
+
+
+def test_training_schedule_does_not_impersonate_missing_contact_date():
+    context = visit(next_contact_at=None).model_dump(mode="json")
+    text = "客户说明计划下季度开展培训，参训名单尚未确定，预计时间需等待部门排期。"
+    assert not boundary_issues(text, context)
+
+
+def test_missing_contact_date_claim_still_requires_contact_scope():
+    context = visit(next_contact_at=None).model_dump(mode="json")
+    issues = boundary_issues("尚未确定下一次联系时间。", context)
+    assert any(item.get("field") == "next_contact_at" for item in issues)
+
+
+def test_recorded_commitment_paraphrase_keeps_business_payload():
+    source = "过程记录：客户承诺下周一提供六台设备清单。"
+    assert _supported_commitment("客户已确认下周一提供六台设备清单", source)
+    assert _supported_commitment("客户提供六台设备清单的承诺", source)
+    assert not _supported_commitment("客户提供报价单的承诺", source)

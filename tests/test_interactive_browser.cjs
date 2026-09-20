@@ -250,7 +250,7 @@ test('v7 reveals only validated modules and types analysis before advice', async
   assert.equal(h.nodes.status.textContent,'AI检测完成');
 });
 test('final analysis replaces a temporary unavailable-preview placeholder', async () => {
-  const policy='front-v46-field-coverage-plan-v12-20260920';
+  const policy='front-v46-field-coverage-plan-v13-20260920';
   const analysis='客户已确认六台设备的安装与电源准备。';
   const advice='1、请补充下一次联系时间。';
   const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n${advice}`;

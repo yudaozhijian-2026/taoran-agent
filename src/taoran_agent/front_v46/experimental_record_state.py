@@ -90,7 +90,11 @@ def boundary_issues(text, context):
             ):
                 issues.append({"error_type": "recorded_as_missing", "field": field, "text": sentence})
         if (state["field_states"]["next_contact_at"] == "not_recorded"
-                and re.search(r"(?:未|没有|尚未)(?:约定|安排|确定)[^。；]{0,8}(?:联系|拜访)?(?:时间|日期)", sentence)
+                and re.search(
+                    r"(?:未|没有|尚未)(?:约定|安排|确定)"
+                    r"[^\uff0c,。；;]{0,8}(?:联系|拜访)(?:时间|日期)",
+                    sentence,
+                )
                 and not re.search(r"(?:记录|填写|表单).{0,8}(?:未|没有|尚未)(?:体现|记录|显示)", sentence)):
             issues.append({"error_type": "missing_as_absent", "field": "next_contact_at", "text": sentence})
         if state["goal"]["status"] in {"missing", "placeholder"}:
