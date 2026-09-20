@@ -103,8 +103,8 @@ def test_advice_stage_uses_compact_contract_and_keeps_validated_analysis(tmp_pat
     raw = {
         'items': [{
             'code': 'R',
+            'covered_fields': ['process_description'],
             'suggestion': '请补充客户对调价的明确反馈。',
-            'proofs': [{'field': 'process_description', 'quote': '沟通订单和调价'}],
         }],
         'confirmations': [],
         'suggestion_status': 'has_suggestions',
@@ -141,6 +141,7 @@ def test_advice_stage_uses_compact_contract_and_keeps_validated_analysis(tmp_pat
     assert '本阶段只生成AI改善建议' in prompt
     assert 'analysis_points' not in prompt
     assert '"present"' not in prompt
+    assert '"covered_fields"' in prompt
 
 
 def test_advice_stage_locally_strips_legacy_analysis_shape(tmp_path):
@@ -185,3 +186,162 @@ def test_advice_stage_locally_strips_legacy_analysis_shape(tmp_path):
     assert result.status == 'completed'
     assert result.model_attempts[0]['local_format_repair'] is True
     assert result.visit_analysis == '客户已沟通订单，调价结果尚不具体。'
+
+
+def test_advice_stage_receives_one_slot_with_every_required_field(tmp_path):
+    calls = []
+    raw = {
+        'items': [{
+            'code': 'N',
+            'covered_fields': ['next_action_expected_result', 'next_contact_at'],
+            'suggestion': '“保持联系”没有说清要取得什么结果，也未填写下一次联系时间，请一并补充。',
+        }],
+        'confirmations': [],
+        'suggestion_status': 'has_suggestions',
+        'suggestion_reason': '下一步结果和联系时间均需完善。',
+    }
+
+    def provider(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={'choices': [{
+            'message': {'content': json.dumps(raw, ensure_ascii=False)},
+            'finish_reason': 'stop',
+        }]})
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path/'db'), llm_model='test',
+                        llm_api_url='https://example.test/chat', llm_api_key='test')
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(reviewer, [{'code': 'N'}], {
+            'visit_analysis_context': {
+                'next_action_expected_result': '保持联系',
+                'next_contact_at': None,
+            },
+            'required_advice': [
+                {'code': 'N', 'field': 'next_action_expected_result', 'reason': 'obviously_not_specific'},
+                {'code': 'N', 'field': 'next_contact_at', 'reason': 'not_filled'},
+            ],
+            'decision_ledger': {'validated_analysis': '下一步只写了保持联系，且未填写联系时间。'},
+        }, 30)
+    finally:
+        reviewer.close()
+
+    assert len(calls) == 1
+    assert result.suggestion_status == 'has_suggestions'
+    incoming = json.loads(calls[0]['messages'][1]['content'])
+    assert incoming['coverage_plan'] == [{
+        'slot_id': 'N',
+        'code': 'N',
+        'required_fields': ['next_action_expected_result', 'next_contact_at'],
+        'fields': [
+            {'field': 'next_action_expected_result', 'field_name': '下次拜访期望的关键结果',
+             'reason': 'obviously_not_specific'},
+            {'field': 'next_contact_at', 'field_name': '下一次联系客户时间安排', 'reason': 'not_filled'},
+        ],
+        'output': {
+            'code': 'N',
+            'covered_fields': ['next_action_expected_result', 'next_contact_at'],
+            'suggestion': '<结合本次数据说明上述每个字段的具体问题和修改方向>',
+        },
+    }]
+
+
+def test_empty_required_field_can_be_safely_bound_from_explicit_wording(tmp_path):
+    calls = []
+    raw = {
+        'items': [{
+            'code': 'N',
+            'covered_fields': ['next_action_expected_result'],
+            'suggestion': '请细化下一步期望结果，并补充下一次联系客户时间安排。',
+        }],
+        'confirmations': [],
+        'suggestion_status': 'has_suggestions',
+        'suggestion_reason': '下一步信息需完善。',
+    }
+
+    def provider(request):
+        calls.append(json.loads(request.content))
+        return httpx.Response(200, json={'choices': [{
+            'message': {'content': json.dumps(raw, ensure_ascii=False)},
+            'finish_reason': 'stop',
+        }]})
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path/'db'), llm_model='test',
+                        llm_api_url='https://example.test/chat', llm_api_key='test')
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(reviewer, [{'code': 'N'}], {
+            'visit_analysis_context': {
+                'next_action_expected_result': '保持联系',
+                'next_contact_at': None,
+            },
+            'required_advice': [
+                {'code': 'N', 'field': 'next_action_expected_result'},
+                {'code': 'N', 'field': 'next_contact_at'},
+            ],
+            'decision_ledger': {'validated_analysis': '下一步信息尚需完善。'},
+        }, 30)
+    finally:
+        reviewer.close()
+
+    assert len(calls) == 1
+    assert result.suggestion_status == 'has_suggestions'
+    assert any(
+        item.get('rule') == 'local_required_field_binding'
+        and item.get('field') == 'next_contact_at'
+        for item in result.semantic_observations
+    )
+
+
+def test_vague_time_wording_does_not_hide_missing_required_field(tmp_path):
+    calls = []
+    first = {
+        'items': [{
+            'code': 'N',
+            'covered_fields': ['next_action_expected_result', 'next_contact_at'],
+            'suggestion': '下一步还缺少具体时间或客户意向，请完善安排。',
+        }],
+        'confirmations': [],
+        'suggestion_status': 'has_suggestions',
+        'suggestion_reason': '下一步安排需完善。',
+    }
+    fixed = {
+        'items': [{
+            'code': 'N',
+            'covered_fields': ['next_action_expected_result', 'next_contact_at'],
+            'suggestion': '“保持联系”缺少具体期望结果，且未填写下一次联系客户时间安排。',
+        }],
+        'confirmations': [],
+        'suggestion_status': 'has_suggestions',
+        'suggestion_reason': '下一步结果和联系时间均需完善。',
+    }
+
+    def provider(request):
+        calls.append(json.loads(request.content))
+        value = first if len(calls) == 1 else fixed
+        return httpx.Response(200, json={'choices': [{
+            'message': {'content': json.dumps(value, ensure_ascii=False)},
+            'finish_reason': 'stop',
+        }]})
+
+    settings = Settings(_env_file=None, database_path=str(tmp_path/'db'), llm_model='test',
+                        llm_api_url='https://example.test/chat', llm_api_key='test')
+    reviewer = FrontReviewer(settings, None, transport=httpx.MockTransport(provider))
+    try:
+        result = generate(reviewer, [{'code': 'N'}], {
+            'visit_analysis_context': {
+                'next_action_expected_result': '保持联系',
+                'next_contact_at': None,
+            },
+            'required_advice': [
+                {'code': 'N', 'field': 'next_action_expected_result'},
+                {'code': 'N', 'field': 'next_contact_at'},
+            ],
+            'decision_ledger': {'validated_analysis': '下一步信息尚需完善。'},
+        }, 30)
+    finally:
+        reviewer.close()
+
+    assert len(calls) == 2
+    assert result.recovered_after_retry
+    assert result.suggestion_status == 'has_suggestions'

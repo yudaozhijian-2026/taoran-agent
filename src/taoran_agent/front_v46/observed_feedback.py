@@ -21,7 +21,7 @@ from .confirmation_shape import (
     valid_remainder,
 )
 
-VERSION = "TAORAN-FRONT-V46-ADVICE-ONLY-V10-20260918"
+VERSION = "TAORAN-FRONT-V46-FIELD-COVERAGE-V11-20260920"
 
 
 class _AnalysisPointStream:
@@ -277,8 +277,8 @@ class AdviceItem(Shape):
     """Minimal second-stage item; Stage 1 already owns all analysis detail."""
 
     code: str = Field(max_length=80)
+    covered_fields: list[str] = Field(min_length=1, max_length=16)
     suggestion: str = Field(min_length=1, max_length=140)
-    proofs: list[Proof] = Field(max_length=16)
 
 
 class AdvicePayload(Shape):
@@ -288,6 +288,54 @@ class AdvicePayload(Shape):
     confirmations: list[Confirmation] = Field(max_length=4)
     suggestion_status: Literal["has_suggestions", "no_change_needed", "needs_confirmation"]
     suggestion_reason: str = Field(min_length=1, max_length=160)
+
+
+_FIELD_WORDING_PATTERNS = {
+    "customer_type_ii": (r"客户类型",),
+    "visit_method": (r"拜访方式", r"沟通方式"),
+    "is_appointment": (r"是否预约", r"预约情况"),
+    "purpose_code": (r"拜访目的", r"本次目的"),
+    "other_purpose": (r"具体其他目的",),
+    "expected_key_result": (r"想取得的关键结果", r"关键结果", r"目标结果"),
+    "process_description": (r"过程详细描述", r"拜访过程", r"过程记录", r"客户事实"),
+    "customer_feedback": (r"客户反馈", r"客户表达"),
+    "self_assessment": (r"自评", r"达成情况", r"达成程度"),
+    "next_action_purpose": (r"下一步目的", r"下次拜访目的"),
+    "next_action_other_purpose": (r"下一次具体其他目的", r"下一步其他目的"),
+    "next_action_expected_result": (r"下一步期望结果", r"下次拜访.*关键结果", r"后续.*结果"),
+    "next_contact_at": (r"下次联系", r"下一次联系", r"联系时间", r"联系日期", r"拜访时间", r"日期安排", r"时间安排"),
+}
+
+
+def _coverage_plan(required_advice: list[dict]) -> list[dict]:
+    """Turn rule-confirmed gaps into deterministic model output slots."""
+    grouped: dict[str, list[dict]] = {}
+    for gap in required_advice:
+        code = str(gap.get("code") or "")
+        field = str(gap.get("field") or "")
+        if not code or not field:
+            continue
+        grouped.setdefault(code, []).append({
+            "field": field,
+            "field_name": display_field_name(field),
+            "reason": str(gap.get("reason") or "confirmed_gap"),
+        })
+    return [
+        {
+            "slot_id": code,
+            "code": code,
+            "required_fields": [item["field"] for item in fields],
+            "fields": fields,
+            "output": {"code": code, "covered_fields": [item["field"] for item in fields],
+                       "suggestion": "<结合本次数据说明上述每个字段的具体问题和修改方向>"},
+        }
+        for code, fields in grouped.items()
+    ]
+
+
+def _explicitly_mentions_field(suggestion: str, field: str) -> bool:
+    """Allow local binding only when user-facing wording names that field."""
+    return any(re.search(pattern, suggestion) for pattern in _FIELD_WORDING_PATTERNS.get(field, ()))
 
 
 _FORMAT_ONLY_ERROR_CODES = {
@@ -379,8 +427,17 @@ def _local_format_repair(raw, context, *, advice_only=False):
                     str(feature) for feature in as_list(proof.get("features"))[:16]
                 ]
             proofs.append(normalized_proof)
-        normalized = {"code": item["code"], "suggestion": suggestion, "proofs": proofs}
-        if not advice_only:
+        if advice_only:
+            covered_fields = [
+                str(field) for field in as_list(item.get("covered_fields"))[:16]
+                if isinstance(field, str) and field.strip()
+            ]
+            if not covered_fields:
+                covered_fields = list(dict.fromkeys(proof["field"] for proof in proofs))
+            normalized = {"code": item["code"], "suggestion": suggestion,
+                          "covered_fields": covered_fields}
+        else:
+            normalized = {"code": item["code"], "suggestion": suggestion, "proofs": proofs}
             normalized["present"] = [
                 str(entry) for entry in as_list(item.get("present"))[:16]
             ]
@@ -499,11 +556,13 @@ def configure_advice_only(messages, schema):
         "已达标内容不给建议，不补充与原目标无关的信息，不要求默认填写姓名、职务或负责人。"
         "拜访目的和下一步目的是系统选项，不得建议改成当前允许选项以外的文字；选择‘其他目的’时可对具体其他目的给建议。"
         "客户类型只用潜力客户、目标客户、商机客户；拜访方式使用表单原选项，不使用异步沟通等技术词。"
-        "同一TAORAN维度的多个字段问题合并为一条item，但proofs必须分别覆盖每个字段；不同维度不合并。"
+        "coverage_plan是服务端生成的必检字段覆盖计划。必须按其中每个slot提交一条item，"
+        "code与slot.code相同，covered_fields必须完整复制slot.required_fields，不得少字段。"
+        "同一TAORAN维度的多个字段问题合并为一条item，suggestion必须逐一说清covered_fields中每个字段的问题；"
+        "不同维度不合并。covered_fields只填输入允许的原始字段键，不要输出proofs或自己编写引用。"
         "每条suggestion只说一组相关问题，结合本次原文给可直接修改的方向，尽量不超过80个汉字。"
-        "字段已有内容时proofs.quote必须是该字段的连续原文；字段为空时quote用空字符串。"
         "confirmations只用于已有原文存在歧义且会影响结论的情况；字段缺失必须放入items。"
-        "required_advice中每个code和field必须由items中同code建议及proofs.field覆盖，不得遗漏。"
+        "required_advice中每个code和field必须由items中同code建议及covered_fields覆盖，不得遗漏。"
         "有建议时suggestion_status=has_suggestions；确实无缺口时为no_change_needed；只有需确认项时为needs_confirmation。"
         "不输出分析正文、TAORAN字母标题、内部字段名、真假值、程序判定或规则门槛说明。"
         "只返回紧凑JSON：" + json.dumps(schema, ensure_ascii=False)
@@ -532,6 +591,11 @@ def generate(
         or ""
     ).strip()
     advice_only = bool(validated_analysis)
+    expected_codes = list(dict.fromkeys([
+        *(str(item["code"]) for item in items),
+        *(str(gap.get("code")) for gap in snapshot.get("required_advice", [])
+          if isinstance(gap, dict) and gap.get("code")),
+    ]))
     if (first.failure_reason == "invalid_contract" and holder.get("candidate") is not None
             and _format_only_errors(first.validation_errors)):
         repaired = _local_format_repair(
@@ -543,7 +607,7 @@ def generate(
                 local = complete(
                     reviewer,
                     repaired,
-                    [str(item["code"]) for item in items],
+                    expected_codes,
                     snapshot,
                     {
                         "model_queue_ms": first.model_queue_ms,
@@ -597,7 +661,7 @@ def generate(
     if paths and (second.status != "completed" or second.suggestion_status == "incomplete"):
         try:
             partial = complete(reviewer, valid_remainder(holder["candidate"], paths),
-                               [str(i["code"]) for i in items], snapshot,
+                               expected_codes, snapshot,
                                {}, {}, monotonic())
             second = partial.model_copy(update={"suggestion_status": "incomplete",
                 "validation_errors": first.validation_errors, "model_attempts": second.model_attempts})
@@ -643,11 +707,21 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
     required_advice = [gap for gap in snapshot.get("required_advice", [])
                        if isinstance(gap, dict) and str(gap.get("code")) in expected_codes
                        and isinstance(gap.get("field"), str)]
+    coverage_plan = _coverage_plan(required_advice)
+    if advice_only:
+        allowed_fields = sorted({
+            *(str(field) for field in source if not str(field).startswith("_")),
+            *(str(gap["field"]) for gap in required_advice),
+        })
+        schema["$defs"][item_schema]["properties"]["covered_fields"]["items"]["enum"] = allowed_fields
+        if coverage_plan:
+            schema["properties"]["items"]["minItems"] = len(coverage_plan)
     data = {"visit_analysis_context": source,
             "field_specificity_checks": [{**{k: v for k, v in i.items() if k not in {"source_fields", "reference_context"}},
                 "source_field_names": list(i.get("source_fields", {})),
                 "reference_field_names": list(i.get("reference_context", {}))} for i in items],
             "required_advice": required_advice,
+            "coverage_plan": coverage_plan,
             "original_goals": [{"goal_id": g.goal_id, "source_text": g.source_text} for g in goals(source)]}
     if advice_only:
         data["validated_analysis"] = validated_analysis
@@ -758,6 +832,7 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
         return complete(reviewer, raw, expected_codes,
                         {"visit_analysis_context": source,
                          "required_advice": required_advice,
+                         "coverage_plan": coverage_plan,
                          "validated_analysis": validated_analysis},
                         telemetry, envelope.get("usage") or {}, started)
     except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
@@ -802,6 +877,48 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
         raw = normalize(raw, context)
         payload = Payload.model_validate(raw)
         analysis_points = payload.analysis_points
+    required = [gap for gap in snapshot.get("required_advice", []) if isinstance(gap, dict)]
+    local_binding_observations = []
+    if advice_only:
+        already_covered = {
+            (item.code, field)
+            for item in payload.items
+            for field in item.covered_fields
+        }
+        for gap in required:
+            code, field = str(gap.get("code") or ""), str(gap.get("field") or "")
+            source_value = context.get(field)
+            source_is_empty = field in context and (
+                source_value is None or source_value == []
+                or (isinstance(source_value, str) and not source_value.strip())
+            )
+            if not code or not field or (code, field) in already_covered or not source_is_empty:
+                continue
+            candidates = [
+                item for item in payload.items
+                if item.code == code and _explicitly_mentions_field(item.suggestion, field)
+            ]
+            if len(candidates) == 1:
+                candidates[0].covered_fields.append(field)
+                already_covered.add((code, field))
+                local_binding_observations.append({
+                    "rule": "local_required_field_binding",
+                    "scope": "items",
+                    "code": code,
+                    "field": field,
+                    "policy": "safe_empty_field_binding",
+                })
+
+    def item_proofs(item):
+        if advice_only:
+            proofs = []
+            for field in item.covered_fields:
+                value = context.get(field)
+                quote = value if isinstance(value, str) else ""
+                proofs.append(Proof(field=field, quote=quote))
+            return proofs
+        return item.proofs
+
     # Missing suggestions mean no suggestion, never an invented positive judgment.
     item_observations = []
     accepted = []
@@ -826,7 +943,7 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     from ..shared_semantic_checks import semantic_hits
     from .experimental_record_state import boundary_issues
 
-    observations, evidence, confirmations = item_observations, [], []
+    observations, evidence, confirmations = item_observations + local_binding_observations, [], []
     from .experimental_business_semantic_state import build_business_state
     from .experimental_rendering_binding import validate_bindings
     if not advice_only:
@@ -872,9 +989,9 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
                                  "scope": "confirmations", "policy": "observe_only"})
     # Merge only identical text grounded in the exact same source quote.
     # Paraphrases or shared field names alone do not prove coverage.
-    covered = [p for p in payload.items if p.code in expected_codes and len(p.proofs) == 1
+    covered = [p for p in payload.items if p.code in expected_codes and len(item_proofs(p)) == 1
                and any(p.suggestion.strip() == c.question.strip()
-                       and p.proofs[0].field == c.field and p.proofs[0].quote == c.quote
+                       and item_proofs(p)[0].field == c.field and item_proofs(p)[0].quote == c.quote
                        and c.kind == "source_ambiguity" and c.quote
                        and isinstance(context.get(c.field), str) and c.quote in context[c.field]
                        for c in payload.confirmations)]
@@ -882,14 +999,28 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     if covered and not payload.items and payload.suggestion_status == "has_suggestions":
         payload.suggestion_status = "needs_confirmation"
     has_suggestions = any(p.suggestion.strip() for p in payload.items)
-    required = [gap for gap in snapshot.get("required_advice", []) if isinstance(gap, dict)]
     required_codes = {str(gap.get("code")) for gap in required}
     required_fields = {(str(gap.get("code")), str(gap.get("field"))) for gap in required}
     covered_required_codes = {p.code for p in payload.items if p.suggestion.strip()}
     covered_required_fields = {(p.code, proof.field) for p in payload.items
-                               if p.suggestion.strip() for proof in p.proofs}
+                               if p.suggestion.strip() for proof in item_proofs(p)}
+    claimed_but_unaddressed_fields = set()
+    if advice_only:
+        claimed_but_unaddressed_fields = {
+            (code, field)
+            for code, field in required_fields
+            if (code, field) in covered_required_fields
+            and field in context
+            and (context.get(field) is None or context.get(field) == []
+                 or (isinstance(context.get(field), str) and not context.get(field).strip()))
+            and not any(
+                item.code == code and field in item.covered_fields
+                and _explicitly_mentions_field(item.suggestion, field)
+                for item in payload.items
+            )
+        }
     missing_required_codes = required_codes - covered_required_codes
-    missing_required_fields = required_fields - covered_required_fields
+    missing_required_fields = (required_fields - covered_required_fields) | claimed_but_unaddressed_fields
     declared = payload.suggestion_status
     complete_suggestions = not unknown_codes and bool(payload.suggestion_reason.strip()) and (
         (declared == "has_suggestions" and has_suggestions)
@@ -907,7 +1038,10 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
         observations.append({"rule": "required_advice_omitted", "scope": "items",
                              "code": code, "policy": "observe_only"})
     for code, field in sorted(missing_required_fields):
-        observations.append({"rule": "required_advice_field_omitted", "scope": "items",
+        rule = ("required_advice_field_not_expressed"
+                if (code, field) in claimed_but_unaddressed_fields
+                else "required_advice_field_omitted")
+        observations.append({"rule": rule, "scope": "items",
                              "code": code, "field": field, "policy": "observe_only"})
     audit = {"status": "disabled", "policy": "observe_only", "latency_ms": 0}
     audit["findings"] = observations
@@ -917,7 +1051,11 @@ def complete(reviewer, raw, expected_codes, snapshot, telemetry, usage, started)
     def tokens(key):
         return max(0, usage.get(key, 0)) + max(0, audit.get(key, 0))
     required_validation_errors = [
-        {"location": f"items.{code}.{field}", "code": "required_advice_field_omitted"}
+        {"location": f"items.{code}.{field}", "code": (
+            "required_advice_field_not_expressed"
+            if (code, field) in claimed_but_unaddressed_fields
+            else "required_advice_field_omitted"
+        )}
         for code, field in sorted(missing_required_fields)
     ]
     return KnowledgeWordingResult(

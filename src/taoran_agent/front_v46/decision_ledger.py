@@ -12,7 +12,7 @@ from typing import Any
 from ..models import VisitDraftInput
 from ..record_contract import visit_contract
 
-VERSION = "front-decision-ledger-v1-20260918"
+VERSION = "front-decision-ledger-v2-20260920"
 
 _FIELD_CODES = {
     "customer_type_ii": "T",

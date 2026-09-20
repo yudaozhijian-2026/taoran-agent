@@ -1803,6 +1803,7 @@ def _enhance_front_suggestions(
         (str(item["code"]), str(item["field"])): {
             "code": str(item["code"]),
             "field": str(item["field"]),
+            "reason": str(item.get("reason") or "confirmed_gap"),
         }
         for item in (decision_ledger or {}).get("required_advice", [])
         if isinstance(item, dict) and item.get("code") and item.get("field")
@@ -1820,12 +1821,14 @@ def _enhance_front_suggestions(
         required_advice_by_field[(issue.dimension, field)] = {
             "code": issue.dimension,
             "field": field,
+            "reason": str(issue.code or "rule_confirmed_gap"),
         }
     for check in field_checks:
         if check.get("local_specificity") == "not_specific":
             required_advice_by_field[(str(check["code"]), str(check["field"]))] = {
                 "code": str(check["code"]),
                 "field": str(check["field"]),
+                "reason": "not_specific",
             }
     required_advice = list(required_advice_by_field.values())
     if required_advice:
