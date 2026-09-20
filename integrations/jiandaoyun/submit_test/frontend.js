@@ -46,7 +46,11 @@ const onFeedbackMessage = (message) => {
   if (!payload || !['taoran_quick_check_acknowledged','taoran_submit_cancelled','taoran_submit_retry','taoran_submit_bypassed'].includes(payload.type)) return;
   if (payload.check_id !== pendingCheckId) return;
   if (payload.opening_id !== pendingOpeningId || payload.input_hash !== pendingInputHash) return;
-  if (payload.type === 'taoran_submit_cancelled') { acceptingFeedback = false; $g.utils.closeModal(); return; }
+  if (payload.type === 'taoran_submit_cancelled') {
+    acceptingFeedback = false;
+    $g.utils.closeModal();
+    return;
+  }
   if (payload.type === 'taoran_submit_retry') {
     retryRequested = true;
     acceptingFeedback = false;
@@ -103,12 +107,15 @@ if (bypassConfirmed) {
 }
 
 if (!returnedFeedback) {
-  // A successful plugin return tells Jiandaoyun to continue the pending form
-  // submit.  That is especially visible when editing an existing record: even
-  // a "cancel" output is persisted and creates a data-log entry.  Reject the
-  // submit action instead.  The AI modal has already explained that returning
-  // or closing means "do not submit", so this branch must fail closed.
-  throw new Error('已返回修改，本次记录未提交。');
+  // The isolated test form has a native validation rule that allows the save
+  // only when the hidden submit-decision field equals "已确认提交".  Clearing it
+  // here cancels the pending save without throwing a plugin error or changing
+  // stored data.  Directly closing the AI modal follows the same branch.
+  return {
+    resText: draft.existing_feedback == null ? '' : draft.existing_feedback,
+    quick_check_id: pendingCheckId,
+    submit_decision: '',
+  };
 }
 
 return { resText: returnedFeedback, quick_check_id: pendingCheckId, submit_decision: '已确认提交' };
