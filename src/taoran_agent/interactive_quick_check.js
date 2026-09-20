@@ -62,6 +62,7 @@ const activeRequests = new Set();
 const versionedMode = typeof taskVersion === 'string';
 const restartText = submitMode ? '请关闭当前弹窗，返回填写页面重新点击“提交”。' : '请关闭当前弹窗，返回拜访记录界面重新点击“AI检测”。';
 const waitingText = 'AI任务已创建，AI正在分析本次拜访。';
+const analysisWaitingText = '正在生成完整分析。';
 const finalWaitingText = '正在生成AI改善建议';
 const suggestionWaitingText = '改善建议生成中';
 const validationWaitingText = '正在校验并完善AI意见……';
@@ -166,6 +167,13 @@ function startAnalysisTyping() {
 function syncAnalysisTarget(text) {
   if (!typewriterMode || typeof text !== 'string') return false;
   if (text === analysisTarget) return true;
+  // An unavailable/failed preview can temporarily show a placeholder before
+  // the authoritative final analysis arrives.  The placeholder is UI state,
+  // not part of the analysis, and must not participate in the completion
+  // equality check or the acknowledgement button will remain disabled.
+  if (!analysisTarget && content.textContent === analysisWaitingText) {
+    content.textContent = '';
+  }
   if (text.startsWith(analysisTarget)) analysisQueue += text.slice(analysisTarget.length);
   else if (analysisTarget && text) {
     // A validated retry/final normalization is an atomic correction. Keeping
@@ -345,7 +353,7 @@ function previewSnapshot(text, state, validating = false) {
   if (previewSucceeded) markVisible('preview_complete_visible_ms');
   previewComplete = state === 'completed' || state === 'unavailable' || state === 'failed';
   showFinalWaiting();
-  if ((!content.textContent || content.textContent === waitingText) && previewComplete) content.textContent = '正在生成完整分析。';
+  if ((!content.textContent || content.textContent === waitingText) && previewComplete) content.textContent = analysisWaitingText;
   if (finalDone && !finalFailed) {
     if (previewComplete && !previewSucceeded && versionedMode) {
       content.textContent = finalContent.textContent;

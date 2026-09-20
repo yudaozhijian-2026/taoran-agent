@@ -249,6 +249,27 @@ test('v7 reveals only validated modules and types analysis before advice', async
   assert.equal(h.nodes.ack.disabled,false);
   assert.equal(h.nodes.status.textContent,'AI检测完成');
 });
+test('final analysis replaces a temporary unavailable-preview placeholder', async () => {
+  const policy='front-v46-field-coverage-plan-v11-20260920';
+  const analysis='客户已确认六台设备的安装与电源准备。';
+  const advice='1、请补充下一次联系时间。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n${advice}`;
+  const h=harness([
+    {check_id:'qc_test',input_hash:'v1',status:'processing',preview_status:'unavailable',preview_feedback_text:''},
+    {check_id:'qc_test',input_hash:'v1',status:'completed',content_complete:true,final_usable:true,
+      preview_status:'completed',preview_feedback_text:analysis,
+      suggestion_status:'completed',suggestion_feedback_text:advice,final_feedback_text:feedback},
+  ],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.content.textContent,'正在生成完整分析。');
+  await h.tick(1000);
+  for (let i=0;i<analysis.length+advice.length+4;i++) await h.tick(18);
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalContent.textContent,advice);
+  assert.equal(h.nodes.ack.disabled,false);
+  assert.equal(h.nodes.status.textContent,'AI检测完成');
+});
 test('v8 shows validated analysis while independent advice stage is still running', async () => {
   const policy='front-v46-two-stage-validated-modules-v8-20260918';
   const analysis='客户已反馈当前版本仍在确认，文件尚未发出。';
