@@ -103,10 +103,12 @@ if (bypassConfirmed) {
 }
 
 if (!returnedFeedback) {
-  // Keep the current value in the returned contract.  The isolated form does
-  // not map this output on submit, so returning or closing cannot write an AI
-  // opinion before the salesperson confirms the record.
-  return { resText: draft.existing_feedback == null ? '' : draft.existing_feedback, submit_decision: '返回修改' };
+  // A successful plugin return tells Jiandaoyun to continue the pending form
+  // submit.  That is especially visible when editing an existing record: even
+  // a "cancel" output is persisted and creates a data-log entry.  Reject the
+  // submit action instead.  The AI modal has already explained that returning
+  // or closing means "do not submit", so this branch must fail closed.
+  throw new Error('已返回修改，本次记录未提交。');
 }
 
 return { resText: returnedFeedback, quick_check_id: pendingCheckId, submit_decision: '已确认提交' };

@@ -63,14 +63,14 @@ test('continue submit preserves the existing AI feedback after model failure',as
   });
 });
 
-test('return or direct close never confirms submit and keeps the current value',async()=>{
+test('return or direct close rejects the pending Jiandaoyun submit',async()=>{
   for (const directClose of [false,true]) {
     const item=launch(directClose?1:0);
     const h=start([item],{existing_feedback:'原意见'});
     await tick();
     if (directClose) h.g.utils.closeModal();
     else send(h,item,'taoran_submit_cancelled');
-    assert.deepEqual(await h.promise,{resText:'原意见',submit_decision:'返回修改'});
+    await assert.rejects(h.promise,/已返回修改，本次记录未提交/);
   }
 });
 
@@ -83,7 +83,7 @@ test('stale retry or bypass from a prior opening is ignored',async()=>{
   await tick();
   assert.equal(h.calls,1);
   send(h,item,'taoran_submit_cancelled');
-  assert.deepEqual(await h.promise,{resText:'原意见',submit_decision:'返回修改'});
+  await assert.rejects(h.promise,/已返回修改，本次记录未提交/);
 });
 
 test('submit interaction has no plugin-owned auto-close deadline',()=>{
