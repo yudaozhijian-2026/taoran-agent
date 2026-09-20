@@ -58,6 +58,7 @@ class FrontAnalysisArtifact(BaseModel):
     user_id: str = Field(min_length=1)
     check_id: str = Field(min_length=1)
     source_record_id: str | None = None
+    feedback_text: str | None = Field(default=None, max_length=8000)
     analysis_summary: str | None = Field(default=None, max_length=4000)
     findings: list[FrontFinding] = Field(default_factory=list, max_length=24)
     suggestions: list[FrontSuggestion] = Field(default_factory=list, max_length=16)
@@ -211,6 +212,10 @@ def build_artifact(
         user_id=user_id,
         check_id=check_id,
         source_record_id=source_record_id,
+        feedback_text=(
+            str(feedback_text or "").replace("【AI反馈意见】", "", 1).strip()
+            or None
+        ),
         analysis_summary=analysis or None,
         findings=findings,
         suggestions=suggestions,
@@ -219,6 +224,26 @@ def build_artifact(
         policy_version=policy_version,
         prompt_version=(str(review.get("prompt_version")) if review.get("prompt_version") else None),
     )
+
+
+def fallback_feedback_text(artifact: FrontAnalysisArtifact) -> str:
+    """Return the accepted user-facing Quick Check opinion for safe fallback."""
+    if artifact.feedback_text:
+        return artifact.feedback_text.strip()
+    parts = []
+    if artifact.analysis_summary:
+        parts.append(f"本次拜访分析：{artifact.analysis_summary.strip()}")
+    if artifact.suggestions or artifact.confirmation_items:
+        lines = [item.text.strip() for item in artifact.suggestions if item.text.strip()]
+        lines.extend(
+            item.strip() for item in artifact.confirmation_items if item.strip()
+        )
+        if lines:
+            numbered = "\n".join(
+                f"{index}. {text}" for index, text in enumerate(dict.fromkeys(lines), 1)
+            )
+            parts.append(f"AI改善建议：\n{numbered}")
+    return "\n\n".join(parts).strip()
 
 
 def model_context(artifact: FrontAnalysisArtifact) -> dict[str, Any]:

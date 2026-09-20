@@ -79,6 +79,161 @@ def writeback_evaluation(settings, request, response, *, store=None):
         sleep(0.25 * (2 ** attempt))
 
 
+def writeback_front_feedback_fallback(
+    settings: Settings,
+    request: PostEvaluationRequest,
+    feedback_text: str,
+) -> WritebackResult:
+    """Fill only a blank AI opinion after formal analysis generation fails.
+
+    This path never writes scores. A non-empty saved AI opinion is treated as
+    the already-delivered Quick Check result and is left untouched.
+    """
+    for attempt in range(3):
+        try:
+            result = _writeback_front_feedback_fallback_once(
+                settings,
+                request,
+                feedback_text,
+            )
+            retryable = result.error_message in {
+                "FRONT_FALLBACK_SOURCE_READ_FAILED",
+                "FRONT_FALLBACK_VERIFY_READ_FAILED",
+            }
+            if not retryable or attempt == 2:
+                return result
+        except JiandaoyunWritebackError as exc:
+            if not exc.retryable or attempt == 2:
+                raise
+        sleep(0.25 * (2**attempt))
+
+
+def _stored_widget_value(value: Any) -> Any:
+    if isinstance(value, dict) and "value" in value:
+        return _stored_widget_value(value["value"])
+    return value
+
+
+def _writeback_front_feedback_fallback_once(
+    settings: Settings,
+    request: PostEvaluationRequest,
+    feedback_text: str,
+) -> WritebackResult:
+    target = request.writeback_target
+    attempted_at = datetime.now(UTC)
+    if target is None:
+        return WritebackResult(status="skipped", attempted_at=attempted_at)
+    text = re.sub(r"^\s*【AI反馈意见】\s*", "", str(feedback_text or "")).strip()
+    if not text:
+        return WritebackResult(
+            status="failed",
+            target_data_id=target.data_id,
+            error_message="FRONT_FALLBACK_EMPTY",
+            attempted_at=attempted_at,
+        )
+
+    def blocked(code: str) -> WritebackResult:
+        return WritebackResult(
+            status="failed",
+            target_data_id=target.data_id,
+            error_message=code,
+            attempted_at=attempted_at,
+        )
+
+    with source_lock(request.context.tenant_id, target):
+        tenant = settings.tenant_config(request.context.tenant_id)
+        if tenant is not None and not tenant.enabled:
+            return blocked("WRITEBACK_TENANT_DISABLED")
+        mapping_path = settings.jiandaoyun_mapping_path_for(request.context.tenant_id)
+        mapping = load_jiandaoyun_mapping(mapping_path)
+        if (
+            target.app_id != mapping.get("source_application_id")
+            or target.entry_id != mapping.get("source_entry_id")
+        ):
+            return blocked("WRITEBACK_TARGET_CHANGED")
+        output_spec = mapping.get("output_fields", {}).get("ai_opinion")
+        widget_id = _output_widget_id(output_spec)
+        if not widget_id or "replace" in widget_id.lower():
+            return blocked("FRONT_FALLBACK_FIELD_NOT_CONFIGURED")
+        api_key = settings.jiandaoyun_api_key_for(request.context.tenant_id)
+        if not api_key:
+            return blocked("FRONT_FALLBACK_API_KEY_NOT_CONFIGURED")
+        try:
+            current = get_jiandaoyun_record(
+                settings,
+                request.context.tenant_id,
+                target.app_id,
+                target.entry_id,
+                target.data_id,
+            )
+        except JiandaoyunReadError:
+            return blocked("FRONT_FALLBACK_SOURCE_READ_FAILED")
+        existing = _stored_widget_value(current.get(widget_id))
+        if existing is not None and str(existing).strip():
+            return WritebackResult(
+                status="skipped",
+                target_data_id=target.data_id,
+                error_message="FRONT_FEEDBACK_ALREADY_PRESENT",
+                attempted_at=attempted_at,
+            )
+        value = _format_widget_value(text, output_spec)
+        try:
+            response = httpx.post(
+                f"{settings.jiandaoyun_base_url.rstrip('/')}/v5/app/entry/data/update",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "app_id": target.app_id,
+                    "entry_id": target.entry_id,
+                    "data_id": target.data_id,
+                    "data": {widget_id: {"value": value}},
+                    "is_start_trigger": False,
+                    "transaction_id": (
+                        f"front_fallback_{request.context.request_id}"[:120]
+                    ),
+                },
+                timeout=settings.jiandaoyun_timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            returned = payload.get("data") if isinstance(payload, dict) else None
+            if (
+                not isinstance(returned, dict)
+                or str(returned.get("_id", "")) != target.data_id
+            ):
+                raise JiandaoyunWritebackError(
+                    "简道云前端兜底意见回写响应未确认目标记录"
+                )
+        except (httpx.HTTPError, ValueError) as exc:
+            error = JiandaoyunWritebackError("简道云前端兜底意见回写请求失败")
+            error.retryable = isinstance(exc, httpx.TransportError) or (
+                isinstance(exc, httpx.HTTPStatusError)
+                and (exc.response.status_code == 429 or exc.response.status_code >= 500)
+            )
+            raise error from exc
+        try:
+            confirmed = get_jiandaoyun_record(
+                settings,
+                request.context.tenant_id,
+                target.app_id,
+                target.entry_id,
+                target.data_id,
+            )
+        except JiandaoyunReadError:
+            return blocked("FRONT_FALLBACK_VERIFY_READ_FAILED")
+        actual = _stored_widget_value(confirmed.get(widget_id))
+        if not _same_output(actual, value):
+            return blocked("FRONT_FALLBACK_VERIFY_MISMATCH")
+        return WritebackResult(
+            status="succeeded",
+            target_data_id=target.data_id,
+            written_fields=[widget_id],
+            attempted_at=attempted_at,
+        )
+
+
 def _same_output(actual, expected):
     if isinstance(expected, (int, float)) and not isinstance(expected, bool):
         try:

@@ -131,7 +131,11 @@ from .tenant_admin import (
 )
 from .token_usage import UsageExecutor as ThreadPoolExecutor
 from .token_usage import usage_scope, usage_stage
-from .writeback import JiandaoyunWritebackError, writeback_evaluation
+from .writeback import (
+    JiandaoyunWritebackError,
+    writeback_evaluation,
+    writeback_front_feedback_fallback,
+)
 
 
 @asynccontextmanager
@@ -626,6 +630,8 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
     store = get_store()
     started = monotonic()
     phases: dict[str, int] = {}
+    front_artifact = None
+    formal_opinion_ready = False
     persisted = store.get_evaluation(request.context.tenant_id, job_id) or {}
     store.mark_evaluation_running(request.context.tenant_id, job_id)
     try:
@@ -633,6 +639,7 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
         if persisted.get("status") in {"queued", "running"} and (saved.get("semantic_facts") or {}).get("status") == "completed":
             response = EvaluationResponse.model_validate(saved)
             phases.update(response.phase_latency_ms)
+            formal_opinion_ready = True
         else:
             mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
             from .deep_review import (
@@ -673,6 +680,41 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
             response = response.model_copy(
                 update={"deep_review_diagnostics": diagnostics_payload(deep_review)}
             )
+            if response.semantic_facts.status != "completed" and front_artifact is not None:
+                from .front_analysis_artifact import fallback_feedback_text
+
+                front_feedback = fallback_feedback_text(front_artifact)
+                fallback_started = monotonic()
+                fallback_writeback = writeback_front_feedback_fallback(
+                    get_settings(),
+                    request,
+                    front_feedback,
+                )
+                phases["front_feedback_fallback_writeback"] = int(
+                    (monotonic() - fallback_started) * 1000
+                )
+                phases["total"] = int((monotonic() - started) * 1000)
+                response = response.model_copy(
+                    update={
+                        "ai_opinion": front_feedback,
+                        "writeback": fallback_writeback,
+                        "phase_latency_ms": phases,
+                        "deep_review_diagnostics": {
+                            **response.deep_review_diagnostics,
+                            "fallback_reason": "formal_semantic_review_incomplete",
+                            "front_feedback_fallback_status": fallback_writeback.status,
+                        },
+                    }
+                )
+                store.complete_evaluation(response)
+                _observe_pipeline("post_submit", phases, success=False)
+                _observe_pipeline("post_generation", phases, success=False)
+                _observe_pipeline(
+                    "post_writeback",
+                    {"writeback": phases["front_feedback_fallback_writeback"]},
+                    success=fallback_writeback.status in {"succeeded", "skipped"},
+                )
+                return
             post_feedback_request = PrecheckRequest(
                 context=request.context.model_copy(
                     update={"request_id": f"{request.context.request_id}__post_feedback"}
@@ -699,6 +741,7 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
                     ),
                 }
             )
+            formal_opinion_ready = True
         if response.semantic_facts.status == "completed":
             response = response.model_copy(update={"phase_latency_ms": phases})
             store.checkpoint_evaluation(response)
@@ -748,6 +791,21 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
             error = "post_salesperson_internal_rule_leak:" + (
                 evidence_id or "diagnostic_save_failed"
             )
+        if front_artifact is not None and not formal_opinion_ready:
+            from .front_analysis_artifact import fallback_feedback_text
+
+            try:
+                fallback_writeback = writeback_front_feedback_fallback(
+                    get_settings(),
+                    request,
+                    fallback_feedback_text(front_artifact),
+                )
+                error += f"|front_feedback_fallback={fallback_writeback.status}"
+            except Exception as fallback_error:  # noqa: BLE001 - preserve original failure
+                error += (
+                    "|front_feedback_fallback=failed:"
+                    f"{type(fallback_error).__name__}"
+                )
         store.fail_evaluation(request.context.tenant_id, job_id, error)
         phases["total"] = int((monotonic() - started) * 1000)
         _observe_pipeline("post_submit", phases, success=False)
