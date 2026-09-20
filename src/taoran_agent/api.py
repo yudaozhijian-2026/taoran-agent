@@ -2815,6 +2815,13 @@ def _quick_check_run(
         final_analysis = validated_analysis or _quick_check_final_analysis(
             final.get("feedback_text", "")
         )
+        # Stage 2 can recover a complete, validated analysis when the faster
+        # Stage-1 preview was unavailable.  Hydrate the shared ledger with that
+        # authoritative fallback before joint validation.  Otherwise the
+        # validator sees the stale empty Stage-1 value and starts an unnecessary
+        # third model request for ``validated_analysis_missing``.
+        if final_analysis and not str(shared_ledger.get("validated_analysis") or "").strip():
+            shared_ledger = with_validated_analysis(decision_ledger, final_analysis)
         if not validated_analysis and final_analysis:
             events.put({"type": "preview_replace", "text": final_analysis})
             events.put({"type": "preview_complete", "status": "completed"})

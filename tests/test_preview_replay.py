@@ -187,6 +187,34 @@ def test_joint_conflict_is_repaired_locally_without_second_model_call(monkeypatc
     assert timings['joint_repair_ms'] >= 0
 
 
+def test_stage_two_analysis_hydrates_ledger_without_third_model_call(monkeypatch):
+    calls = []
+
+    def unavailable_analysis(_visit, _settings, events):
+        events.put({'type': 'preview_complete', 'status': 'unavailable'})
+        return {'status': 'failed', 'failure_category': 'invalid_preview_format'}
+
+    def complete_final(*args, **kwargs):
+        calls.append(kwargs['decision_ledger'])
+        return {
+            'status': 'completed',
+            'feedback_text': (
+                '本次拜访分析：客户已确认安装位置，本次目标已取得明确结果。'
+                '\n\nAI改善建议：\n请补充下一次联系时间。'
+            ),
+        }
+
+    monkeypatch.setattr(api, '_quick_check_run_preview', unavailable_analysis)
+    monkeypatch.setattr(api, '_quick_check_run_final', complete_final)
+    result = api._quick_check_run(SimpleNamespace(visit=None), None, Queue())
+
+    assert len(calls) == 1
+    assert result['final']['status'] == 'completed'
+    assert result['final']['phase_timings']['two_stage']['joint_repair_mode'] == 'none'
+    assert 'validated_analysis_missing' not in result['final'].get('joint_initial_errors', [])
+    assert '客户已确认安装位置' in result['final']['feedback_text']
+
+
 def test_validation_status_preserves_retained_snapshot_until_final_replace():
     t = task({'status': 'processing'})
     t['future'] = Future()
