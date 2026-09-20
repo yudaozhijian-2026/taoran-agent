@@ -67,6 +67,26 @@ class AgentStore:
                     PRIMARY KEY (tenant_id, artifact_type, cache_key)
                 );
 
+                CREATE TABLE IF NOT EXISTS front_analysis_artifacts (
+                    artifact_id TEXT PRIMARY KEY,
+                    tenant_id TEXT NOT NULL,
+                    check_id TEXT NOT NULL,
+                    input_hash TEXT NOT NULL,
+                    quick_check_input_hash TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    source_record_id TEXT,
+                    payload_json TEXT NOT NULL,
+                    created_at TEXT NOT NULL,
+                    acknowledged_at TEXT,
+                    retention_until REAL NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS ix_front_artifact_match
+                    ON front_analysis_artifacts (
+                        tenant_id, input_hash, user_id, acknowledged_at, retention_until
+                    );
+                CREATE INDEX IF NOT EXISTS ix_front_artifact_check
+                    ON front_analysis_artifacts (tenant_id, check_id);
+
                 CREATE TABLE IF NOT EXISTS evaluation_jobs (
                     job_id TEXT PRIMARY KEY,
                     tenant_id TEXT NOT NULL,
@@ -296,6 +316,149 @@ class AgentStore:
         if row is None:  # pragma: no cover - transaction ensures the row exists
             raise RuntimeError("feedback artifact was not persisted")
         return json.loads(row["payload_json"])
+
+    def save_front_analysis_artifact(
+        self,
+        payload: dict[str, Any],
+        *,
+        retention_until: float,
+    ) -> dict[str, Any]:
+        """Persist a validated Quick Check artifact without making it eligible yet."""
+        created_at = str(payload.get("generated_at") or datetime.now(UTC).isoformat())
+        serialized = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+        with self._lock, self._connection:
+            self._connection.execute(
+                "DELETE FROM front_analysis_artifacts WHERE retention_until < strftime('%s','now')"
+            )
+            self._connection.execute(
+                """
+                INSERT INTO front_analysis_artifacts (
+                    artifact_id, tenant_id, check_id, input_hash,
+                    quick_check_input_hash, user_id, source_record_id,
+                    payload_json, created_at, retention_until
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(artifact_id) DO UPDATE SET
+                    payload_json=excluded.payload_json,
+                    retention_until=excluded.retention_until
+                """,
+                (
+                    payload["artifact_id"], payload["tenant_id"], payload["check_id"],
+                    payload["input_hash"], payload["quick_check_input_hash"],
+                    payload["user_id"], payload.get("source_record_id"), serialized,
+                    created_at, retention_until,
+                ),
+            )
+        return payload
+
+    def acknowledge_front_analysis_artifact(
+        self,
+        tenant_id: str,
+        check_id: str,
+        quick_check_input_hash: str,
+    ) -> bool:
+        """Activate only the artifact explicitly accepted by this popup opening."""
+        now = datetime.now(UTC).isoformat()
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                """
+                UPDATE front_analysis_artifacts SET acknowledged_at = ?
+                WHERE tenant_id = ? AND check_id = ? AND quick_check_input_hash = ?
+                  AND retention_until >= strftime('%s','now')
+                """,
+                (now, tenant_id, check_id, quick_check_input_hash),
+            )
+        return cursor.rowcount == 1
+
+    def find_front_analysis_artifact(
+        self,
+        tenant_id: str,
+        input_hash: str,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return an acknowledged exact-content artifact without crossing tenants."""
+        params: list[Any] = [tenant_id, input_hash]
+        user_clause = ""
+        if user_id:
+            user_clause = " AND user_id = ?"
+            params.append(user_id)
+        query = f"""
+            SELECT * FROM front_analysis_artifacts
+            WHERE tenant_id = ? AND input_hash = ?
+              AND acknowledged_at IS NOT NULL
+              AND retention_until >= strftime('%s','now')
+              {user_clause}
+            ORDER BY acknowledged_at DESC LIMIT 2
+        """
+        with self._lock:
+            rows = self._connection.execute(query, tuple(params)).fetchall()
+            if not rows and user_id:
+                # A provider may represent the same Jiandaoyun user differently
+                # before and after submit.  Cross-user reuse is allowed only if
+                # the exact content has one unambiguous acknowledged artifact.
+                rows = self._connection.execute(
+                    """
+                    SELECT * FROM front_analysis_artifacts
+                    WHERE tenant_id = ? AND input_hash = ?
+                      AND acknowledged_at IS NOT NULL
+                      AND retention_until >= strftime('%s','now')
+                    ORDER BY acknowledged_at DESC LIMIT 2
+                    """,
+                    (tenant_id, input_hash),
+                ).fetchall()
+        if len(rows) != 1:
+            return None
+        row = rows[0]
+        return {
+            "artifact_id": row["artifact_id"],
+            "payload": json.loads(row["payload_json"]),
+            "acknowledged_at": row["acknowledged_at"],
+        }
+
+    def latest_front_analysis_artifact(
+        self,
+        tenant_id: str,
+        user_id: str,
+        *,
+        include_expired: bool = False,
+    ) -> dict[str, Any] | None:
+        """Return the latest accepted candidate for mismatch diagnostics only."""
+        retention_clause = "" if include_expired else "AND retention_until >= strftime('%s','now')"
+        with self._lock:
+            row = self._connection.execute(
+                f"""
+                SELECT * FROM front_analysis_artifacts
+                WHERE tenant_id = ? AND user_id = ?
+                  AND acknowledged_at IS NOT NULL
+                  {retention_clause}
+                ORDER BY acknowledged_at DESC LIMIT 1
+                """,
+                (tenant_id, user_id),
+            ).fetchone()
+        if row is None:
+            return None
+        return {
+            "artifact_id": row["artifact_id"],
+            "input_hash": row["input_hash"],
+            "payload": json.loads(row["payload_json"]),
+            "retention_until": row["retention_until"],
+        }
+
+    def link_front_analysis_artifact(
+        self,
+        artifact_id: str,
+        source_record_id: str | None,
+    ) -> None:
+        if not source_record_id:
+            return
+        with self._lock, self._connection:
+            self._connection.execute(
+                """
+                UPDATE front_analysis_artifacts SET source_record_id = ?
+                WHERE artifact_id = ?
+                """,
+                (source_record_id, artifact_id),
+            )
 
     def create_evaluation_job(
         self, job_id: str, request: PostEvaluationRequest, input_snapshot_hash: str

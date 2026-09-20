@@ -8,7 +8,7 @@ import logging
 import re
 from concurrent.futures import TimeoutError as FutureTimeout
 from time import monotonic
-from typing import Literal
+from typing import Any, Literal
 
 import httpx
 from pydantic import (
@@ -823,7 +823,13 @@ class ChatModelReviewer(SemanticReviewer):
         self._client.close()
         self._executor.shutdown(wait=False, cancel_futures=True)
 
-    def _input(self, visit: VisitDraftInput, *, precheck: bool) -> dict:
+    def _input(
+        self,
+        visit: VisitDraftInput,
+        *,
+        precheck: bool,
+        front_analysis: dict[str, Any] | None = None,
+    ) -> dict:
         raw = visit.model_dump(mode="json")
         from .record_contract import visit_contract
         contract = visit_contract(visit)
@@ -861,6 +867,8 @@ class ChatModelReviewer(SemanticReviewer):
                 "客户事实、行动共识、时间约定和日期字段是否填写分开说明；"
                 "日期缺失不证明没有共识。结论与改善建议必须一致，已有共识不重复要求确认。"
             )
+            if front_analysis:
+                data["_front_analysis"] = front_analysis
         return data
 
     def _messages(
@@ -872,6 +880,7 @@ class ChatModelReviewer(SemanticReviewer):
         knowledge_snapshot: TaoranKnowledgeSnapshot | None = None,
     ) -> list[dict[str, str]]:
         selected_snapshot = knowledge_snapshot or self.snapshot
+        front_analysis = data.get("_front_analysis") if not precheck else None
         # Source text is already in the untrusted visit and evidence catalogue.
         # Keep its validator-only copy out of both the system and user checks.
         public_checks = {k: v for k, v in data.get("_authoritative_checks", {}).items()
@@ -1056,11 +1065,23 @@ class ChatModelReviewer(SemanticReviewer):
                 + "各项允许字段：" + json.dumps({k: sorted(v & data.keys()) for k, v in SECTION_FIELDS.items()}, ensure_ascii=False)
                 + "输出Schema：" + json.dumps(contract, ensure_ascii=False, separators=(',', ':'))
             )
+            if front_analysis:
+                system += (
+                    "\nfront_analysis_candidate是提交前Quick Check已通过校验的第一阶段候选分析，"
+                    "不是最终事实权威，也不直接决定评分。逐项核对其findings："
+                    "成立的结论保持表达连续；方向正确但深度不足时深化；与正式记录、"
+                    "确定性规则或证据冲突时纠正；前端未发现的重要问题正常补充。"
+                    "优先级始终是正式原始记录>确定性TAORAN规则>正式证据>"
+                    "正式语义分析>front_analysis_candidate>文案推理。"
+                    "最终输出一份统一结论，不得向销售展示confirmed、deepened、corrected、"
+                    "new_finding、finding_id、input_hash或decision_ledger，不得说‘前端AI判断错误’。"
+                )
         user = json.dumps(
             {
                 "field_labels": {field: display_field_name(field) for field in data if not field.startswith("_")},
                 "untrusted_visit_data": {field:value for field,value in data.items() if not field.startswith("_")},
                 "authoritative_checks": public_checks,
+                **({"front_analysis_candidate": front_analysis} if front_analysis else {}),
                 **({"evidence_catalog": evidence_catalog} if not precheck else {}),
             },
             ensure_ascii=False, separators=(",", ":"),
@@ -1499,9 +1520,14 @@ class ChatModelReviewer(SemanticReviewer):
         use_knowledge: bool = True,
         knowledge_snapshot: TaoranKnowledgeSnapshot | None = None,
         timeout_override: float | None = None,
+        front_analysis: dict[str, Any] | None = None,
     ):
         attempts = attempts if attempts is not None else []
-        data = self._input(visit, precheck=precheck)
+        data = self._input(
+            visit,
+            precheck=precheck,
+            front_analysis=front_analysis,
+        )
         messages = self._messages(
             data,
             precheck,
@@ -3065,12 +3091,22 @@ class ChatModelReviewer(SemanticReviewer):
             knowledge_snapshot=snapshot,
         )
 
-    def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
+    def review_q34(
+        self,
+        visit: VisitDraftInput,
+        *,
+        front_analysis: dict[str, Any] | None = None,
+    ) -> Q34SemanticFacts:
         from .contact_policy import contact_policy
         started = monotonic()
         attempts: list[ModelAttemptAudit] = []
         try:
-            parsed, quoted = self._analyze(visit, False, attempts)
+            parsed, quoted = self._analyze(
+                visit,
+                False,
+                attempts,
+                front_analysis=front_analysis,
+            )
             return Q34SemanticFacts(
                 quality_audit={"authoritative_checks": {
                     **quality_context(visit,self.snapshot),

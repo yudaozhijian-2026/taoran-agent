@@ -602,6 +602,7 @@ class WritebackResult(BaseModel):
 class EvaluationResponse(BaseModel):
     knowledge_version_audit: dict[str, Any] = Field(default_factory=dict)
     input_boundary_audit: dict[str, str] = Field(default_factory=dict)
+    deep_review_diagnostics: dict[str, Any] = Field(default_factory=dict)
     evaluation_id: str
     job_id: str
     trace_id: str

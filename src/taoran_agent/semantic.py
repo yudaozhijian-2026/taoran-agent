@@ -38,7 +38,13 @@ class SemanticReviewer(ABC):
         """实时知识增强入口；实现方应对知识来源负责。"""
         return self.review(visit)
 
-    def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
+    def review_q34(
+        self,
+        visit: VisitDraftInput,
+        *,
+        front_analysis: dict | None = None,
+    ) -> Q34SemanticFacts:
+        del front_analysis
         return HeuristicSemanticReviewer().review_q34(visit)
 
 
@@ -127,7 +133,13 @@ class HeuristicSemanticReviewer(SemanticReviewer):
         del visit
         return self._model_not_configured()
 
-    def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
+    def review_q34(
+        self,
+        visit: VisitDraftInput,
+        *,
+        front_analysis: dict | None = None,
+    ) -> Q34SemanticFacts:
+        del front_analysis
         started = monotonic()
         key_result = normalized_text(visit.expected_key_result)
         process = normalized_text(visit.process_description)
@@ -337,7 +349,13 @@ class HttpSemanticReviewer(SemanticReviewer):
         del visit
         return self._feedback_mode_not_supported()
 
-    def review_q34(self, visit: VisitDraftInput) -> Q34SemanticFacts:
+    def review_q34(
+        self,
+        visit: VisitDraftInput,
+        *,
+        front_analysis: dict | None = None,
+    ) -> Q34SemanticFacts:
+        del front_analysis
         started = monotonic()
         headers = {"Content-Type": "application/json"}
         if self.api_key:

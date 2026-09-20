@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from .token_usage import usage_scope
-
+import inspect
 from datetime import UTC, datetime
 from time import monotonic
+from typing import Any
 from uuid import uuid4
 
 from .evidence_standard import load_quality_evidence_standard
@@ -37,6 +37,7 @@ from .scoring import (
 )
 from .scoring_contract import QUESTION_MAX_SCORE, TOTAL_MAX_SCORE, TOTAL_RULE_VERSION
 from .semantic import HeuristicSemanticReviewer, SemanticReviewer
+from .token_usage import usage_scope
 
 
 def _purpose_mapping_failure_message(reason: object) -> str:
@@ -383,7 +384,13 @@ class TaoranAgent:
         return updated
 
     @usage_scope("backend")
-    def evaluate(self, request: PostEvaluationRequest, job_id: str) -> EvaluationResponse:
+    def evaluate(
+        self,
+        request: PostEvaluationRequest,
+        job_id: str,
+        *,
+        front_analysis: dict[str, Any] | None = None,
+    ) -> EvaluationResponse:
         """提交后深度评价：Q33与Q34各50分，总分100分。"""
         boundary = require_evaluation_input(request.visit)
         trace_id = f"tr_{uuid4().hex}"
@@ -392,7 +399,11 @@ class TaoranAgent:
             update={"evidence_ids": [item.evidence_id for item in request.evidence]}
         )
         q33, q33_issues = score_q33(visit)
-        semantic_facts = self.semantic_reviewer.review_q34(visit)
+        review_q34 = self.semantic_reviewer.review_q34
+        if front_analysis and "front_analysis" in inspect.signature(review_q34).parameters:
+            semantic_facts = review_q34(visit, front_analysis=front_analysis)
+        else:
+            semantic_facts = review_q34(visit)
         q34, q34_issues = score_q34(visit, semantic_facts)
         issues = [*q33_issues, *q34_issues, *section_issues(semantic_facts.sections)]
         self._append_business_closure_advice(request, issues)

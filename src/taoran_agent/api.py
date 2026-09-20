@@ -635,11 +635,44 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
             phases.update(response.phase_latency_ms)
         else:
             mapping_path = get_settings().jiandaoyun_mapping_path_for(request.context.tenant_id)
+            from .deep_review import (
+                diagnostics_payload,
+                evaluate_with_front_fallback,
+                load_front_context,
+                reconcile,
+            )
+            front_artifact, deep_review = load_front_context(store, request)
             evaluation_started = monotonic()
             with use_field_mapping(mapping_path):
-                response = get_agent().evaluate(request, job_id)
+                response, deep_review = evaluate_with_front_fallback(
+                    get_agent(),
+                    request,
+                    job_id,
+                    front_artifact,
+                    deep_review,
+                )
             phases["formal_evaluation"] = int((monotonic() - evaluation_started) * 1000)
             phases["model"] = response.semantic_facts.latency_ms
+            if deep_review.front_artifact_used:
+                try:
+                    deep_review = reconcile(
+                        front_artifact,
+                        response.semantic_facts,
+                        deep_review,
+                    )
+                except (ValueError, TypeError, KeyError) as reconciliation_error:
+                    deep_review = deep_review.model_copy(
+                        update={
+                            "front_artifact_used": False,
+                            "fallback_reason": (
+                                "reconciliation_failed:"
+                                f"{type(reconciliation_error).__name__}"
+                            ),
+                        }
+                    )
+            response = response.model_copy(
+                update={"deep_review_diagnostics": diagnostics_payload(deep_review)}
+            )
             post_feedback_request = PrecheckRequest(
                 context=request.context.model_copy(
                     update={"request_id": f"{request.context.request_id}__post_feedback"}
@@ -2577,7 +2610,20 @@ def _quick_check_schedule(task, canonical_request, settings):
     def work():
         task['phase_timings']['worker_queue_ms'] = int((monotonic()-queued)*1000)
         _quick_check_persist(task)
-        return _quick_check_run(canonical_request, settings, task['events'], task.get('knowledge_basis'))
+        run_kwargs = {}
+        if "check_id" in inspect.signature(_quick_check_run).parameters:
+            run_kwargs = {
+                "check_id": task['check_id'],
+                "quick_check_input_hash": task['input_hash'],
+                "user_id": task['user_id'],
+            }
+        return _quick_check_run(
+            canonical_request,
+            settings,
+            task['events'],
+            task.get('knowledge_basis'),
+            **run_kwargs,
+        )
     task['future'] = _quick_check_executor.submit(work)
     def completed(_future):
         with _quick_check_lock:
@@ -2700,6 +2746,15 @@ def _quick_check_run_final_once(
             "model_attempt_count": result.semantic_review.attempt_count,
             "diagnostics": experimental_final_audit(result.semantic_review),
             "recovered_after_retry": result.semantic_review.recovered_after_retry,
+            "front_review": {
+                "sections": [
+                    item.model_dump(mode="json")
+                    for item in result.semantic_review.sections
+                ],
+                "confirmation_items": list(result.semantic_review.confirmation_items),
+                "suggestion_status": result.semantic_review.suggestion_status,
+                "prompt_version": result.semantic_review.prompt_version,
+            },
         }
     except Exception as exc:  # noqa: BLE001 - report only the safe exception class
         _logger.warning("interactive_quick_check_final_failed class=%s", type(exc).__name__)
@@ -2755,6 +2810,10 @@ def _quick_check_run(
     settings: Settings,
     events: Queue[dict[str, Any]],
     knowledge_basis: dict | None = None,
+    *,
+    check_id: str = "quick-check",
+    quick_check_input_hash: str | None = None,
+    user_id: str | None = None,
 ) -> dict[str, Any]:
     from .content_cache import run_with_knowledge_basis
     from .front_v46.decision_ledger import build as build_decision_ledger
@@ -2930,6 +2989,44 @@ def _quick_check_run(
                 combined += f"\n\nAI改善建议：\n{final_suggestion}"
             final["feedback_text"] = combined
             final["final_feedback_hash"] = hashlib.sha256(combined.encode()).hexdigest()
+        # A few internal compatibility tests call this worker with a deliberately
+        # minimal namespace.  Persist an artifact only for a real API request;
+        # the quick-check result itself remains usable for those lightweight calls.
+        request_context = getattr(canonical_request, "context", None)
+        if (
+            request_context is not None
+            and getattr(request_context, "tenant_id", None)
+            and hasattr(canonical_request.visit, "model_dump")
+            and settings is not None
+        ):
+            from .front_analysis_artifact import build_artifact
+            from .front_v46 import POLICY_VERSION
+
+            artifact = build_artifact(
+                visit=canonical_request.visit,
+                tenant_id=request_context.tenant_id,
+                user_id=user_id or request_context.user_id,
+                check_id=check_id,
+                quick_check_input_hash=(
+                    quick_check_input_hash
+                    or hashlib.sha256(
+                        str(final.get("feedback_text") or "").encode()
+                    ).hexdigest()
+                ),
+                source_record_id=request_context.source_record_id,
+                feedback_text=final.get("feedback_text", ""),
+                decision_ledger=shared_ledger,
+                front_review=final.get("front_review"),
+                policy_version=POLICY_VERSION,
+            )
+            get_store(settings).save_front_analysis_artifact(
+                artifact.model_dump(mode="json"),
+                retention_until=(
+                    datetime.now(UTC).timestamp()
+                    + settings.quick_check_recovery_ttl_seconds
+                ),
+            )
+            final["front_analysis_artifact_id"] = artifact.artifact_id
         events.put({"type": "suggestion_replace", "text": final_suggestion})
         events.put({"type": "suggestion_complete", "status": "completed"})
         preview = {
@@ -3527,6 +3624,11 @@ def acknowledge_interactive_quick_check_task(
         _quick_check_persist(task)
     if task.get("acknowledged_at") is None:
         task["acknowledged_at"] = datetime.now(UTC).isoformat()
+        get_store(task.get("_settings")).acknowledge_front_analysis_artifact(
+            task["tenant_id"],
+            task["check_id"],
+            task["input_hash"],
+        )
         _quick_check_persist(task)
     # Deliberately no Jiandaoyun writeback here.  The parent page owns the
     # current unsaved form and writes the field only after origin validation.
