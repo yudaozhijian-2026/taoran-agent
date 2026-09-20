@@ -1,0 +1,46 @@
+{
+  "release_version": "1.0.6rc40",
+  "scope": "isolated-submit-test-only",
+  "git_candidate_commit": "d434305",
+  "git_tag": "submit-test-1.0.6rc40-20260920",
+  "image": "taoran-submit-test:1.0.6rc40-20260920",
+  "image_id": "sha256:1b6407a9fe34915df6b72cb29465e5f2e0b04f927577367f6de3138336a5623e",
+  "wheel_sha256": "6afcbd79f49fc64015a1296492b785b1b90edb65707e24adda382119f0788c8a",
+  "front_policy": "front-v46-field-coverage-plan-v11-20260920",
+  "verification": {
+    "python_tests": 635,
+    "browser_tests": 66,
+    "targeted_ruff": "passed",
+    "compose_validation": "passed",
+    "server_image_build": "passed",
+    "internal_health": "passed",
+    "external_health": "passed",
+    "database_integrity": "ok",
+    "active_evaluation_tasks": 0,
+    "active_model_calls_after_test": 0,
+    "container_restart_count": 0,
+    "real_input_cases": 5,
+    "real_input_completed": 5,
+    "first_pass_field_coverage": 5,
+    "analysis_average_ms": 4185,
+    "suggestion_average_ms": 6075,
+    "total_average_ms": 10261,
+    "joint_model_repairs": 1,
+    "field_coverage_repairs": 0
+  },
+  "runtime_configuration_sha256": {
+    "compose.yaml": "703de35a936466a0a2c7e3305e3222604299f6295d195b096604c2d6a1a75e4c",
+    "agent.env": "25356756fa6fc5afdba842634bbe6c8b6be329f2ce6b6c2dfd05a55ba5b3e6d9",
+    "tenant_registry.json": "e4aa0f347795d4b75509cc35c7cf6f0fca4cdb7896121e6078b3451953115622",
+    "field_mapping.json": "c979d1d89198305cc1dbdb0d65bea7bba4de7660e9c31cca2ef70ed7df6a1d5e"
+  },
+  "formal_service_observation": {
+    "changed_by_this_deployment": false,
+    "image": "dsm-taoran-v2:1.0.8-feedback-repair-20260918",
+    "image_id": "sha256:10b2e72f7286694b7c9afe2308322f06f7a14a0066d77dd5b944a75b0fe8c776",
+    "status": "healthy",
+    "restart_count": 0
+  },
+  "known_warning": "isolated knowledge prewarm reports remote snapshot ValidationError; overall health is ok and locked task snapshots were used for acceptance",
+  "rollback_path": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc40-20260920-144346"
+}
