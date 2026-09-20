@@ -695,6 +695,7 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
         _observe_pipeline("post_generation", phases, success=response.semantic_facts.status == "completed")
         _observe_pipeline("post_writeback", {"writeback": phases["writeback"]}, success=writeback.status == "succeeded")
     except Exception as exc:  # noqa: BLE001  # pragma: no cover - job boundary
+        from .business_wording import SalespersonFeedbackSafetyError
         from .post_quality import PostFeedbackConflict
         from .post_review_policy import PostInputNotReceived
         error = str(exc) if isinstance(exc, PostInputNotReceived) else type(exc).__name__
@@ -703,6 +704,17 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
             evidence_id = save_failure_evidence(get_settings(), stage="post_final", candidate=None,
                 details={**exc.details, "job_id":job_id, "tenant_id":request.context.tenant_id})
             error = "POST_FEEDBACK_CONFLICT:" + (evidence_id or "diagnostic_save_failed")
+        elif isinstance(exc, SalespersonFeedbackSafetyError):
+            from .model_failure_evidence import save_failure_evidence
+            evidence_id = save_failure_evidence(
+                get_settings(),
+                stage="post_salesperson_wording",
+                candidate=None,
+                details={**exc.details, "job_id": job_id, "tenant_id": request.context.tenant_id},
+            )
+            error = "post_salesperson_internal_rule_leak:" + (
+                evidence_id or "diagnostic_save_failed"
+            )
         store.fail_evaluation(request.context.tenant_id, job_id, error)
         phases["total"] = int((monotonic() - started) * 1000)
         _observe_pipeline("post_submit", phases, success=False)

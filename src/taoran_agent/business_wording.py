@@ -108,6 +108,14 @@ SALESPERSON_WORDING_GUIDANCE = (
 )
 
 
+class SalespersonFeedbackSafetyError(ValueError):
+    """Keep the exact final safety failure and its matched text for diagnosis."""
+
+    def __init__(self, hits: list[dict[str, str]], feedback: str):
+        super().__init__("post_salesperson_internal_rule_leak")
+        self.details = {"hits": hits, "feedback": feedback}
+
+
 def salesperson_feedback_hits(value: str) -> list[dict[str, str]]:
     """Return implementation-language leaks found in salesperson-visible text."""
     text = value or ""
@@ -190,6 +198,48 @@ def salesperson_wording(value: str, context: dict[str, Any] | None = None) -> st
         text,
         flags=re.IGNORECASE,
     )
+    dimension_labels = {
+        "T": "客户类型与拜访目的",
+        "A1": "预约与拜访方式",
+        "O_KR": "拜访目的与关键结果",
+        "R": "过程事实",
+        "A2": "自评与过程事实",
+        "N": "下一步安排",
+    }
+
+    def replace_dimension_state(match: re.Match[str]) -> str:
+        label = dimension_labels[match.group("code").upper()]
+        state = match.group("state")
+        if state in {"需修改", "需要修改"}:
+            return f"{label}需要完善"
+        return f"{label}尚需完善"
+
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])(?P<code>O_KR|A1|A2|T|R|N)\s*"
+        r"(?:整体|项|维度|检查|判定)\s*"
+        r"(?P<state>需要修改|需修改|未满足|不满足|未达标|不达标|未通过|不通过)",
+        replace_dimension_state,
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?<![A-Za-z0-9_])(?P<code>O_KR|A1|A2|T|R|N)\s*(?:整体|项|维度|检查|判定)",
+        lambda match: dimension_labels[match.group("code").upper()],
+        text,
+        flags=re.IGNORECASE,
+    )
+    text = re.sub(
+        r"(?:(?:潜力客户|目标客户)\s*)?(?:跨(?:北京时间)?(?:自然)?(?:月|季度)\s*)?"
+        r"(?:程序|评分)?(?:时间|日期)门槛(?:未|不)?(?:满足|通过|达标)?",
+        contact_fact,
+        text,
+    )
+    text = re.sub(
+        r"(?:程序|评分)?共识门槛(?:未|不)?(?:满足|通过|达标)?",
+        "记录中尚未看到客户对下一步安排的明确确认",
+        text,
+    )
+    text = re.sub(r"(?:程序|评分)?门槛", "相关要求", text)
     # Applicability decisions stay in audit/scoring.  They are not a finding or
     # an action for the salesperson, so remove only the matching clause.
     text = re.sub(
@@ -217,6 +267,33 @@ def salesperson_wording(value: str, context: dict[str, Any] | None = None) -> st
     text = re.sub(r"(?m)^AI改善建议：\s*\Z", "", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip(" \n；;")
+
+
+def repair_salesperson_feedback(
+    value: str,
+    context: dict[str, Any] | None = None,
+) -> str:
+    """Boundedly repair only unsafe wording instead of discarding the result."""
+    text = salesperson_wording(value, context)
+    for _ in range(2):
+        hits = salesperson_feedback_hits(text)
+        if not hits:
+            return text
+        for hit in hits:
+            quote = hit["quote"]
+            code = hit["code"]
+            if code == "threshold_wording":
+                replacement = _contact_fact_wording(context)
+            elif code == "internal_dimension":
+                replacement = "相关记录内容"
+            elif code == "internal_field":
+                rendered = business_wording(quote)
+                replacement = rendered if rendered != quote else "相关记录内容"
+            else:
+                replacement = ""
+            text = text.replace(quote, replacement)
+        text = salesperson_wording(text, context)
+    return text
 
 
 def business_field_value(field: str, value: Any) -> Any:

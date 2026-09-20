@@ -4,7 +4,9 @@ import re
 from collections.abc import Iterable
 
 from .business_wording import (
+    SalespersonFeedbackSafetyError,
     business_wording,
+    repair_salesperson_feedback,
     salesperson_feedback_hits,
     salesperson_wording,
 )
@@ -795,7 +797,7 @@ def build_evaluation_feedback(
     if advice_items:
         lines.extend(["", "AI改善建议："])
         lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(advice_items, 1))
-    result = salesperson_wording("\n".join(lines), sales_context)
+    result = repair_salesperson_feedback("\n".join(lines), sales_context)
     context = semantic_facts.quality_audit.get("authoritative_checks")
     if context:
         from .contact_policy import contact_policy_hits
@@ -808,7 +810,7 @@ def build_evaluation_feedback(
         )
     leaks = salesperson_feedback_hits(result)
     if leaks:
-        raise ValueError("post_salesperson_internal_rule_leak")
+        raise SalespersonFeedbackSafetyError(leaks, result)
     return result
 
 

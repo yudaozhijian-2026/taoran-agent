@@ -99,13 +99,19 @@ from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 from .token_usage import UsageClient
 from .token_usage import UsageExecutor as ThreadPoolExecutor
 
-PROMPT_VERSION = "TAORAN-LLM-FACTS-V4.8-INTERNAL-WORDING"
+PROMPT_VERSION = "TAORAN-LLM-FACTS-V4.9-SAFE-WORDING"
 PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.4"
 KNOWLEDGE_WORDING_PROMPT_VERSION = "TAORAN-FRONT-VISIT-ANALYSIS-V4.7"
 PRECHECK_TOOL_NAME = "submit_taoran_precheck"
 EVALUATION_TOOL_NAME = "submit_taoran_evaluation"
 SECTION_FIELDS = {
-    "T": {"customer_type_ii", "opportunity_stage", "opportunities", "purpose_code"},
+    "T": {
+        "customer_type_ii",
+        "opportunity_stage",
+        "opportunities",
+        "purpose_code",
+        "other_purpose",
+    },
     "A1": {"is_appointment", "visit_method", "customer_type_ii", "purpose_code"},
     "O_KR": {"purpose_code", "other_purpose", "expected_key_result"},
     "R": {"process_description", "customer_feedback", "participants"},
@@ -995,7 +1001,7 @@ class ChatModelReviewer(SemanticReviewer):
             "N-05仅商机客户适用：过程详细描述或客户反馈须有客户对具体下一步的明确同意、确认、认可、约定或承诺，"
             "且能对应行动内容及时间、条件或期望结果；口头确认有效，销售单方面计划及不同意、未确认、未承诺等否定表达无效；"
             "条件式同意只能认定为有条件共识，不能写成无条件同意；"
-            "N-06目标客户日期须跨北京时间自然月，潜力客户须跨北京时间自然季度，商机客户不增加周期门槛。"
+            "N-06目标客户日期须跨北京时间自然月，潜力客户须跨北京时间自然季度，商机客户不要求跨月或跨季度。"
             "缺少原文证据不能认定已达标或客户共识。证据quote须逐字出自指定字段，不能重写。"
             "字段已传入且明确为空可以指出缺失，此时该空字段不需要quote；未传入的字段不能判缺失。"
             "重要：空字符串、null、空数组、空对象没有原文证据，禁止为它们创建evidence元素！"
@@ -1678,7 +1684,7 @@ class ChatModelReviewer(SemanticReviewer):
                     "若错误为unsupported_company_requirement，不得强制下一步行动对象填写具体联系人；"
                     "不要一律删除联系人相关分析：过程事实来源影响判断时可核实来源，"
                     "明确目标要求确认采购负责人等人员信息时必须正常检查。"
-                    "潜力与目标客户不要求下一步客户承诺，仅商机客户适用共识门槛。"
+                    "潜力与目标客户不要求下一步客户承诺，仅商机客户需检查客户是否明确确认下一步安排。"
                     "不增加事实，不改变Schema，不返回分数。只能选择程序发放的evidence_id，"
                     "field和quote必须与该目录条目一致。"
                     "如果quote报string_too_short，说明引用为空：必须删除对应的整个evidence元素；"

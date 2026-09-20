@@ -144,7 +144,7 @@ def collect_repair_hits(payload, data, allowed_fields):
 
 POST_EVIDENCE_GUIDANCE = {
     "T": {"mandatory": "客户类型与本次目的匹配使用authoritative_checks，不得推翻允许清单。"},
-    "A1": {"mandatory": "如实记录是否预约及拜访方式；视频必须预约，商机客户原则上预约，目标客户优先预约，不加单次预约评分门槛。",
+    "A1": {"mandatory": "如实记录是否预约及拜访方式；视频必须预约，商机客户原则上预约，目标客户优先预约，目标客户单次未预约不扣分。",
            "optional_evidence_types":["预约对象", "预约时间"]},
     "O_KR": {"mandatory": "按原目标检查具体事项与可验证性；允许目的不等于关键结果具体。不要增加原目标未要求的订单、验收或联系方式。若原目标是确认采购负责人，须检查是否取得所需负责人信息，不能以姓名或职务通常可选免除目标检查。"},
     "R": {"mandatory": "有足以支撑当前判断的客户表达或动作；观点有事实依据。",

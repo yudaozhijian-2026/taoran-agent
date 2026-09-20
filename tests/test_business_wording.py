@@ -11,6 +11,7 @@ from taoran_agent.business_wording import (
     model_facing_visit_snapshot,
     normalize_generated_business_terms,
     normalize_generated_payload_wording,
+    repair_salesperson_feedback,
     salesperson_feedback_hits,
     salesperson_wording,
 )
@@ -101,6 +102,65 @@ def test_salesperson_wording_removes_exception_explanation_request():
     assert "不适用" not in output and "依据" not in output
     assert "补充下一次联系客户时间安排" in output
     assert not salesperson_feedback_hits(output)
+
+
+@pytest.mark.parametrize(
+    ("source", "expected"),
+    [
+        ("时间门槛未满足", "下一次联系客户时间安排尚未填写"),
+        ("N项需修改", "下一步安排需要完善"),
+        ("N项不满足", "下一步安排尚需完善"),
+        ("潜力客户跨自然季度时间门槛未满足", "下一次联系客户时间安排尚未填写"),
+    ],
+)
+def test_four_real_failure_phrases_are_locally_repaired(source, expected):
+    output = repair_salesperson_feedback(
+        f"已取得客户确认，{source}。",
+        {
+            "customer_type_ii": "潜力客户",
+            "visit_date": "2026-09-20",
+            "next_contact_at": None,
+        },
+    )
+    assert expected in output
+    assert "已取得客户确认" in output
+    assert not salesperson_feedback_hits(output)
+
+
+def test_final_feedback_repairs_analysis_and_advice_without_dropping_result():
+    facts = Q34SemanticFacts(
+        provider="llm-test",
+        status="completed",
+        key_result_quality_ok=True,
+        process_fact_based=True,
+        purpose_achievement="achieved",
+        next_action_logic_ok=False,
+        customer_consensus_met=True,
+        reason="客户已确认设备运行稳定，时间门槛未满足。",
+    )
+    facts.sections = [
+        ModelSectionAnalysis(
+            code=code,
+            verdict="needs_revision" if code == "N" else "met",
+            reason="N项需修改。" if code == "N" else "记录清楚。",
+            suggestion="N项不满足，请完善下一步安排。" if code == "N" else "",
+            field_paths=["next_contact_at"] if code == "N" else [],
+            evidence=[],
+        )
+        for code in ["T", "A1", "O_KR", "R", "A2", "N"]
+    ]
+    facts.quality_audit["advice_basis"] = {"N": {"fields": ["next_contact_at"]}}
+    output = build_evaluation_feedback(visit(next_contact_at=None), 50, 35, 85, [], facts)
+    assert "客户已确认设备运行稳定" in output
+    assert "下一次联系客户时间安排尚未填写" in output
+    assert "下一步安排尚需完善" in output
+    assert not salesperson_feedback_hits(output)
+
+
+def test_other_purpose_is_valid_t_context_for_model_contract():
+    from taoran_agent.llm import SECTION_FIELDS
+
+    assert "other_purpose" in SECTION_FIELDS["T"]
 
 
 @pytest.mark.parametrize("text", [

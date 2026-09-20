@@ -78,7 +78,8 @@ def repair_messages(original_messages, original, targets, details):
             "\n本次额外返回布尔值next_action_logic_ok，仅根据下一步行动内容的衔接和具体性重新判断。"
             "时间缺失或跨期不符只影响日期检查，不能作为此布尔值为false的原因。"
             "若行动内容另有缺口则保留false，并在N.advice_basis.fields及原因中准确指出对应行动字段。"
-            "N整体仍需满足程序时间门槛，不能因行动内容合理把缺日期的N改成达标。"
+            "本项最终判定仍需同时检查联系日期和行动内容，"
+            "不能因行动内容合理就把未填写联系日期的记录改成达标。"
             "facts.next_action_logic_ok是事实修复目标，不是sections代码；sections仅返回被指定的六项代码。"
         )
     user = {"original_input": json.loads(original_messages[1]["content"]),
