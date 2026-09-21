@@ -108,3 +108,31 @@ def test_live_delivery_requires_reset_consumer(tmp_path):
     with pytest.raises(ValueError, match="requires_interactive_reset"):
         preview.stream_semantic_preview_v22(settings(tmp_path), visit(), lambda text: None,
                                             interactive=True, live=True)
+
+
+def test_retry_receives_exact_first_attempt_validation_errors(tmp_path, monkeypatch):
+    calls = []
+
+    def attempt(*args, **kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return {
+                "status": "failed",
+                "failure_category": "preview_business_boundary_conflict",
+                "validation_errors": ["NOT_RECORDED_AS_NEGATIVE_FACT"],
+            }
+        assert kwargs["repair_errors"] == ["NOT_RECORDED_AS_NEGATIVE_FACT"]
+        return {
+            "status": "completed",
+            "feedback_text": FIRST,
+            "failure_category": None,
+        }
+
+    monkeypatch.setattr(preview, "_stream_semantic_preview_once", attempt)
+    pieces = []
+    result = preview.stream_semantic_preview_v22(
+        settings(tmp_path), visit(), pieces.append, interactive=True,
+    )
+    assert result["status"] == "completed"
+    assert pieces == [FIRST]
+    assert len(calls) == 2
