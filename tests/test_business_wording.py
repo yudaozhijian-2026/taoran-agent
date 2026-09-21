@@ -46,7 +46,7 @@ def test_formal_feedback_does_not_mutate_scoring_facts():
     output = build_evaluation_feedback(visit(next_contact_at=None), 40, 20, 60, [], facts)
     assert 'key_result_quality_ok' not in output and '=true' not in output
     assert '不适用共识门槛' not in output and 'LKXA' in output
-    assert '下一次联系客户时间安排尚未填写' in output
+    assert '当前还没有明确下一次联系时间' in output
     assert not salesperson_feedback_hits(output)
     assert '客户已确认' not in output
     assert facts.model_dump() == original
