@@ -1,0 +1,60 @@
+{
+  "release_version": "1.0.6rc60",
+  "release_scope": "isolated-submit-test-only",
+  "git_commit": "f293d87",
+  "git_tag": "submit-test-v1.0.6rc60-20260921-r1",
+  "image": "taoran-submit-test:1.0.6rc60-20260921",
+  "image_id": "sha256:4b09ee0968f0936534b2f60dfc1ff6d7b77f10b68e91512f200eded9c02271fc",
+  "deployment_target": "taoran-submit-test-agent",
+  "formal_service_changed": false,
+  "formal_service_observed": {
+    "container": "dsm-taoran-v2-agent",
+    "image": "dsm-taoran-v2:1.0.10-feedback-recovery-20260920",
+    "image_id": "sha256:d9945f50d8bcc3e0124608859b524e752c184469b91034cd0090fb03aae5247d",
+    "restart_count": 0,
+    "status": "running"
+  },
+  "validation": {
+    "python_tests": 738,
+    "browser_tests": 77,
+    "ruff": "passed",
+    "wheel_build": "passed",
+    "compose_validation": "passed",
+    "frozen_rc58_payload_wording_replay": 30,
+    "frozen_replay_completed": 30,
+    "frozen_replay_failed": 0,
+    "frontend_quick_check_calls": 0,
+    "q33_score_equal": 30,
+    "q34_score_equal": 30,
+    "total_score_equal": 30,
+    "forbidden_wording_hits": 0
+  },
+  "live_rerun_observation": {
+    "release": "1.0.6rc59",
+    "records": 30,
+    "completed": 30,
+    "failed": 0,
+    "q33_score_equal": 30,
+    "q34_score_equal": 25,
+    "total_score_equal": 25,
+    "note": "The five differences came from independently regenerated deep-review model judgments. The frozen-payload wording-only replay proves the presentation layer itself does not modify scores."
+  },
+  "acceptance_status": "isolated_candidate_ready_for_review",
+  "health": {
+    "internal": "ok",
+    "external": "ok",
+    "database_quick_check": "ok",
+    "active_jobs": 0,
+    "container_restart_count": 0
+  },
+  "runtime_hashes": {
+    "compose": "69e7c5f3bcf4b5382c19bcd40f1fa8968e08eb890a22e0137eb5977351f96198",
+    "agent_env": "25356756fa6fc5afdba842634bbe6c8b6be329f2ce6b6c2dfd05a55ba5b3e6d9"
+  },
+  "backup_path": "/TAORAN agent/isolated-submit-test-20260916/backups/pre-1.0.6rc60-wording-v2-20260921",
+  "rollback": {
+    "image": "taoran-submit-test:1.0.6rc59-20260921",
+    "compose": "/TAORAN agent/isolated-submit-test-20260916/backups/pre-1.0.6rc60-wording-v2-20260921/compose.rollback.yaml",
+    "database": "/TAORAN agent/isolated-submit-test-20260916/backups/pre-1.0.6rc60-wording-v2-20260921/taoran_agent.db"
+  }
+}
