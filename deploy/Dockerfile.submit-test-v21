@@ -1,0 +1,5 @@
+FROM taoran-submit-test:1.0.6rc62-20260921
+USER root
+COPY dsm_taoran_agent-1.0.6rc63-py3-none-any.whl /tmp/dsm_taoran_agent-1.0.6rc63-py3-none-any.whl
+RUN uv pip install --python /app/.venv/bin/python --no-index --no-deps /tmp/dsm_taoran_agent-1.0.6rc63-py3-none-any.whl
+USER 10001:10001
