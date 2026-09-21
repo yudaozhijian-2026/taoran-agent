@@ -6,21 +6,50 @@ business input matches the saved record are eligible for formal review.
 """
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .models import VisitDraftInput
 from .rules import canonical_hash
 
 SCHEMA_VERSION = "front-analysis-artifact-v1"
+SUPPORTED_SCHEMA_VERSIONS = frozenset({SCHEMA_VERSION})
+MAX_DECISION_LEDGER_BYTES = 16 * 1024
+MAX_ARTIFACT_BYTES = 48 * 1024
+
+_UNTRUSTED_USER_IDS = frozenset({
+    "", "anonymous", "unknown", "unknown-user", "system",
+    "jiandaoyun-user", "jiandaoyun-submit-event",
+})
 
 # These values are filled by the platform or derived from policy.  They can
 # legitimately differ between the unsaved page and the saved record even when
 # the salesperson has not changed any TAORAN business content.
-_VOLATILE_VISIT_FIELDS = {"submitted_at", "metadata", "evidence_ids", "purpose_policy"}
+_VOLATILE_VISIT_FIELDS = {"submitted_at", "metadata", "purpose_policy"}
+
+
+def is_trusted_artifact_user_id(user_id: str | None) -> bool:
+    """Only a real, stable platform user identity may own a reusable artifact."""
+    return str(user_id or "").strip().lower() not in _UNTRUSTED_USER_IDS
+
+
+def _stable_decision_ledger(value: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Persist only the stable facts required for continuity, never repair traces."""
+    if not isinstance(value, dict):
+        return None
+    allowed = {
+        "version", "field_states", "required_advice", "contact_time_standard",
+        "rules", "validated_analysis",
+    }
+    result = {key: value[key] for key in allowed if key in value}
+    encoded = json.dumps(result, ensure_ascii=False, separators=(",", ":")).encode()
+    if len(encoded) > MAX_DECISION_LEDGER_BYTES:
+        raise ValueError("front analysis decision ledger exceeds size limit")
+    return result or None
 
 
 class FrontFinding(BaseModel):
@@ -49,7 +78,7 @@ class FrontAnalysisArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
     artifact_id: str = Field(min_length=1, max_length=120)
-    schema_version: str = SCHEMA_VERSION
+    schema_version: Literal["front-analysis-artifact-v1"] = SCHEMA_VERSION
     input_hash: str = Field(min_length=64, max_length=64)
     quick_check_input_hash: str = Field(min_length=64, max_length=64)
     generated_at: datetime
@@ -66,6 +95,18 @@ class FrontAnalysisArtifact(BaseModel):
     decision_ledger: dict[str, Any] | None = None
     policy_version: str | None = None
     prompt_version: str | None = None
+
+    @field_validator("decision_ledger")
+    @classmethod
+    def validate_decision_ledger_size(cls, value):
+        return _stable_decision_ledger(value)
+
+    @model_validator(mode="after")
+    def validate_artifact_size(self):
+        encoded = self.model_dump_json(exclude_none=True).encode()
+        if len(encoded) > MAX_ARTIFACT_BYTES:
+            raise ValueError("front analysis artifact exceeds size limit")
+        return self
 
 
 def analysis_input_payload(visit: VisitDraftInput) -> dict[str, Any]:
@@ -220,7 +261,7 @@ def build_artifact(
         findings=findings,
         suggestions=suggestions,
         confirmation_items=list(dict.fromkeys(confirmations))[:8],
-        decision_ledger=decision_ledger,
+        decision_ledger=_stable_decision_ledger(decision_ledger),
         policy_version=policy_version,
         prompt_version=(str(review.get("prompt_version")) if review.get("prompt_version") else None),
     )

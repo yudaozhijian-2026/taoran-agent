@@ -35,6 +35,7 @@ class AgentStore:
         self._connection = sqlite3.connect(self.database_path, check_same_thread=False)
         self._connection.row_factory = sqlite3.Row
         self._initialize()
+        self.purge_expired_front_analysis_artifacts()
 
     def _initialize(self) -> None:
         with self._connection:
@@ -350,6 +351,16 @@ class AgentStore:
             )
         return payload
 
+    def purge_expired_front_analysis_artifacts(self, *, now: float | None = None) -> int:
+        """Delete artifacts beyond retention without touching active evaluation jobs."""
+        cutoff = datetime.now(UTC).timestamp() if now is None else float(now)
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "DELETE FROM front_analysis_artifacts WHERE retention_until < ?",
+                (cutoff,),
+            )
+        return cursor.rowcount
+
     def acknowledge_front_analysis_artifact(
         self,
         tenant_id: str,
@@ -374,50 +385,66 @@ class AgentStore:
         tenant_id: str,
         input_hash: str,
         *,
-        user_id: str | None = None,
+        user_id: str,
+        source_record_id: str | None,
     ) -> dict[str, Any] | None:
-        """Return an acknowledged exact-content artifact without crossing tenants."""
-        params: list[Any] = [tenant_id, input_hash]
-        user_clause = ""
-        if user_id:
-            user_clause = " AND user_id = ?"
-            params.append(user_id)
+        """Return only an exact trusted-user artifact eligible for this record."""
+        if not str(user_id or "").strip():
+            raise ValueError("trusted user_id is required for artifact lookup")
+        record_clause = (
+            "AND (source_record_id IS NULL OR source_record_id = ?)"
+            if source_record_id else "AND source_record_id IS NULL"
+        )
+        params: list[Any] = [tenant_id, input_hash, user_id]
+        if source_record_id:
+            params.append(source_record_id)
         query = f"""
             SELECT * FROM front_analysis_artifacts
-            WHERE tenant_id = ? AND input_hash = ?
+            WHERE tenant_id = ? AND input_hash = ? AND user_id = ?
               AND acknowledged_at IS NOT NULL
               AND retention_until >= strftime('%s','now')
-              {user_clause}
-            ORDER BY acknowledged_at DESC LIMIT 2
+              {record_clause}
+            ORDER BY acknowledged_at DESC LIMIT 1
         """
         with self._lock:
             rows = self._connection.execute(query, tuple(params)).fetchall()
-            if not rows and user_id:
-                # A provider may represent the same Jiandaoyun user differently
-                # before and after submit.  Cross-user reuse is allowed only if
-                # the exact content has one unambiguous acknowledged artifact.
-                rows = self._connection.execute(
-                    """
-                    SELECT * FROM front_analysis_artifacts
-                    WHERE tenant_id = ? AND input_hash = ?
-                      AND acknowledged_at IS NOT NULL
-                      AND retention_until >= strftime('%s','now')
-                    ORDER BY acknowledged_at DESC LIMIT 2
-                    """,
-                    (tenant_id, input_hash),
-                ).fetchall()
-                if len(rows) != 1:
-                    return None
         if not rows:
             return None
-        # Multiple accepted checks from the same user and identical content
-        # are valid history. The newest acknowledgement is authoritative. The
-        # cross-user fallback above remains strict and requires one candidate.
         row = rows[0]
         return {
             "artifact_id": row["artifact_id"],
             "payload": json.loads(row["payload_json"]),
             "acknowledged_at": row["acknowledged_at"],
+            "source_record_id": row["source_record_id"],
+        }
+
+    def front_analysis_artifact_match_counts(
+        self,
+        tenant_id: str,
+        input_hash: str,
+        *,
+        user_id: str,
+        source_record_id: str | None,
+    ) -> dict[str, int]:
+        """Return metadata-only mismatch counts; never expose another user's payload."""
+        with self._lock:
+            row = self._connection.execute(
+                """
+                SELECT
+                  SUM(CASE WHEN user_id <> ? THEN 1 ELSE 0 END) AS other_user_count,
+                  SUM(CASE WHEN user_id = ? AND source_record_id IS NOT NULL
+                                AND (? IS NULL OR source_record_id <> ?)
+                           THEN 1 ELSE 0 END) AS record_mismatch_count
+                FROM front_analysis_artifacts
+                WHERE tenant_id = ? AND input_hash = ?
+                  AND acknowledged_at IS NOT NULL
+                  AND retention_until >= strftime('%s','now')
+                """,
+                (user_id, user_id, source_record_id, source_record_id, tenant_id, input_hash),
+            ).fetchone()
+        return {
+            "other_user_count": int(row["other_user_count"] or 0),
+            "record_mismatch_count": int(row["record_mismatch_count"] or 0),
         }
 
     def latest_front_analysis_artifact(
@@ -453,17 +480,19 @@ class AgentStore:
         self,
         artifact_id: str,
         source_record_id: str | None,
-    ) -> None:
+    ) -> bool:
         if not source_record_id:
-            return
+            return False
         with self._lock, self._connection:
-            self._connection.execute(
+            cursor = self._connection.execute(
                 """
                 UPDATE front_analysis_artifacts SET source_record_id = ?
                 WHERE artifact_id = ?
+                  AND (source_record_id IS NULL OR source_record_id = ?)
                 """,
-                (source_record_id, artifact_id),
+                (source_record_id, artifact_id, source_record_id),
             )
+        return cursor.rowcount == 1
 
     def create_evaluation_job(
         self, job_id: str, request: PostEvaluationRequest, input_snapshot_hash: str

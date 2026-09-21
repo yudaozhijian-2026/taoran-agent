@@ -7,9 +7,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .front_analysis_artifact import (
+    SUPPORTED_SCHEMA_VERSIONS,
     FrontAnalysisArtifact,
     analysis_input_hash,
-    model_context,
+    is_trusted_artifact_user_id,
 )
 from .models import PostEvaluationRequest, Q34SemanticFacts
 
@@ -19,7 +20,7 @@ class DeepReviewFinding(BaseModel):
 
     finding_id: str
     source_front_finding_id: str | None = None
-    status: Literal["confirmed", "deepened", "corrected", "new_finding"]
+    status: Literal["confirmed", "deepened", "corrected", "new_finding", "unresolved"]
     dimension: str
     front_statement: str | None = None
     final_statement: str
@@ -31,7 +32,8 @@ class DeepReviewResult(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     front_artifact_status: Literal[
-        "used", "not_found", "input_mismatch", "invalid", "expired"
+        "used", "not_found", "input_mismatch", "invalid", "expired",
+        "identity_untrusted", "user_mismatch", "record_mismatch", "schema_incompatible",
     ]
     front_artifact_used: bool = False
     front_artifact_id: str | None = None
@@ -40,15 +42,28 @@ class DeepReviewResult(BaseModel):
     findings: list[DeepReviewFinding] = Field(default_factory=list)
     counts: dict[str, int] = Field(default_factory=dict)
     fallback_reason: str | None = None
+    identity_match: bool | None = None
+    record_match: bool | None = None
+    other_user_candidate_count: int = 0
 
 
 def load_front_context(store, request: PostEvaluationRequest) -> tuple[FrontAnalysisArtifact | None, DeepReviewResult]:
     submitted_hash = analysis_input_hash(request.visit)
+    user_id = request.context.user_id
+    source_record_id = request.context.source_record_id
+    if not is_trusted_artifact_user_id(user_id):
+        return None, DeepReviewResult(
+            front_artifact_status="identity_untrusted",
+            submitted_input_hash=submitted_hash,
+            identity_match=False,
+            record_match=None,
+        )
     try:
         exact = store.find_front_analysis_artifact(
             request.context.tenant_id,
             submitted_hash,
-            user_id=request.context.user_id,
+            user_id=user_id,
+            source_record_id=source_record_id,
         )
     except (ValueError, TypeError, KeyError):
         return None, DeepReviewResult(
@@ -56,13 +71,24 @@ def load_front_context(store, request: PostEvaluationRequest) -> tuple[FrontAnal
             submitted_input_hash=submitted_hash,
         )
     if exact is not None:
+        raw_payload = exact.get("payload") or {}
+        if raw_payload.get("schema_version") not in SUPPORTED_SCHEMA_VERSIONS:
+            return None, DeepReviewResult(
+                front_artifact_status="schema_incompatible",
+                submitted_input_hash=submitted_hash,
+                front_artifact_id=exact.get("artifact_id"),
+                identity_match=True,
+                record_match=True,
+            )
         try:
-            artifact = FrontAnalysisArtifact.model_validate(exact["payload"])
+            artifact = FrontAnalysisArtifact.model_validate(raw_payload)
         except (ValueError, TypeError, KeyError):
             return None, DeepReviewResult(
                 front_artifact_status="invalid",
                 submitted_input_hash=submitted_hash,
                 front_artifact_id=exact.get("artifact_id"),
+                identity_match=True,
+                record_match=True,
             )
         if artifact.input_hash != submitted_hash:
             return None, DeepReviewResult(
@@ -70,17 +96,52 @@ def load_front_context(store, request: PostEvaluationRequest) -> tuple[FrontAnal
                 submitted_input_hash=submitted_hash,
                 front_input_hash=artifact.input_hash,
                 front_artifact_id=artifact.artifact_id,
+                identity_match=True,
+                record_match=True,
             )
-        store.link_front_analysis_artifact(
+        linked = store.link_front_analysis_artifact(
             artifact.artifact_id,
-            request.context.source_record_id,
+            source_record_id,
         )
+        if source_record_id and not linked:
+            return None, DeepReviewResult(
+                front_artifact_status="record_mismatch",
+                submitted_input_hash=submitted_hash,
+                front_input_hash=artifact.input_hash,
+                front_artifact_id=artifact.artifact_id,
+                identity_match=True,
+                record_match=False,
+            )
         return artifact, DeepReviewResult(
             front_artifact_status="used",
             front_artifact_used=True,
             submitted_input_hash=submitted_hash,
             front_input_hash=artifact.input_hash,
             front_artifact_id=artifact.artifact_id,
+            identity_match=True,
+            record_match=True,
+        )
+
+    counts = store.front_analysis_artifact_match_counts(
+        request.context.tenant_id,
+        submitted_hash,
+        user_id=user_id,
+        source_record_id=source_record_id,
+    )
+    if counts["record_mismatch_count"]:
+        return None, DeepReviewResult(
+            front_artifact_status="record_mismatch",
+            submitted_input_hash=submitted_hash,
+            identity_match=True,
+            record_match=False,
+        )
+    if counts["other_user_count"]:
+        return None, DeepReviewResult(
+            front_artifact_status="user_mismatch",
+            submitted_input_hash=submitted_hash,
+            identity_match=False,
+            record_match=None,
+            other_user_candidate_count=counts["other_user_count"],
         )
 
     try:
@@ -99,6 +160,8 @@ def load_front_context(store, request: PostEvaluationRequest) -> tuple[FrontAnal
             submitted_input_hash=submitted_hash,
             front_input_hash=str(latest.get("input_hash") or "") or None,
             front_artifact_id=latest.get("artifact_id"),
+            identity_match=True,
+            record_match=None,
         )
     try:
         expired = store.latest_front_analysis_artifact(
@@ -121,10 +184,14 @@ def load_front_context(store, request: PostEvaluationRequest) -> tuple[FrontAnal
             submitted_input_hash=submitted_hash,
             front_input_hash=expired.get("input_hash"),
             front_artifact_id=expired.get("artifact_id"),
+            identity_match=True,
+            record_match=None,
         )
     return None, DeepReviewResult(
         front_artifact_status="not_found",
         submitted_input_hash=submitted_hash,
+        identity_match=True,
+        record_match=None,
     )
 
 
@@ -135,29 +202,9 @@ def evaluate_with_front_fallback(
     artifact: FrontAnalysisArtifact | None,
     diagnostic: DeepReviewResult,
 ):
-    """Retry the existing standalone formal review if Front Context causes failure."""
-    if artifact is None:
-        return agent.evaluate(request, job_id), diagnostic
-    try:
-        return (
-            agent.evaluate(
-                request,
-                job_id,
-                front_analysis=model_context(artifact),
-            ),
-            diagnostic,
-        )
-    except Exception as front_error:  # noqa: BLE001 - continuity must not block formal review
-        fallback = diagnostic.model_copy(
-            update={
-                "front_artifact_used": False,
-                "fallback_reason": (
-                    "formal_review_with_front_failed:"
-                    f"{type(front_error).__name__}"
-                ),
-            }
-        )
-        return agent.evaluate(request, job_id), fallback
+    """Run the authoritative formal review without any Front Artifact context."""
+    del artifact
+    return agent.evaluate(request, job_id), diagnostic
 
 
 def _evidence(section) -> list[str]:
@@ -187,7 +234,7 @@ def reconcile(
             findings.append(DeepReviewFinding(
                 finding_id=f"deep-{front.finding_id}",
                 source_front_finding_id=front.finding_id,
-                status="corrected" if front.conclusion != "not_evaluated" else "confirmed",
+                status="unresolved",
                 dimension=dimension,
                 front_statement=front.statement,
                 final_statement=(formal.reason if formal else front.statement),
@@ -227,7 +274,10 @@ def reconcile(
             reason="formal_dimension_not_present_in_front_artifact",
         ))
 
-    counts = {name: 0 for name in ("confirmed", "deepened", "corrected", "new_finding")}
+    counts = {
+        name: 0
+        for name in ("confirmed", "deepened", "corrected", "new_finding", "unresolved")
+    }
     for item in findings:
         counts[item.status] += 1
     return diagnostic.model_copy(update={"findings": findings, "counts": counts})

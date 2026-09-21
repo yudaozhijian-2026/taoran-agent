@@ -3,23 +3,29 @@ from __future__ import annotations
 from datetime import UTC, date, datetime
 from time import time
 
+import pytest
+
 from taoran_agent.agent import TaoranAgent
 from taoran_agent.deep_review import (
+    DeepReviewFinding,
     DeepReviewResult,
     evaluate_with_front_fallback,
     load_front_context,
     reconcile,
 )
+from taoran_agent.feedback import build_evaluation_feedback, merge_evaluation_with_knowledge
 from taoran_agent.front_analysis_artifact import (
     FrontAnalysisArtifact,
     FrontFinding,
     analysis_input_hash,
     build_artifact,
+    is_trusted_artifact_user_id,
 )
 from taoran_agent.models import (
     ModelEvidence,
     ModelSectionAnalysis,
     PostEvaluationRequest,
+    PrecheckResponse,
     Q34SemanticFacts,
     RequestContext,
     SelfAssessment,
@@ -49,14 +55,19 @@ def visit(**updates) -> VisitDraftInput:
     return VisitDraftInput.model_validate(data)
 
 
-def request(item: VisitDraftInput, *, user_id: str = "sales-a") -> PostEvaluationRequest:
+def request(
+    item: VisitDraftInput,
+    *,
+    user_id: str = "sales-a",
+    source_record_id: str | None = "record-a",
+) -> PostEvaluationRequest:
     return PostEvaluationRequest(
         context=RequestContext(
             tenant_id="tenant-a",
             request_id="request-a",
             user_id=user_id,
             source="test",
-            source_record_id="record-a",
+            source_record_id=source_record_id,
         ),
         visit_record_code="BFJL-TEST",
         visit=item,
@@ -129,14 +140,16 @@ def artifact(item: VisitDraftInput) -> FrontAnalysisArtifact:
     )
 
 
-def test_hash_ignores_platform_fields_but_changes_with_business_content():
+def test_hash_ignores_platform_fields_but_includes_business_evidence():
     original = visit(metadata={"source_supplied_fields": ["process_description"]})
     saved = original.model_copy(update={
         "submitted_at": datetime(2026, 9, 20, 12, tzinfo=UTC),
         "metadata": {"field_mapping_version": "later"},
         "evidence_ids": ["server-generated"],
     })
-    assert analysis_input_hash(original) == analysis_input_hash(saved)
+    assert analysis_input_hash(original) != analysis_input_hash(saved)
+    no_evidence_change = saved.model_copy(update={"evidence_ids": []})
+    assert analysis_input_hash(original) == analysis_input_hash(no_evidence_change)
     changed = saved.model_copy(update={"process_description": "客户确认预算并指定了负责人。"})
     assert analysis_input_hash(original) != analysis_input_hash(changed)
 
@@ -278,6 +291,7 @@ def test_reconciliation_has_all_four_statuses():
         "deepened": 1,
         "corrected": 1,
         "new_finding": 1,
+        "unresolved": 0,
     }
 
 
@@ -322,21 +336,19 @@ def test_front_context_never_changes_scores():
     assert inherited.total_score == baseline.total_score
 
 
-def test_front_context_failure_retries_standalone_formal_review():
+def test_formal_scoring_path_never_receives_front_context():
     item = visit(submitted_at=datetime(2026, 9, 20, 13, tzinfo=UTC))
 
-    class FrontFailingAgent:
+    class FrontSensitiveAgent:
         def __init__(self):
             self.calls = []
 
         def evaluate(self, evaluation_request, job_id, *, front_analysis=None):
             self.calls.append(front_analysis)
-            if front_analysis is not None:
-                raise RuntimeError("front provider failed")
             return TaoranAgent().evaluate(evaluation_request, job_id)
 
     front = artifact(item)
-    agent = FrontFailingAgent()
+    agent = FrontSensitiveAgent()
     diagnostic = DeepReviewResult(
         front_artifact_status="used",
         front_artifact_used=True,
@@ -352,9 +364,213 @@ def test_front_context_failure_retries_standalone_formal_review():
         diagnostic,
     )
     assert response.total_score >= 0
-    assert len(agent.calls) == 2
-    assert agent.calls[0] is not None and agent.calls[1] is None
-    assert final_diagnostic.front_artifact_used is False
-    assert final_diagnostic.fallback_reason == (
-        "formal_review_with_front_failed:RuntimeError"
+    assert agent.calls == [None]
+    assert final_diagnostic.front_artifact_used is True
+
+
+def _save_and_ack(store, value, *, seconds=3600):
+    store.save_front_analysis_artifact(
+        value.model_dump(mode="json"), retention_until=time() + seconds
     )
+    assert store.acknowledge_front_analysis_artifact(
+        value.tenant_id, value.check_id, value.quick_check_input_hash
+    )
+
+
+def test_unique_cross_user_artifact_is_never_used(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    item = visit()
+    _save_and_ack(store, artifact(item))
+    found, diagnostic = load_front_context(store, request(item, user_id="sales-b"))
+    assert found is None
+    assert diagnostic.front_artifact_status == "user_mismatch"
+    assert diagnostic.other_user_candidate_count == 1
+
+
+def test_multiple_cross_user_artifacts_are_never_used(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    item = visit()
+    first = artifact(item)
+    second = first.model_copy(update={
+        "artifact_id": "fa_other_2", "user_id": "sales-c", "check_id": "qc-other-2",
+        "quick_check_input_hash": "c" * 64,
+    })
+    _save_and_ack(store, first)
+    _save_and_ack(store, second)
+    found, diagnostic = load_front_context(store, request(item, user_id="sales-b"))
+    assert found is None
+    assert diagnostic.front_artifact_status == "user_mismatch"
+    assert diagnostic.other_user_candidate_count == 2
+
+
+@pytest.mark.parametrize("user_id", ["", "jiandaoyun-user", "jiandaoyun-submit-event", "unknown"])
+def test_placeholder_identity_is_untrusted(user_id):
+    assert is_trusted_artifact_user_id(user_id) is False
+
+
+def test_untrusted_formal_identity_uses_standalone_review(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    item = visit()
+    value = artifact(item).model_copy(update={"user_id": "jiandaoyun-user"})
+    _save_and_ack(store, value)
+    found, diagnostic = load_front_context(
+        store, request(item, user_id="jiandaoyun-user")
+    )
+    assert found is None
+    assert diagnostic.front_artifact_status == "identity_untrusted"
+
+
+def test_artifact_bound_to_other_record_is_rejected(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    item = visit()
+    value = artifact(item).model_copy(update={"source_record_id": "record-a"})
+    _save_and_ack(store, value)
+    found, diagnostic = load_front_context(
+        store, request(item, source_record_id="record-b")
+    )
+    assert found is None
+    assert diagnostic.front_artifact_status == "record_mismatch"
+    assert diagnostic.record_match is False
+
+
+def test_unbound_artifact_is_claimed_once_by_current_record(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    item = visit()
+    value = artifact(item)
+    _save_and_ack(store, value)
+    found, diagnostic = load_front_context(
+        store, request(item, source_record_id="record-b")
+    )
+    assert found is not None and diagnostic.front_artifact_status == "used"
+    with store._lock:
+        row = store._connection.execute(
+            "SELECT source_record_id FROM front_analysis_artifacts WHERE artifact_id=?",
+            (value.artifact_id,),
+        ).fetchone()
+    assert row["source_record_id"] == "record-b"
+
+
+def test_unsupported_schema_is_not_used(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    item = visit()
+    value = artifact(item)
+    _save_and_ack(store, value)
+    with store._lock, store._connection:
+        import json
+        payload = value.model_dump(mode="json")
+        payload["schema_version"] = "front-analysis-artifact-v2"
+        store._connection.execute(
+            "UPDATE front_analysis_artifacts SET payload_json=? WHERE artifact_id=?",
+            (json.dumps(payload, ensure_ascii=False), value.artifact_id),
+        )
+    found, diagnostic = load_front_context(store, request(item))
+    assert found is None
+    assert diagnostic.front_artifact_status == "schema_incompatible"
+
+
+def test_formal_not_evaluated_is_unresolved_not_corrected():
+    item = visit()
+    front = artifact(item)
+    formal = facts([section("T", "not_evaluated", "本项无法评价。")])
+    base = DeepReviewResult(
+        front_artifact_status="used", front_artifact_used=True,
+        submitted_input_hash=front.input_hash,
+    )
+    result = reconcile(front, formal, base)
+    assert result.findings[0].status == "unresolved"
+    assert result.counts["corrected"] == 0
+    assert result.counts["unresolved"] >= 1
+
+
+def test_expired_artifact_cleanup_is_explicit_and_safe(tmp_path):
+    store = AgentStore(tmp_path / "agent.db")
+    value = artifact(visit())
+    store.save_front_analysis_artifact(
+        value.model_dump(mode="json"), retention_until=time() - 1
+    )
+    assert store.purge_expired_front_analysis_artifacts() == 1
+    with store._lock:
+        count = store._connection.execute(
+            "SELECT count(*) FROM front_analysis_artifacts"
+        ).fetchone()[0]
+    assert count == 0
+
+
+def test_decision_ledger_is_bounded_and_drops_repair_traces():
+    built = build_artifact(
+        visit=visit(), tenant_id="tenant-a", user_id="sales-a", check_id="qc-ledger",
+        quick_check_input_hash="d" * 64, source_record_id=None,
+        feedback_text="本次拜访分析：客户确认预算。",
+        decision_ledger={
+            "version": "v1", "validated_analysis": "客户确认预算。",
+            "joint_repair_errors": ["internal"], "raw_model_output": "secret",
+        },
+        front_review=None, policy_version="p1",
+    )
+    assert built.decision_ledger == {
+        "version": "v1", "validated_analysis": "客户确认预算。"
+    }
+    with pytest.raises(ValueError, match="size limit"):
+        build_artifact(
+            visit=visit(), tenant_id="tenant-a", user_id="sales-a", check_id="qc-large",
+            quick_check_input_hash="e" * 64, source_record_id=None,
+            feedback_text="本次拜访分析：客户确认预算。",
+            decision_ledger={"validated_analysis": "大" * 20000},
+            front_review=None, policy_version="p1",
+        )
+
+
+def _complete_formal_facts():
+    return facts([
+        section("T", "met", "客户类型与目的匹配。"),
+        section("A1", "met", "拜访方式记录清楚。"),
+        section("O_KR", "needs_revision", "正式确认预算已取得，但审批时间尚未明确。"),
+        section("R", "met", "客户确认预算30万元。"),
+        section("A2", "met", "自评与客户事实一致。"),
+        section("N", "needs_revision", "客户尚未确认下一次评审时间。"),
+    ])
+
+
+def test_deep_review_findings_enter_final_feedback_without_internal_labels():
+    item = visit()
+    formal = _complete_formal_facts()
+    deep = DeepReviewResult(
+        front_artifact_status="used", front_artifact_used=True,
+        submitted_input_hash=analysis_input_hash(item),
+        findings=[
+            DeepReviewFinding(
+                finding_id="d1", status="corrected", dimension="O_KR",
+                front_statement="客户采购时间完全不明确。",
+                final_statement="正式确认预算已取得，但审批时间尚未明确。",
+            ),
+            DeepReviewFinding(
+                finding_id="d2", status="new_finding", dimension="N",
+                final_statement="客户尚未确认下一次评审时间。",
+            ),
+        ],
+    )
+    text = build_evaluation_feedback(item, 25, 25, 50, [], formal, deep_review=deep)
+    assert "正式确认预算已取得" in text
+    assert "客户尚未确认下一次评审时间" in text
+    assert "客户采购时间完全不明确" not in text
+    assert "corrected" not in text and "new_finding" not in text
+
+
+def test_deep_review_builder_error_falls_back_to_formal_feedback(monkeypatch):
+    from taoran_agent import feedback
+    item = visit()
+    formal = _complete_formal_facts()
+    deep = DeepReviewResult(
+        front_artifact_status="used", front_artifact_used=True,
+        submitted_input_hash=analysis_input_hash(item),
+    )
+    expected = build_evaluation_feedback(item, 25, 25, 50, [], formal)
+    monkeypatch.setattr(
+        feedback, "_apply_deep_review_continuity",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("broken")),
+    )
+    knowledge = PrecheckResponse.model_construct(suggestions=[], issues=[])
+    actual = merge_evaluation_with_knowledge(
+        item, 25, 25, 50, [], formal, knowledge, deep_review=deep
+    )
+    assert actual == expected

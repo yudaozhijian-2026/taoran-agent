@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from typing import Any
 
 from .business_wording import (
     SalespersonFeedbackSafetyError,
@@ -703,6 +704,8 @@ def merge_evaluation_with_knowledge(
     issues: list[Issue],
     semantic_facts: Q34SemanticFacts,
     knowledge_check: PrecheckResponse,
+    *,
+    deep_review: Any | None = None,
 ) -> str:
     """将知识库补充建议合并进提交后唯一的AI改善建议。"""
     knowledge_suggestions = [
@@ -713,15 +716,22 @@ def merge_evaluation_with_knowledge(
             issue.suggestion.strip() for issue in knowledge_check.issues if issue.suggestion.strip()
         }
     ]
+    kwargs = {
+        "knowledge_suggestions": knowledge_suggestions,
+        "knowledge_issues": knowledge_check.issues,
+    }
+    if deep_review is not None:
+        try:
+            return build_evaluation_feedback(
+                visit, q33_score, q34_score, total_score, issues, semantic_facts,
+                deep_review=deep_review, **kwargs,
+            )
+        except (ValueError, TypeError, KeyError, AttributeError):
+            # Reconciliation wording is optional. The existing authoritative
+            # Formal feedback remains the safe fallback and scores are untouched.
+            pass
     return build_evaluation_feedback(
-        visit,
-        q33_score,
-        q34_score,
-        total_score,
-        issues,
-        semantic_facts,
-        knowledge_suggestions=knowledge_suggestions,
-        knowledge_issues=knowledge_check.issues,
+        visit, q33_score, q34_score, total_score, issues, semantic_facts, **kwargs,
     )
 
 
@@ -735,6 +745,7 @@ def build_evaluation_feedback(
     *,
     knowledge_suggestions: list[str] | None = None,
     knowledge_issues: list[Issue] | None = None,
+    deep_review: Any | None = None,
 ) -> str:
     # 分数、六项规则明细继续作为结构化字段保存并回写评分；这里仅保留供销售
     # 代表阅读的本次分析和可执行改善建议。
@@ -783,8 +794,8 @@ def build_evaluation_feedback(
             salesperson_wording(semantic_facts.reason.strip(), sales_context)
             or "本次拜访未形成可展示的分析结论。"
         )
-    lines.extend(["", "本次拜访分析：" + analysis_text])
     if semantic_facts.provider.startswith("llm-") and not model_completed:
+        lines.extend(["", "本次拜访分析：" + analysis_text])
         # Do not present heuristic fallback advice as completed AI analysis.
         return salesperson_wording("\n".join(lines), sales_context)
     advice_items = _build_post_advice(
@@ -794,6 +805,14 @@ def build_evaluation_feedback(
         knowledge_issues=knowledge_issues or [],
         knowledge_suggestions=knowledge_suggestions or [],
     )
+    if deep_review is not None:
+        analysis_text, advice_items = _apply_deep_review_continuity(
+            analysis_text,
+            advice_items,
+            semantic_facts,
+            deep_review,
+        )
+    lines.extend(["", "本次拜访分析：" + analysis_text])
     if advice_items:
         lines.extend(["", "AI改善建议："])
         lines.extend(f"{index}. {suggestion}" for index, suggestion in enumerate(advice_items, 1))
@@ -812,6 +831,39 @@ def build_evaluation_feedback(
     if leaks:
         raise SalespersonFeedbackSafetyError(leaks, result)
     return result
+
+
+def _apply_deep_review_continuity(
+    analysis_text: str,
+    advice_items: list[str],
+    semantic_facts: Q34SemanticFacts,
+    deep_review: Any | None,
+) -> tuple[str, list[str]]:
+    """Use reconciliation after scoring; Formal facts always remain authoritative."""
+    if deep_review is None or not getattr(deep_review, "front_artifact_used", False):
+        return analysis_text, advice_items
+    sections = {section.code: section for section in semantic_facts.sections}
+    analysis_parts = [analysis_text]
+    advice = list(advice_items)
+    for finding in getattr(deep_review, "findings", []):
+        if finding.status in {"unresolved", "confirmed"}:
+            continue
+        section = sections.get(finding.dimension)
+        final_statement = _clean_post_text(finding.final_statement)
+        if final_statement and not any(
+            _advice_is_similar(final_statement, current) for current in analysis_parts
+        ):
+            analysis_parts.append(final_statement)
+        if (
+            finding.status in {"deepened", "corrected", "new_finding"}
+            and section is not None
+            and section.verdict == "needs_revision"
+            and section.suggestion.strip()
+        ):
+            suggestion = _clean_post_text(section.suggestion)
+            if suggestion and not any(_advice_is_similar(suggestion, item) for item in advice):
+                advice.append(suggestion)
+    return "".join(analysis_parts), advice
 
 
 def _build_post_advice(

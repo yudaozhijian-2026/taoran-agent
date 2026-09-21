@@ -738,6 +738,7 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
                         response.issues,
                         response.semantic_facts,
                         unified_feedback,
+                        deep_review=deep_review,
                     ),
                 }
             )
