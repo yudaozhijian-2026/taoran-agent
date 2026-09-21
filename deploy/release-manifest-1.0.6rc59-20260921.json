@@ -1,0 +1,59 @@
+{
+  "release_version": "1.0.6rc59",
+  "release_scope": "isolated-submit-test-only",
+  "git_commit": "8cad6b0cc7a997dc0c27945ed618e1579b56679c",
+  "git_tag": "submit-test-v1.0.6rc59-20260921",
+  "image": "taoran-submit-test:1.0.6rc59-20260921",
+  "image_id": "sha256:f602ac8f7bb5ca9a5a43d35c3587e8bb1ee27e502dccc58457e4e78c986e7b9e",
+  "deployment_target": "taoran-submit-test-agent",
+  "formal_service_changed": false,
+  "formal_service_observed": {
+    "container": "dsm-taoran-v2-agent",
+    "image": "dsm-taoran-v2:1.0.10-feedback-recovery-20260920",
+    "restart_count": 0,
+    "status": "running"
+  },
+  "validation": {
+    "python_tests": 737,
+    "browser_tests": 77,
+    "ruff": "passed",
+    "wheel_build": "passed",
+    "compose_validation": "passed",
+    "backend_real_records": 30,
+    "backend_completed": 30,
+    "backend_failed": 0,
+    "frontend_quick_check_calls": 0,
+    "q33_score_equal": 30,
+    "q34_score_equal": 25,
+    "total_score_equal": 25,
+    "successful_writebacks": 22,
+    "protected_writeback_skips": 8
+  },
+  "acceptance_status": "review_required",
+  "acceptance_note": "Five live reruns produced Q34/total-score differences because the deep-review model was independently regenerated. The code change does not touch scoring logic, but the candidate must remain isolated until score stability is resolved or accepted.",
+  "health": {
+    "internal": "ok",
+    "external": "ok",
+    "database_quick_check": "ok",
+    "container_restart_count": 0
+  },
+  "runtime_hashes": {
+    "compose": "7f2cd8fbd7964b875db457668f641f78991899075fa16ad24c0269f5594c6815",
+    "agent_env": "25356756fa6fc5afdba842634bbe6c8b6be329f2ce6b6c2dfd05a55ba5b3e6d9",
+    "tenant_registry": "e4aa0f347795d4b75509cc35c7cf6f0fca4cdb7896121e6078b3451953115622",
+    "field_mapping": "c979d1d89198305cc1dbdb0d65bea7bba4de7660e9c31cca2ef70ed7df6a1d5e"
+  },
+  "backup_path": "/TAORAN agent/isolated-submit-test-20260916/backups/pre-1.0.6rc59-wording-v2-20260921",
+  "rollback": {
+    "image": "taoran-submit-test:1.0.6rc58-20260921",
+    "compose": "/TAORAN agent/isolated-submit-test-20260916/backups/pre-1.0.6rc59-wording-v2-20260921/compose.rollback.yaml",
+    "database": "/TAORAN agent/isolated-submit-test-20260916/backups/pre-1.0.6rc59-wording-v2-20260921/taoran_agent.db"
+  },
+  "deployment_incident": {
+    "occurred": true,
+    "scope": "isolated-submit-test-only",
+    "description": "The first candidate compose copy resolved relative mounts from the release directory and could not open the isolated database.",
+    "resolution": "Rolled back to rc58, verified health and database integrity, then deployed rc59 from the original compose working directory.",
+    "formal_service_affected": false
+  }
+}
