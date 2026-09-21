@@ -1,0 +1,14 @@
+{
+  "release_version": "1.0.6rc53",
+  "release_date": "2026-09-21",
+  "scope": "isolated-submit-test-only",
+  "git_branch": "codex/front-artifact-strict-user-hardening-20260921",
+  "git_commit": "596c61a",
+  "git_tag": "submit-test-v1.0.6rc53-20260921",
+  "image": "taoran-submit-test:1.0.6rc53-20260921",
+  "image_id": "sha256:7c07424b2c99b12dd44064e2d24ee0a9b99b7debc97e5b18cd330c8293925437",
+  "wheel_sha256": "da9a78b261f877c0950a33084d4dc4768c5a9d60486d253fd4ec042c609d58f8",
+  "rollback_backup": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc53-20260921-20260921-112403",
+  "rollback_image": "taoran-submit-test:1.0.6rc52-20260921",
+  "formal_service_unchanged": "dsm-taoran-v2:1.0.10-feedback-recovery-20260920"
+}
