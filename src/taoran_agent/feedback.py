@@ -4,6 +4,7 @@ import re
 from collections.abc import Iterable
 from typing import Any
 
+from .backend_salesperson_wording_v2 import render_backend_business_feedback
 from .business_wording import (
     SalespersonFeedbackSafetyError,
     business_wording,
@@ -829,6 +830,14 @@ def build_evaluation_feedback(
             semantic_facts,
             deep_review,
         )
+    audit_analysis_text = analysis_text
+    audit_advice_items = list(advice_items)
+    analysis_text, advice_items = render_backend_business_feedback(
+        visit,
+        semantic_facts,
+        analysis_text,
+        advice_items,
+    )
     lines.extend(["", "本次拜访分析：" + analysis_text])
     if advice_items:
         lines.extend(["", "AI改善建议："])
@@ -842,7 +851,7 @@ def build_evaluation_feedback(
             raise ValueError("post_contact_policy_final_conflict")
         from .semantic_observation import final_feedback_observations
         semantic_facts.quality_audit["final_review"] = final_feedback_observations(
-            analysis_text, advice_items, context,
+            audit_analysis_text, audit_advice_items, context,
         )
     leaks = salesperson_feedback_hits(result)
     if leaks:
