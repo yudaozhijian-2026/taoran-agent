@@ -19,7 +19,7 @@ COMPOSE = ROOT / "compose.yaml"
 DATABASE = ROOT / "data" / "taoran_agent.db"
 CONTAINER = "taoran-submit-test-agent"
 OLD_IMAGE = "taoran-submit-test:1.0.6rc60-20260921"
-OLD_REVISION = "f293d87"
+OLD_IMAGE_ID = "sha256:4b09ee0968f0936534b2f60dfc1ff6d7b77f10b68e91512f200eded9c02271fc"
 NEW_IMAGE = "taoran-submit-test:1.0.6rc61-20260921"
 NEW_REVISION = sys.argv[2]
 
@@ -79,8 +79,8 @@ def sha256(path):
 def assert_expected_current():
     info = inspect_container(CONTAINER)
     assert info["Config"]["Image"] == OLD_IMAGE, info["Config"]["Image"]
-    revision = info["Config"]["Labels"].get("org.opencontainers.image.revision", "")
-    assert revision.startswith(OLD_REVISION), revision
+    # rc60 inherited an older base-image label; pin the verified image content instead.
+    assert info["Image"] == OLD_IMAGE_ID, info["Image"]
     assert info["State"]["Running"]
     assert info["State"]["Health"]["Status"] == "healthy"
     assert active_jobs() == 0
