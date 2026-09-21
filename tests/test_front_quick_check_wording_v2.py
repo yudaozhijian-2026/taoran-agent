@@ -19,31 +19,75 @@ def test_no_mechanical_form_repetition():
     assert all(x not in text for x in ("原目标为", "原定目标", "客户类型为", "拜访方式为", "自评一致"))
 
 
-@pytest.mark.parametrize("source,expected,wording", [
-    ("双方约定一周后再次沟通。", "agreed", "同步"),
-    ("双方尚未约定下一次联系日期。", "undetermined", "不需要"),
-    ("销售计划下周联系客户。", "planned", "计划"),
-    ("客户确认下周一联系。", "agreed", "同步"),
-    ("客户未确认下周一联系。", "unknown", "如果"),
-    ("双方计划下周约定联系时间。", "planned", "计划"),
-    ("客户预算尚未明确，双方约定下周一联系。", "agreed", "同步"),
-    ("双方约定下周一联系。双方尚未确定联系日期。", "unknown", "如果"),
-])
-def test_time_states(source, expected, wording):
-    output = render(process_description=source, next_contact_at=None)
-    assert output["contact_state"] == expected
-    advice = next(s["text"] for s in output["suggestions"] if s["key"] == "contact")
-    assert wording in advice
-    assert "跨" not in advice
-    if expected in {"planned", "undetermined", "unknown"}:
-        assert "过程里已有" not in advice
+def contact_advice(output):
+    return next(s for s in output["suggestions"] if s["key"] == "contact")
+
+
+def test_confirmed_next_contact_exact_date():
+    output = render(process_description="双方约定9月28日再次沟通。", next_contact_at=None)
+    assert output["contact_state"] == "agreed"
+    assert output["contact_timing_kind"] == "exact"
+    assert "9月28日" in contact_advice(output)["text"]
+    assert "同步填写" in contact_advice(output)["text"]
+
+
+def test_confirmed_next_contact_relative_date():
+    output = render(process_description="销售已与客户约定一周后再次沟通。", next_contact_at=None)
+    assert output["contact_state"] == "agreed"
+    assert output["contact_timing_kind"] == "relative"
+    assert "一周后再次沟通" in contact_advice(output)["text"]
+    assert "如果已约定" not in output["feedback_text"]
+
+
+def test_confirmed_next_contact_after_event():
+    output = render(
+        process_description="客户确认本周五完成电源准备，届时再联系核对。",
+        next_contact_at=None,
+    )
+    assert output["contact_state"] == "agreed"
+    assert output["contact_timing_kind"] == "after_event"
+    assert "本周五再次联系核对" in contact_advice(output)["text"]
+
+
+def test_future_customer_event_not_contact_agreement():
+    output = render(process_description="客户确认下周一提供设备清单。", next_contact_at=None)
+    advice = contact_advice(output)
+    assert output["contact_state"] == "unknown"
+    assert advice["suggestion_basis"]["source"] == "future_customer_event"
+    assert "还没有明确联系时间" in advice["text"]
+    assert "下周一填写" not in advice["text"]
+
+
+def test_missing_contact_time_potential_customer_cadence():
+    output = render(
+        customer_type_ii="potential",
+        process_description="客户反馈设备运行稳定。",
+        next_contact_at=None,
+    )
+    advice = contact_advice(output)["text"]
+    assert "规划联系时间" in advice
+    assert "可以参考跨自然季度" in advice
+    assert "具体时间以客户实际推进情况为准" in advice
+    assert "必须" not in advice
+
+
+def test_missing_contact_time_target_customer_cadence():
+    output = render(
+        customer_type_ii="target",
+        process_description="客户反馈设备运行稳定。",
+        next_contact_at=None,
+    )
+    advice = contact_advice(output)["text"]
+    assert "规划联系时间" in advice
+    assert "可以参考跨自然月" in advice
+    assert "必须" not in advice
 
 
 def test_unresolved_preserves_stage_progress():
     output = render(expected_key_result="项目顺利实施", self_assessment="achieved",
                     process_description="客户承诺下周提供六台设备清单。")
     assert output["achievement"] == "unresolved"
-    assert "客户承诺下周提供六台设备清单" in output["analysis"]
+    assert "客户明确将在下周提供六台设备清单" in output["analysis"]
     assert "不足以判断是否已经完整实现" in output["analysis"]
     assert "未达到" not in output["feedback_text"]
     assert "assessment" not in {x["key"] for x in output["suggestions"]}
@@ -95,6 +139,53 @@ def test_customer_agreement_not_overridden_by_cadence():
     output = render(customer_type_ii="potential", process_description="客户确认下周一联系。")
     assert not any(s["key"] == "contact" for s in output["suggestions"])
     assert "跨季度" not in output["feedback_text"]
+
+
+def test_valid_contact_time_no_cadence_warning():
+    output = render(
+        customer_type_ii="target",
+        visit_date="2026-09-21",
+        next_contact_at="2026-09-28T08:00:00Z",
+        process_description="客户反馈设备运行稳定。",
+    )
+    assert not any(s["key"] == "contact" for s in output["suggestions"])
+    assert "跨自然月" not in output["feedback_text"]
+
+
+def test_contact_record_field_conflict():
+    output = render(
+        visit_date="2026-09-21",
+        next_contact_at="2026-09-29T08:00:00Z",
+        process_description="双方约定9月28日再次沟通。",
+    )
+    assert "与记录中的实际约定不一致" in contact_advice(output)["text"]
+
+
+def test_evidence_specific_suggestion():
+    output = render(
+        process_description="客户确认培训预算已初步预留，但内部审批负责人尚未明确。",
+        next_action_expected_result="保持联系",
+    )
+    advice = next(item for item in output["suggestions"] if item["key"] == "next_result")
+    assert "内部审批负责人" in advice["text"]
+    assert advice["suggestion_basis"]["evidence"]
+    assert "按已有计划" not in advice["text"]
+
+
+def test_no_long_raw_record_echo():
+    source = (
+        "目的：办公桌咨询 过程： 因为客户之前来参观过我们公司，此次客户想要了解一下"
+        "我们组合的办公桌，想要采购4张办公桌，规格是1600mm×600mm，跟客户回复先帮"
+        "客户了解下，具体的再来回复客户。"
+    )
+    output = render(expected_key_result="收集信息", process_description=source)
+    assert "4张1600×600mm组合办公桌" in output["analysis"]
+    assert "因为客户之前来参观过我们公司" not in output["analysis"]
+    assert len(output["analysis"]) < len(source)
+
+
+def test_no_record_highlight_template_overuse():
+    assert "记录中的重点是" not in render()["feedback_text"]
 
 
 def test_only_isolated_confirmation_flow_enabled():
