@@ -181,8 +181,8 @@ def _numbered_items(value: str) -> list[str]:
         if (
             cleaned
             and not cleaned.startswith("提交后，系统将")
+            and not cleaned.startswith("本次无需额外补充填写")
             and cleaned not in {
-                "本次无需额外补充填写。",
                 "本次没有需要补充的AI改善建议或需确认事项。",
             }
         ):

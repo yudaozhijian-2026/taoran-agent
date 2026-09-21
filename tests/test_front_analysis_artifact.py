@@ -350,6 +350,23 @@ def test_builder_derives_minimal_findings_when_front_review_is_absent():
     }
 
 
+def test_no_improvement_needed_sentence_is_not_persisted_as_a_gap():
+    built = build_artifact(
+        visit=visit(), tenant_id="tenant-a", user_id="sales-a",
+        check_id="qc-no-gap", quick_check_input_hash="f" * 64,
+        source_record_id="record-a",
+        feedback_text=(
+            "本次拜访分析：关键信息已完整确认。\n\n"
+            "AI改善建议：\n"
+            "本次无需额外补充填写。本次记录已完整覆盖目标与下一步。"
+        ),
+        decision_ledger={"version": "ledger-v2"}, front_review=None,
+        policy_version="front-policy",
+    )
+    assert built.suggestions == []
+    assert built.findings == []
+
+
 def test_front_context_never_changes_scores():
     item = visit(submitted_at=datetime(2026, 9, 20, 13, tzinfo=UTC))
     agent = TaoranAgent()
