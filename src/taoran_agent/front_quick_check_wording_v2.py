@@ -277,7 +277,7 @@ def _analysis_summary(raw: dict, facts: list[dict]) -> str:
                 else ""
             )
             return first + second + "。"
-    if "设备清单" in text:
+    if "设备清单" in text or re.search(r"[一二三四五六七八九十\d]+台设备.{0,20}安装位置", text):
         count = re.search(r"([一二三四五六七八九十\d]+)台设备", text)
         equipment = f"{count[1]}台设备" if count else "设备"
         if re.search(
@@ -292,12 +292,14 @@ def _analysis_summary(raw: dict, facts: list[dict]) -> str:
             )
         if re.search(r"两处电源.{0,8}(?:尚未|未).{0,8}(?:准备|完成)", text):
             return f"本次已取得{equipment}清单并确认安装位置，同时发现两处电源尚未准备。"
-        if re.search(r"(?:均已|已经|已).{0,8}(?:完成|确认)", text):
+        if "安装位置" in text and re.search(r"(?:均已|已经|已).{0,8}(?:完成|确认)", text):
             return (
                 f"本次已完成{equipment}清单、安装位置及电源准备状态的核对，"
                 "现有记录显示相关事项已确认。"
             )
-        return f"本次已取得{equipment}清单，并推进了安装位置等实施信息的核对。"
+        if re.search(r"预算审批.{0,8}(?:已通过|完成)", text) and "采购负责人" in text:
+            return "本次已取得设备清单，并确认预算审批已通过及采购负责人。"
+        return f"本次已取得{equipment}清单，相关清单信息已经记录。"
     if "审核" in text:
         return "本次已跟进审核进度，但集团端仍未反馈，当前推进节点尚不明确。"
     compact = re.sub(r"^(?:本次|销售)(?:已经|已)?", "", facts[0]["quote"])
@@ -552,7 +554,7 @@ def project(
     if not facts and presence.get("process_description") == "not_received":
         analysis = "当前暂时无法核对本次实际进展。"
     if goal_problem:
-        analysis += "但当前关键结果表述比较宽，现有记录不足以判断是否已经完整实现。"
+        analysis = analysis.rstrip("。") + "；但当前关键结果表述比较宽，现有记录不足以判断是否已经完整实现。"
     elif achievement == "partially_achieved":
         analysis += "已有进展，但仍有目标事项待落实，目前只能确认部分完成。"
 

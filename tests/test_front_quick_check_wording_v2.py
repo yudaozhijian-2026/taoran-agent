@@ -184,6 +184,18 @@ def test_no_long_raw_record_echo():
     assert len(output["analysis"]) < len(source)
 
 
+def test_purchase_evidence_does_not_become_installation_fact():
+    output = render(
+        process_description=(
+            "客户确认采购预算审批已通过，并明确采购负责人为李主任；"
+            "销售取得设备清单和审批邮件。"
+        )
+    )
+    assert "预算审批已通过" in output["analysis"]
+    assert "采购负责人" in output["analysis"]
+    assert "安装位置" not in output["analysis"]
+
+
 def test_no_record_highlight_template_overuse():
     assert "记录中的重点是" not in render()["feedback_text"]
 
