@@ -22,7 +22,7 @@ function setConfirmReady(ready) {
 if (submitMode) {
   ack.textContent = '确认提交';
   setConfirmReady(false);
-  if (returnNotice) returnNotice.textContent = '记录尚未提交。阅读AI意见后可确认提交，不要求全部达标；返回修改或直接关闭均不提交。';
+  if (returnNotice) returnNotice.textContent = '记录尚未提交。阅读AI意见后可确认提交；返回修改或直接关闭均不提交。';
   if (cancelSubmit) {
     cancelSubmit.hidden = false;
     cancelSubmit.addEventListener('click', () => {
