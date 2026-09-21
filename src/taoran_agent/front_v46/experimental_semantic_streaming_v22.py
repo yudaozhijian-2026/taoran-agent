@@ -172,28 +172,38 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
     ]
 
 
-def _interactive_preview_safe(text: str, snapshot: dict[str, Any]) -> bool:
+def _interactive_preview_violations(text: str, snapshot: dict[str, Any]) -> list[str]:
+    violations: list[str] = []
     if salesperson_feedback_hits(text):
-        return False
+        violations.append("salesperson_wording_leak")
     if _ADVICE_DIRECTIVE.search(text):
-        return False
-    if boundary_issues(text, snapshot):
-        return False
+        violations.append("analysis_contains_advice")
+    violations.extend(
+        str(item.get("rule") or "record_boundary_conflict")
+        for item in boundary_issues(text, snapshot)
+        if isinstance(item, dict)
+    )
     # The analysis may describe a future plan already recorded in the form;
     # only an actual purpose substitution is unsafe here.
     if goal_violation(text, snapshot) == "purpose_substituted_for_goal":
-        return False
+        violations.append("purpose_substituted_for_goal")
     allowed = set(snapshot.get("opportunity_stages", []))
     if set(re.findall(r"(?<![A-Za-z0-9])P[1-9](?![0-9])", text)) - allowed:
-        return False
+        violations.append("unsupported_opportunity_stage")
     if allowed and re.search(r"(?:商机)?阶段.{0,8}(?:未填|未明确|未体现|未提供)", text):
-        return False
+        violations.append("recorded_opportunity_stage_ignored")
     if re.search(r"(?<![A-Za-z_])(?:opportunity|potential|target|achieved|partially_achieved)(?![A-Za-z_])", text):
-        return False
+        violations.append("internal_enum_leak")
     from .feedback_consistency import preview_errors
-    if preview_errors(text, snapshot):
-        return False
-    return not detect_unsupported_specific_facts(text, snapshot, interactive=True)["failure_category"]
+    violations.extend(str(item) for item in preview_errors(text, snapshot))
+    unsupported = detect_unsupported_specific_facts(text, snapshot, interactive=True)["failure_category"]
+    if unsupported:
+        violations.append(str(unsupported))
+    return list(dict.fromkeys(violations))
+
+
+def _interactive_preview_safe(text: str, snapshot: dict[str, Any]) -> bool:
+    return not _interactive_preview_violations(text, snapshot)
 
 
 def _feedback_body(raw: str) -> str:
@@ -355,6 +365,7 @@ def _stream_semantic_preview_once(
     emitted = 0
     displayed = []
     recommendation_repairs = []
+    validation_errors: list[str] = []
     def emit_normalized_piece(piece):
         displayed.append(piece)
         emit(piece)
@@ -418,7 +429,8 @@ def _stream_semantic_preview_once(
         feedback = "".join(displayed).strip()
         from ..semantic_observation import observe
         findings = observe(boundary_issues, feedback, snapshot, scope="preview")
-        safe = _interactive_preview_safe(feedback, snapshot)
+        validation_errors = _interactive_preview_violations(feedback, snapshot)
+        safe = not validation_errors
         findings += observe(lambda: ([{"rule": "preview_interpretation_conflict"}]
             if not safe else []), scope="preview")
         if interactive and not safe:
@@ -447,6 +459,7 @@ def _stream_semantic_preview_once(
         from ..model_failure_evidence import save_failure_evidence
         evidence_id = save_failure_evidence(settings, stage="frontend_preview_format",
             candidate={"text": raw}, details={"failure_reason": category,
+                "validation_errors": validation_errors,
                 "feedback_length": len(_feedback_body(raw)), "has_open": _OPEN in raw,
                 "has_close": _CLOSE in raw})
         return {"status": "failed", "failure_category": category,
@@ -455,6 +468,7 @@ def _stream_semantic_preview_once(
             "model_first_byte_ms": first_text_ms,
             "model_complete_ms": int((monotonic() - (request_started or started)) * 1000),
             "model_request_id": model_request_id,
+            "validation_errors": validation_errors,
             "semantic_complete_ms": int((monotonic() - started) * 1000),
             "diagnostic_evidence_id": evidence_id}
     except (httpx.HTTPError, OSError):

@@ -4,7 +4,10 @@ from taoran_agent.front_v46.decision_ledger import (
     with_validated_analysis,
 )
 from taoran_agent.front_v46.experimental_record_state import boundary_issues
-from taoran_agent.front_v46.experimental_semantic_streaming_v22 import _supported_commitment
+from taoran_agent.front_v46.experimental_semantic_streaming_v22 import (
+    _interactive_preview_violations,
+    _supported_commitment,
+)
 from taoran_agent.front_v46.joint_consistency import errors, repair_advice
 from taoran_agent.models import VisitDraftInput
 
@@ -111,3 +114,9 @@ def test_recorded_commitment_paraphrase_keeps_business_payload():
     assert _supported_commitment("客户已确认下周一提供六台设备清单", source)
     assert _supported_commitment("客户提供六台设备清单的承诺", source)
     assert not _supported_commitment("客户提供报价单的承诺", source)
+
+
+def test_preview_validation_records_the_specific_reason():
+    snapshot = visit().model_dump(mode="json")
+    errors = _interactive_preview_violations("请补充下一次联系时间。", snapshot)
+    assert "analysis_contains_advice" in errors
