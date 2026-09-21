@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable
+from dataclasses import dataclass
 from typing import Any
 
-from .backend_salesperson_wording_v2 import render_backend_business_feedback
+from .backend_salesperson_wording_v2 import (
+    render_backend_business_feedback,
+    render_backend_safe_feedback,
+)
 from .business_wording import (
     SalespersonFeedbackSafetyError,
     business_wording,
@@ -66,6 +70,12 @@ _VISIBLE_TAORAN_ADVICE_HEADING = re.compile(
     r")\s*(?:[|｜:：\-—]+)\s*",
     flags=re.IGNORECASE,
 )
+
+
+@dataclass(frozen=True)
+class FormalFeedbackRenderResult:
+    text: str
+    diagnostics: dict[str, Any]
 
 
 def _strip_taoran_advice_heading(text: str) -> str:
@@ -709,6 +719,30 @@ def merge_evaluation_with_knowledge(
     deep_review: Any | None = None,
 ) -> str:
     """将知识库补充建议合并进提交后唯一的AI改善建议。"""
+    return merge_evaluation_with_knowledge_with_diagnostics(
+        visit,
+        q33_score,
+        q34_score,
+        total_score,
+        issues,
+        semantic_facts,
+        knowledge_check,
+        deep_review=deep_review,
+    ).text
+
+
+def merge_evaluation_with_knowledge_with_diagnostics(
+    visit: VisitDraftInput,
+    q33_score: float,
+    q34_score: float,
+    total_score: float,
+    issues: list[Issue],
+    semantic_facts: Q34SemanticFacts,
+    knowledge_check: PrecheckResponse,
+    *,
+    deep_review: Any | None = None,
+) -> FormalFeedbackRenderResult:
+    """Merge knowledge wording and retain the final render diagnostic."""
     knowledge_suggestions = [
         suggestion.strip()
         for suggestion in knowledge_check.suggestions
@@ -723,7 +757,7 @@ def merge_evaluation_with_knowledge(
     }
     if deep_review is not None:
         try:
-            return build_evaluation_feedback(
+            return build_evaluation_feedback_with_diagnostics(
                 visit, q33_score, q34_score, total_score, issues, semantic_facts,
                 deep_review=deep_review, **kwargs,
             )
@@ -731,12 +765,12 @@ def merge_evaluation_with_knowledge(
             # Reconciliation wording is optional. The existing authoritative
             # Formal feedback remains the safe fallback and scores are untouched.
             pass
-    return build_evaluation_feedback(
+    return build_evaluation_feedback_with_diagnostics(
         visit, q33_score, q34_score, total_score, issues, semantic_facts, **kwargs,
     )
 
 
-def build_evaluation_feedback(
+def _build_evaluation_feedback(
     visit: VisitDraftInput,
     q33_score: float,
     q34_score: float,
@@ -863,6 +897,129 @@ def build_evaluation_feedback(
         for section in semantic_facts.sections
     )
     return require_complete_feedback(result, needs_advice=needs_advice)
+
+
+def build_evaluation_feedback(
+    visit: VisitDraftInput,
+    q33_score: float,
+    q34_score: float,
+    total_score: float,
+    issues: list[Issue],
+    semantic_facts: Q34SemanticFacts,
+    *,
+    knowledge_suggestions: list[str] | None = None,
+    knowledge_issues: list[Issue] | None = None,
+    deep_review: Any | None = None,
+) -> str:
+    """Compatibility wrapper for callers that only need the visible text."""
+    return build_evaluation_feedback_with_diagnostics(
+        visit,
+        q33_score,
+        q34_score,
+        total_score,
+        issues,
+        semantic_facts,
+        knowledge_suggestions=knowledge_suggestions,
+        knowledge_issues=knowledge_issues,
+        deep_review=deep_review,
+    ).text
+
+
+def build_evaluation_feedback_with_diagnostics(
+    visit: VisitDraftInput,
+    q33_score: float,
+    q34_score: float,
+    total_score: float,
+    issues: list[Issue],
+    semantic_facts: Q34SemanticFacts,
+    *,
+    knowledge_suggestions: list[str] | None = None,
+    knowledge_issues: list[Issue] | None = None,
+    deep_review: Any | None = None,
+) -> FormalFeedbackRenderResult:
+    """Build feedback and deterministically recover a wording-only failure."""
+    try:
+        text = _build_evaluation_feedback(
+            visit,
+            q33_score,
+            q34_score,
+            total_score,
+            issues,
+            semantic_facts,
+            knowledge_suggestions=knowledge_suggestions,
+            knowledge_issues=knowledge_issues,
+            deep_review=deep_review,
+        )
+        return FormalFeedbackRenderResult(text, {"mode": "full_ai", "safe_fallback_used": False})
+    except ValueError as exc:
+        if not _is_safe_fallback_eligible(exc):
+            raise
+        # The semantic result and scores are already accepted.  Do not ask the
+        # model for another complete report when only the salesperson wording
+        # is unsafe; render from structured facts instead.
+        return FormalFeedbackRenderResult(
+            _build_deterministic_safe_feedback(visit, semantic_facts),
+            {
+                "mode": "deterministic_safe_feedback",
+                "safe_fallback_used": True,
+                "stage": "wording_safety",
+                "violation_code": _formal_feedback_violation_code(exc),
+                "deterministic_rerender": True,
+            },
+        )
+
+
+def _build_deterministic_safe_feedback(
+    visit: VisitDraftInput,
+    semantic_facts: Q34SemanticFacts,
+) -> str:
+    analysis, advice = render_backend_safe_feedback(visit, semantic_facts)
+    sales_context = {
+        "customer_type_ii": getattr(getattr(visit, "customer_type_ii", None), "value", getattr(visit, "customer_type_ii", None)),
+        "visit_date": getattr(visit, "visit_date", None),
+        "next_contact_at": getattr(visit, "next_contact_at", None),
+        "_authoritative_checks": semantic_facts.quality_audit.get("authoritative_checks", {}),
+    }
+    lines = ["", "本次拜访分析：" + analysis]
+    if advice:
+        lines.extend(["", "AI改善建议："])
+        lines.extend(f"{index}. {item}" for index, item in enumerate(advice, 1))
+    result = repair_salesperson_feedback("\n".join(lines), sales_context)
+    leaks = salesperson_feedback_hits(result)
+    if leaks:
+        raise SalespersonFeedbackSafetyError(leaks, result)
+    from .deep_review_gates import require_complete_feedback
+
+    return require_complete_feedback(
+        result,
+        needs_advice=any(section.verdict == "needs_revision" for section in semantic_facts.sections),
+    )
+
+
+def _formal_feedback_violation_code(exc: ValueError) -> str:
+    message = str(exc)
+    if "internal_leak" in message:
+        return "internal_label_leak"
+    if "hard_cadence" in message:
+        return "mandatory_tone_for_soft_advice"
+    if "post_contact_policy" in message:
+        return "contact_policy_wording_conflict"
+    if isinstance(exc, SalespersonFeedbackSafetyError):
+        return "salesperson_internal_rule_leak"
+    return "formal_feedback_rendering_failed"
+
+
+def _is_safe_fallback_eligible(exc: ValueError) -> bool:
+    """Keep optional Deep Review errors on their existing fallback path."""
+    message = str(exc)
+    return isinstance(exc, SalespersonFeedbackSafetyError) or any(
+        marker in message
+        for marker in (
+            "backend_salesperson_wording_v2_",
+            "post_contact_policy_final_conflict",
+            "formal_feedback_incomplete",
+        )
+    )
 
 
 def _apply_deep_review_continuity(

@@ -56,7 +56,7 @@ from .experimental_semantic_streaming_v22 import stream_semantic_preview_v22
 from .feedback import (
     build_front_ai_suggestions,
     build_front_ai_suggestions_with_model,
-    merge_evaluation_with_knowledge,
+    merge_evaluation_with_knowledge_with_diagnostics,
 )
 from .field_labels import display_field_name, use_field_mapping
 from .gateway import verify_admin_access, verify_q40_service_access, verify_tenant_access
@@ -729,18 +729,20 @@ def execute_evaluation(job_id: str, request: PostEvaluationRequest) -> None:
                 get_settings(),
             )
             phases["knowledge_and_rules"] = int((monotonic() - knowledge_started) * 1000)
+            formal_feedback = merge_evaluation_with_knowledge_with_diagnostics(
+                request.visit,
+                response.q33_score,
+                response.q34_score,
+                response.total_score,
+                response.issues,
+                response.semantic_facts,
+                unified_feedback,
+                deep_review=deep_review,
+            )
             response = response.model_copy(
                 update={
-                    "ai_opinion": merge_evaluation_with_knowledge(
-                        request.visit,
-                        response.q33_score,
-                        response.q34_score,
-                        response.total_score,
-                        response.issues,
-                        response.semantic_facts,
-                        unified_feedback,
-                        deep_review=deep_review,
-                    ),
+                    "ai_opinion": formal_feedback.text,
+                    "formal_feedback_diagnostics": formal_feedback.diagnostics,
                 }
             )
             formal_opinion_ready = True

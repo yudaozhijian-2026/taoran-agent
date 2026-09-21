@@ -99,7 +99,7 @@ from .semantic import HeuristicSemanticReviewer, SemanticReviewer
 from .token_usage import UsageClient
 from .token_usage import UsageExecutor as ThreadPoolExecutor
 
-PROMPT_VERSION = "TAORAN-LLM-FACTS-V5.0-EVIDENCE-BOUNDARY"
+PROMPT_VERSION = "TAORAN-LLM-FACTS-V5.1-FEEDBACK-RELIABILITY"
 PURE_AI_PROMPT_VERSION = "TAORAN-LLM-PURE-FEEDBACK-V2.4"
 KNOWLEDGE_WORDING_PROMPT_VERSION = "TAORAN-FRONT-VISIT-ANALYSIS-V4.7"
 PRECHECK_TOOL_NAME = "submit_taoran_precheck"
@@ -1058,6 +1058,9 @@ class ChatModelReviewer(SemanticReviewer):
                 "如实际已经确认但记录不足，只能用条件式表达：如实际已确认请据实补充，若尚未确认请保持真实状态并继续跟进。"
                 "模型不得创造公司未规定的新门槛。只有authoritative_checks或当前知识标准明确支持时，"
                 "才能使用必须、应当、要求、不允许等强规则措辞；普通语义建议使用可以考虑、建议进一步或可在下一次沟通中。"
+                "具体性不能通过补造事实获得：未被记录证明已经发生的事项，只能作为下一步待确认或条件式据实补充，"
+                "不得建议销售把它写成已确认、已完成、已同意、已承诺或已取得。"
+                "内部规则、Finding Code、字段键和N-xx标签只供程序判断，reason、suggestion和facts.reason不得输出。"
                 "reason、suggestion和facts.reason必须是完整句，不得以逗号、分号、冒号、顿号、左括号或未完成连接词结尾。"
                 + "sections按T、A1、O_KR、R、A2、N顺序恰好六项。T检查类型阶段目的映射；A1检查预约与方式；"
                 "O_KR只检查原目标具体性；R检查客观过程及观点依据；A2比较原目标实际达成和销售自评；N检查下一步。"
@@ -1681,6 +1684,7 @@ class ChatModelReviewer(SemanticReviewer):
         repair_original = None
         repair_targets = []
         grounding_repair = False
+        deterministic_feedback_repair_used = False
         format_repairs = 0
         transient_repairs = 0
         for attempt in range(1, (max_attempts if precheck else max_attempts + 2) + 1):
@@ -1748,7 +1752,11 @@ class ChatModelReviewer(SemanticReviewer):
                         payload = merge_repair(repair_original, payload, repair_targets)
                     except ValueError as exc:
                         raise ModelCallError(str(exc)) from None
-                parsed = self._validate(payload,data,True) if precheck else self._validate_observed(payload,data)
+                parsed, quoted = (
+                    self._validate(payload, data, True)
+                    if precheck
+                    else self._validate_observed(payload, data)
+                )
                 if deadline is not None and monotonic() > deadline:
                     raise ModelCallError("timeout")
                 if progress:
@@ -1761,7 +1769,7 @@ class ChatModelReviewer(SemanticReviewer):
                     diagnostic_save_failed=bool(progress and progress.save_error),
                     repair_targets=repair_targets,
                 ))
-                return parsed
+                return parsed, quoted
             except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
                 errors = _validation_errors(exc)
                 observed = progress.finish() if progress else {}
@@ -1785,6 +1793,26 @@ class ChatModelReviewer(SemanticReviewer):
                     repair_targets=repair_targets,
                     **telemetry,
                 ))
+                # Advice-strength, completed-fact and unresolved-boundary
+                # failures are wording-only violations of an otherwise parsed
+                # candidate.  Repair the exact affected text deterministically
+                # and re-run every existing validator.  Do not re-roll the
+                # complete formal analysis for these known safety boundaries.
+                if not precheck and not deterministic_feedback_repair_used:
+                    from .formal_feedback_repairs import repair_feedback_candidate
+
+                    deterministic = repair_feedback_candidate(
+                        payload if isinstance(payload, dict) else {},
+                        _failure_reason(exc),
+                        dict(getattr(exc, "details", {})),
+                        data,
+                    )
+                    if deterministic is not None:
+                        deterministic_feedback_repair_used = True
+                        repaired_payload, repair_audit = deterministic
+                        parsed, quoted = self._validate_observed(repaired_payload, data)
+                        parsed._semantic_gate["targeted_repair"] = repair_audit
+                        return parsed, quoted
                 from .async_opinion import transient_failure
                 if not precheck and transient_failure(exc) and transient_repairs < 2:
                     from time import sleep

@@ -58,6 +58,59 @@ def render_backend_business_feedback(
     return analysis, advice
 
 
+def render_backend_safe_feedback(
+    visit: VisitDraftInput,
+    semantic_facts: Q34SemanticFacts,
+) -> tuple[str, list[str]]:
+    """Render a conservative, deterministic fallback from accepted facts only.
+
+    It intentionally ignores model-written analysis and suggestions.  The
+    formal semantic result, evidence-derived outcomes and advice bases remain
+    the only inputs, so a wording-safety failure cannot require another model
+    call or expose an internal label.
+    """
+    audit = semantic_facts.quality_audit or {}
+    status = str(audit.get("achievement_status") or semantic_facts.purpose_achievement.value)
+    outcome = _safe_outcome(audit.get("actual_outcomes", []))
+    if status == "unresolved":
+        analysis = "当前目标描述较宽，现有记录不足以可靠判断是否已经完整达成。"
+    elif status in {"partially_achieved", "partially_supported"}:
+        analysis = "本次已经形成阶段性业务进展，仍有事项需要结合实际沟通继续明确。"
+    elif status in {"achieved", "supported"}:
+        analysis = "当前记录支持本次已经完成原定事项。"
+    else:
+        analysis = "当前记录尚未形成支持完成结论的充分事实，后续可以结合实际情况继续推进。"
+    if outcome:
+        analysis = "本次已经记录了具体业务进展：" + outcome + "。" + analysis
+
+    advice = []
+    for section in semantic_facts.sections:
+        if section.verdict != "needs_revision":
+            continue
+        item = _SAFE_ADVICE_BY_SECTION.get(section.code)
+        if item:
+            advice.append(item)
+    policy = _contact_policy(semantic_facts)
+    contact = _contact_advice(visit, semantic_facts, policy)
+    if contact:
+        advice.append(contact)
+    if not advice and any(section.verdict == "needs_revision" for section in semantic_facts.sections):
+        advice.append("可以结合实际沟通，补充本次尚未明确的具体业务信息，并据实记录结果。")
+    advice = _deduplicate_sentences(advice)
+    _assert_safe(analysis, advice)
+    return analysis, advice
+
+
+_SAFE_ADVICE_BY_SECTION = {
+    "T": "可以依据当前业务阶段和实际拜访目的，核对记录是否一致。",
+    "A1": "可以结合实际情况，核对预约和拜访方式的记录是否完整。",
+    "O_KR": "下一步可以明确希望确认的具体事项，并根据实际沟通结果据实记录。",
+    "R": "可以据实记录本次实际沟通事实和客户实际回应。",
+    "A2": "可以根据本次已经记录的实际进展，核对自评是否一致。",
+    "N": "下一步可以结合实际沟通，继续确认客户希望推进的具体事项和安排，并据实记录结果。",
+}
+
+
 def _render_analysis(
     visit: VisitDraftInput,
     facts: Q34SemanticFacts,
@@ -368,6 +421,18 @@ def _source_text(facts: Q34SemanticFacts) -> str:
 def _clean_outcome_quote(text: str) -> str:
     value = re.sub(r"^【[^】]{1,80}】", "", str(text or "").strip())
     return value.strip("，,；;。 ")
+
+
+def _safe_outcome(values: Any) -> str:
+    if not isinstance(values, list):
+        return ""
+    for item in values:
+        if not isinstance(item, dict):
+            continue
+        quote = _clean_outcome_quote(str(item.get("quote") or ""))
+        if quote and not _INTERNAL_OR_JUDGING.search(quote):
+            return quote
+    return ""
 
 
 def _normalize_sentence(text: str) -> str:

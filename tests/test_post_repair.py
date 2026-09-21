@@ -101,7 +101,15 @@ def test_real_validator_and_section_only_retry(tmp_path, monkeypatch, error):
     attempts = []
     try:
         parsed, _ = r._analyze(v, False, attempts)
-        assert calls == ([False, True] if error == "requirement" else [False])
+        # Advice-strength failures are repaired locally and revalidated.  They
+        # no longer trigger a second complete model response by chance.
+        assert calls == [False]
+        if error == "requirement":
+            repaired_section = next(section for section in parsed.sections if section.code == target)
+            assert "必须" not in repaired_section.suggestion
+            assert parsed._semantic_gate["targeted_repair"]["violation_code"] == (
+                "post_requirement_provenance_conflict"
+            )
         assert parsed.facts.purpose_achievement == original["facts"]["purpose_achievement"]
         if error != "requirement":
             assert parsed._semantic_gate['observation_count'] > 0

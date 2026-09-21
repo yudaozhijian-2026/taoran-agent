@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from .evidence_standard import load_quality_evidence_standard
 from .feedback import (
-    build_evaluation_feedback,
+    build_evaluation_feedback_with_diagnostics,
     build_precheck_feedback,
 )
 from .field_labels import display_field_name
@@ -421,7 +421,7 @@ class TaoranAgent:
             for issue in issues
         ):
             recommendation = "manager_review"
-        ai_opinion = build_evaluation_feedback(
+        formal_feedback = build_evaluation_feedback_with_diagnostics(
             visit,
             q33.score,
             q34.score,
@@ -460,8 +460,9 @@ class TaoranAgent:
             issues=issues,
             manager_coaching_suggestions=self._manager_suggestions(issues),
             recommended_training_projects=self._training_projects(issues),
-            ai_opinion=ai_opinion,
+            ai_opinion=formal_feedback.text,
             semantic_facts=semantic_facts,
+            formal_feedback_diagnostics=formal_feedback.diagnostics,
             writeback=WritebackResult(status="skipped"),
             input_snapshot_hash=snapshot_hash,
             rule_version=TOTAL_RULE_VERSION,
