@@ -1,0 +1,22 @@
+{
+  "release_version": "1.0.6rc58",
+  "scope": "isolated-submit-test-only",
+  "git_branch": "codex/deep-review-sample-fix-20260921",
+  "git_commit": "6f35645279626405620f01bea3dcf1caf4dd7745",
+  "git_tag": "submit-test-v1.0.6rc58-20260921",
+  "image": "taoran-submit-test:1.0.6rc58-20260921",
+  "image_id": "sha256:4c818b5d0257b429117d50e683a84980db9957ca1ed69ce514df9e1bf8635798",
+  "container": "taoran-submit-test-agent",
+  "prompt_version": "TAORAN-LLM-FACTS-V5.0-EVIDENCE-BOUNDARY",
+  "policy_version": "TAORAN-POST-REVIEW-20260921-EVIDENCE-BOUNDARY-V2",
+  "knowledge_snapshot_hash": "b25fcabc5345fd70ba0e41d4b05698ca1265697be2b6537737686a13485774a8",
+  "database_integrity": "ok",
+  "active_jobs": 0,
+  "restart_count": 0,
+  "production_changed": false,
+  "production_actual_version": "1.0.10",
+  "superseded_after_validation": true,
+  "current_isolated_server_version_at_final_check": "1.0.6rc59",
+  "rollback_backup": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc58-20260921-20260921-145300",
+  "server_manifest": "/TAORAN agent/isolated-submit-test-20260916/releases/1.0.6rc58-20260921/deployment.json"
+}
