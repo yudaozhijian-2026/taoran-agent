@@ -173,3 +173,10 @@ def test_projection_does_not_change_q33_q34_or_total():
     assert req.model_dump(mode="json") == before
     assert (baseline.q33_score, baseline.q34_score, baseline.total_score) == (
         after.q33_score, after.q34_score, after.total_score)
+
+
+def test_missing_contact_time_does_not_invalidate_specific_next_result():
+    v = visit(next_action_expected_result="确认设备运行情况与客户使用反馈", next_contact_at=None)
+    result = project(v, findings=[{"dimension": "N", "conclusion": "needs_revision",
+                     "statement": "下一步主题衔接但联系时间未明确，请补充日期。"}])
+    assert [s["key"] for s in result["suggestions"]] == ["contact"]

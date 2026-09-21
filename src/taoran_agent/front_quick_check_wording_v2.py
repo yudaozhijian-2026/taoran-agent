@@ -9,7 +9,7 @@ import re
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from .front_v46.experimental_business_semantic_state import build_business_state
+from .front_v46.experimental_business_semantic_state import classify_field_state
 from .record_contract import visit_contract
 
 VERSION = "front-quick-check-wording-v2-20260921"
@@ -108,14 +108,17 @@ def project(visit, *, front_review: dict | None = None, validated_analysis: str 
             sections.append({"code": finding.get("dimension"), "verdict": finding.get("conclusion"),
                              "reason": finding.get("statement", ""), "evidence": []})
     by_code = {s.get("code"): s for s in sections}
-    state = build_business_state(raw)
+    state = {"field_states": {field: classify_field_state(field, raw.get(field))
+                              for field in ("expected_key_result", "next_action_expected_result")}}
     goal = str(raw.get("expected_key_result") or "").strip()
     goal_problem = bool(_VAGUE.fullmatch(goal)) or (
         by_code.get("O_KR", {}).get("verdict") == "needs_revision"
         and bool(re.search(r"宽泛|笼统|不可验证|不具体|无法验证|无法衡量|不够具体|较宽|难以验证", by_code["O_KR"].get("reason", "")))
     )
     goal_problem = goal_problem or state["field_states"].get("expected_key_result") in {"missing", "placeholder"}
-    alignment = dict(state["self_assessment_alignment"])
+    # This view does not re-evaluate goal achievement with lexical heuristics.
+    # Only explicit validated findings may resolve an outcome.
+    alignment = {"computed_goal_summary": "unresolved", "alignment": "not_assessable"}
     # Advice-only workers may omit section findings. Read only explicit outcome
     # assertions from their independently validated analysis, not from advice.
     # Unknown wording stays unresolved; broad goals cannot acquire an outcome.
@@ -230,7 +233,8 @@ def project(visit, *, front_review: dict | None = None, validated_analysis: str 
             ["next_action_expected_result"])
 
     elif by_code.get("N", {}).get("verdict") == "needs_revision" and re.search(
-        r"笼统|宽泛|不具体|未明确|衔接|不匹配", by_code["N"].get("reason", "")
+        r"不衔接|未承接|不匹配|(?:期望结果|关键结果|下一步目的).{0,15}(?:笼统|宽泛|不具体|未明确)",
+        by_code["N"].get("reason", "")
     ):
         add("next_result", "请核对下一步是否承接本次实际进展，并按已有销售计划明确希望取得的具体结果；还未确定的安排可以如实说明。", 3,
             "record_fact", basis("next_action_expected_result") + facts, ["next_action_expected_result"])

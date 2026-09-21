@@ -12,15 +12,15 @@ import urllib.request
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path("/TAORAN agent/isolated-submit-test-20260916")
-RELEASE_NAME = "1.0.6rc61-20260921"
+RELEASE_NAME = "1.0.6rc62-20260921"
 RELEASE = ROOT / "releases" / RELEASE_NAME
 BACKUP = ROOT / "backups" / ("before-" + RELEASE_NAME + "-front-wording-v2")
 COMPOSE = ROOT / "compose.yaml"
 DATABASE = ROOT / "data" / "taoran_agent.db"
 CONTAINER = "taoran-submit-test-agent"
-OLD_IMAGE = "taoran-submit-test:1.0.6rc60-20260921"
-OLD_IMAGE_ID = "sha256:4b09ee0968f0936534b2f60dfc1ff6d7b77f10b68e91512f200eded9c02271fc"
-NEW_IMAGE = "taoran-submit-test:1.0.6rc61-20260921"
+OLD_IMAGE = "taoran-submit-test:1.0.6rc61-20260921"
+OLD_IMAGE_ID = "sha256:17066af1080306dfdabe9672faf6c95a7c47924d36eca44da2238f24b0a3ec3d"
+NEW_IMAGE = "taoran-submit-test:1.0.6rc62-20260921"
 NEW_REVISION = sys.argv[2]
 
 
@@ -79,7 +79,7 @@ def sha256(path):
 def assert_expected_current():
     info = inspect_container(CONTAINER)
     assert info["Config"]["Image"] == OLD_IMAGE, info["Config"]["Image"]
-    # rc60 inherited an older base-image label; pin the verified image content instead.
+    # Pin the immediately preceding isolated candidate by verified image content.
     assert info["Image"] == OLD_IMAGE_ID, info["Image"]
     assert info["State"]["Running"]
     assert info["State"]["Health"]["Status"] == "healthy"
@@ -113,7 +113,7 @@ def switch():
     current = assert_expected_current()
     subprocess.check_call([
         "docker", "build", "--pull=false",
-        "--label", "org.opencontainers.image.version=1.0.6rc61",
+        "--label", "org.opencontainers.image.version=1.0.6rc62",
         "--label", "org.opencontainers.image.revision=" + NEW_REVISION,
         "-t", NEW_IMAGE, ".",
     ], cwd=RELEASE)
@@ -184,8 +184,8 @@ def verify():
         "https://taoran-test.yudaozhijian.top/health", timeout=15
     ) as response:
         external = json.loads(response.read())
-    assert internal["release_version"] == "1.0.6rc61"
-    assert external["release_version"] == "1.0.6rc61"
+    assert internal["release_version"] == "1.0.6rc62"
+    assert external["release_version"] == "1.0.6rc62"
     before = json.loads((RELEASE / "containers-before.json").read_text())
     after = container_snapshot()
     for name, old in before.items():
@@ -194,9 +194,9 @@ def verify():
         now = after[name]
         assert now == old, (name, old, now)
     manifest = {
-        "release_version": "1.0.6rc61",
+        "release_version": "1.0.6rc62",
         "git_commit": NEW_REVISION,
-        "git_tag": "submit-test-v1.0.6rc61-20260921",
+        "git_tag": "submit-test-v1.0.6rc62-20260921",
         "image": NEW_IMAGE,
         "image_id": info["Image"],
         "container": CONTAINER,
