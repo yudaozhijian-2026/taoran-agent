@@ -101,9 +101,10 @@ def test_real_validator_and_section_only_retry(tmp_path, monkeypatch, error):
     attempts = []
     try:
         parsed, _ = r._analyze(v, False, attempts)
-        assert calls == [False]
+        assert calls == ([False, True] if error == "requirement" else [False])
         assert parsed.facts.purpose_achievement == original["facts"]["purpose_achievement"]
-        assert parsed._semantic_gate['observation_count'] > 0
+        if error != "requirement":
+            assert parsed._semantic_gate['observation_count'] > 0
         ref=parsed._semantic_gate['diagnostic_evidence_id']
         saved=json.loads((tmp_path/'nested/model-failure-evidence'/(ref+'.json')).read_text())
         assert saved['details']['policy']=='observe_only'

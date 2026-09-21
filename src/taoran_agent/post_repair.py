@@ -8,7 +8,16 @@ from .post_review_policy import POLICY
 
 
 def targets_for_error(code, details):
-    if code in {"unsupported_company_requirement", "post_feedback_conflict"}:
+    if code in {
+        "unsupported_company_requirement",
+        "post_feedback_conflict",
+        "post_advice_truthfulness_conflict",
+        "post_requirement_provenance_conflict",
+        "post_achievement_boundary_conflict",
+        "post_outcome_preservation_conflict",
+        "post_commitment_boundary_conflict",
+        "post_feedback_incomplete",
+    }:
         return sorted({hit["target"] for hit in details.get("hits", [])})
     if code == "assessment_fact_conflict":
         return ["A2"]
@@ -88,5 +97,13 @@ def repair_messages(original_messages, original, targets, details):
     if "authoritative_checks" in user["original_input"]:
         system += "\n本次正式解释口径：" + POLICY
         system += "\n必需条件与可选支撑：" + json.dumps(POST_EVIDENCE_GUIDANCE,ensure_ascii=False)
+    system += (
+        "\n不可评估不等于未达到；目标宽泛时保留原记录中已取得的具体成果。"
+        "客户对未来动作的承诺是有效进展，但不是该动作已完成。"
+        "建议只能记录真实发生的事实；没有证据时不得要求补写‘已确认’等已发生结论。"
+        "只有确定性规则或当前生效知识标准才能使用‘必须、应当、要求、不允许’等强规则用语；"
+        "普通语义建议使用‘可以考虑、建议进一步、可在下一次沟通中’。"
+        "reason和suggestion必须为完整句，不能以逗号、分号、冒号、顿号或未完连接词结尾。"
+    )
     return [{"role": "system", "content": system},
             {"role": "user", "content": json.dumps(user, ensure_ascii=False, separators=(",", ":"))}]

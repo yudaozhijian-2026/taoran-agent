@@ -11,10 +11,10 @@ from time import monotonic
 from typing import Any
 
 import httpx
-from .token_usage import UsageClient
 
 from .config import Settings
 from .models import VisitDraftInput
+from .token_usage import UsageClient
 
 _OPEN = "<USER_FEEDBACK>"
 _CLOSE = "</USER_FEEDBACK>"

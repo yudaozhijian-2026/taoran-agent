@@ -798,6 +798,23 @@ def build_evaluation_feedback(
         lines.extend(["", "本次拜访分析：" + analysis_text])
         # Do not present heuristic fallback advice as completed AI analysis.
         return salesperson_wording("\n".join(lines), sales_context)
+    from .deep_review_gates import preserve_outcomes
+
+    audit = semantic_facts.quality_audit
+    analysis_text = preserve_outcomes(
+        analysis_text,
+        achievement_status=str(
+            audit.get("achievement_status")
+            or semantic_facts.purpose_achievement.value
+        ),
+        outcomes=[
+            item for item in audit.get("actual_outcomes", [])
+            if isinstance(item, dict)
+        ],
+        source_text=str(
+            audit.get("authoritative_checks", {}).get("source_text") or ""
+        ),
+    )
     advice_items = _build_post_advice(
         issues,
         semantic_facts,
@@ -830,7 +847,13 @@ def build_evaluation_feedback(
     leaks = salesperson_feedback_hits(result)
     if leaks:
         raise SalespersonFeedbackSafetyError(leaks, result)
-    return result
+    from .deep_review_gates import require_complete_feedback
+
+    needs_advice = any(
+        section.verdict == "needs_revision"
+        for section in semantic_facts.sections
+    )
+    return require_complete_feedback(result, needs_advice=needs_advice)
 
 
 def _apply_deep_review_continuity(
@@ -863,7 +886,7 @@ def _apply_deep_review_continuity(
             suggestion = _clean_post_text(section.suggestion)
             if suggestion and not any(_advice_is_similar(suggestion, item) for item in advice):
                 advice.append(suggestion)
-    return "".join(analysis_parts), advice
+    return _join_sentences(analysis_parts), advice
 
 
 def _build_post_advice(

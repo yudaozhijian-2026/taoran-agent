@@ -22,6 +22,22 @@ class JiandaoyunWritebackError(RuntimeError):
 
 
 def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
+    from .deep_review_gates import require_complete_feedback
+
+    opinion = re.sub(
+        r"^\s*【AI反馈意见】\s*", "", response.ai_opinion
+    ).strip()
+    if (
+        response.semantic_facts.provider.startswith("llm-")
+        and response.semantic_facts.status == "completed"
+    ):
+        opinion = require_complete_feedback(
+            opinion,
+            needs_advice=any(
+                section.verdict == "needs_revision"
+                for section in response.semantic_facts.sections
+            ),
+        )
     return {
         "evaluation_status": response.status,
         "q33_score": response.q33_score,
@@ -33,7 +49,7 @@ def evaluation_writeback_values(response: EvaluationResponse) -> dict[str, Any]:
         "effective_visit_recommendation": response.count_as_effective_visit_recommendation,
         # Jiandaoyun normalizes surrounding whitespace in textarea values.
         # Normalize the delivery value, not the substantive analysis or score.
-        "ai_opinion": re.sub(r"^\s*【AI反馈意见】\s*", "", response.ai_opinion).strip(),
+        "ai_opinion": opinion,
         "ai_suggestions": "\n".join(response.manager_coaching_suggestions),
         "rule_version": response.rule_version,
         "agent_version": response.agent_version,

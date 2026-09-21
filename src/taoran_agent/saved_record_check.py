@@ -9,8 +9,8 @@ from uuid import uuid4
 from fastapi import BackgroundTasks, HTTPException
 
 from .jiandaoyun_api import JiandaoyunReadError, find_jiandaoyun_record_by_field
-from .token_usage import attribution
 from .models import JiandaoyunSubmittedEvent, PostEvaluationRequest
+from .token_usage import attribution
 
 
 def launch(request, tenant_id, api_key):
