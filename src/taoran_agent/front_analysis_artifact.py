@@ -207,6 +207,41 @@ def _suggestion_dimension(text: str) -> str | None:
     return None
 
 
+def _supplement_findings_from_advice(
+    findings: list[FrontFinding],
+    advice_items: list[str],
+) -> list[FrontFinding]:
+    """Keep Deep Review usable when the final worker has no ``front_review``.
+
+    The two-stage Quick Check always exposes validated user-facing advice, but
+    older/fallback final workers do not necessarily return the optional
+    structured review.  A dimension-specific improvement suggestion is already
+    a validated Front conclusion that the dimension needs revision.  Persist a
+    minimal finding for that conclusion instead of making the backend treat
+    every formal dimension as an unrelated new finding.
+    """
+    result = list(findings)
+    existing = {item.dimension for item in result}
+    grouped: dict[str, list[str]] = {}
+    for text in advice_items:
+        dimension = _suggestion_dimension(text)
+        if dimension and dimension not in existing:
+            grouped.setdefault(dimension, []).append(text)
+    for index, (dimension, statements) in enumerate(grouped.items(), 1):
+        statement = "；".join(dict.fromkeys(statements))[:600]
+        result.append(
+            FrontFinding(
+                finding_id=f"front-advice-{dimension}-{index}",
+                dimension=dimension,
+                finding_type="gap",
+                conclusion="needs_revision",
+                statement=statement,
+                confidence="medium",
+            )
+        )
+    return result[:24]
+
+
 def build_artifact(
     *,
     visit: VisitDraftInput,
@@ -222,7 +257,10 @@ def build_artifact(
 ) -> FrontAnalysisArtifact:
     analysis, advice_items, parsed_confirmations = _split_tail(feedback_text)
     review = front_review or {}
-    findings = _section_findings(review)
+    findings = _supplement_findings_from_advice(
+        _section_findings(review),
+        advice_items,
+    )
     finding_by_dimension = {item.dimension: item.finding_id for item in findings}
     suggestions = []
     for index, text in enumerate(advice_items, 1):

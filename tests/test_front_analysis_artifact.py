@@ -322,6 +322,34 @@ def test_builder_uses_validated_result_and_excludes_workflow_footer():
     assert built.findings[0].dimension == "O_KR"
 
 
+def test_builder_derives_minimal_findings_when_front_review_is_absent():
+    built = build_artifact(
+        visit=visit(),
+        tenant_id="tenant-a",
+        user_id="sales-a",
+        check_id="qc-advice-findings",
+        quick_check_input_hash="c" * 64,
+        source_record_id="record-a",
+        feedback_text=(
+            "本次拜访分析：客户确认已预留预算。\n\n"
+            "AI改善建议：\n"
+            "1. 关键结果尚未说明客户审批负责人，请补充。\n"
+            "2. 请补充下一次联系时间。"
+        ),
+        decision_ledger={"version": "ledger-v2"},
+        front_review=None,
+        policy_version="front-policy",
+    )
+    by_dimension = {item.dimension: item for item in built.findings}
+    assert set(by_dimension) == {"O_KR", "N"}
+    assert all(item.conclusion == "needs_revision" for item in by_dimension.values())
+    assert all(item.finding_type == "gap" for item in by_dimension.values())
+    assert {item.dimension: item.finding_id for item in built.suggestions} == {
+        "O_KR": by_dimension["O_KR"].finding_id,
+        "N": by_dimension["N"].finding_id,
+    }
+
+
 def test_front_context_never_changes_scores():
     item = visit(submitted_at=datetime(2026, 9, 20, 13, tzinfo=UTC))
     agent = TaoranAgent()
