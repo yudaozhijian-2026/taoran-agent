@@ -12,15 +12,15 @@ import urllib.request
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path("/TAORAN agent/isolated-submit-test-20260916")
-RELEASE_NAME = "1.0.6rc63-20260921"
+RELEASE_NAME = "1.0.6rc63-r2-20260921"
 RELEASE = ROOT / "releases" / RELEASE_NAME
 BACKUP = ROOT / "backups" / ("before-" + RELEASE_NAME + "-front-wording-v21")
 COMPOSE = ROOT / "compose.yaml"
 DATABASE = ROOT / "data" / "taoran_agent.db"
 CONTAINER = "taoran-submit-test-agent"
-OLD_IMAGE = "taoran-submit-test:1.0.6rc62-20260921"
-OLD_IMAGE_ID = "sha256:1c2e1b4987b064753c826a27948d3d1b9042c50c44a4f483777e4af7b2e14658"
-NEW_IMAGE = "taoran-submit-test:1.0.6rc63-20260921"
+OLD_IMAGE = "taoran-submit-test:1.0.6rc63-20260921"
+OLD_IMAGE_ID = "sha256:887c2832dd2d3be0f5574f8674e612298433421c98fd4736a45ac3ecc10ea67e"
+NEW_IMAGE = "taoran-submit-test:1.0.6rc63-r2-20260921"
 NEW_REVISION = sys.argv[2]
 
 
@@ -196,7 +196,7 @@ def verify():
     manifest = {
         "release_version": "1.0.6rc63",
         "git_commit": NEW_REVISION,
-        "git_tag": "submit-test-v1.0.6rc63-20260921",
+        "git_tag": "submit-test-v1.0.6rc63-r2-20260921",
         "image": NEW_IMAGE,
         "image_id": info["Image"],
         "container": CONTAINER,
