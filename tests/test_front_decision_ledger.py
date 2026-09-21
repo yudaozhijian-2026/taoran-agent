@@ -6,6 +6,8 @@ from taoran_agent.front_v46.decision_ledger import (
 from taoran_agent.front_v46.experimental_record_state import boundary_issues
 from taoran_agent.front_v46.experimental_semantic_streaming_v22 import (
     _interactive_preview_violations,
+    _interactive_snapshot,
+    _repair_unrecorded_contact_claim,
     _supported_commitment,
 )
 from taoran_agent.front_v46.joint_consistency import errors, repair_advice
@@ -107,6 +109,41 @@ def test_missing_contact_date_claim_still_requires_contact_scope():
     context = visit(next_contact_at=None).model_dump(mode="json")
     issues = boundary_issues("尚未确定下一次联系时间。", context)
     assert any(item.get("field") == "next_contact_at" for item in issues)
+
+
+def test_process_fact_allows_recorded_no_contact_agreement_when_date_field_empty():
+    current = visit(
+        next_contact_at=None,
+        process_description=(
+            "客户确认设备安装位置与电源准备均已完成，"
+            "双方尚未约定下一次联系日期。"
+        ),
+    )
+    context = current.model_dump(mode="json")
+    text = "客户确认准备工作已完成，双方尚未约定下一次联系日期。"
+    assert not boundary_issues(text, context)
+
+
+def test_unsupported_no_contact_inference_is_locally_normalized():
+    current = visit(next_contact_at=None)
+    snapshot = _interactive_snapshot(current, build(current))
+    repaired, changes = _repair_unrecorded_contact_claim(
+        "客户确认准备工作已完成，双方尚未约定下一次联系日期。",
+        snapshot,
+    )
+    assert "当前记录尚未填写下一次联系客户时间" in repaired
+    assert "双方尚未约定" not in repaired
+    assert changes == ["missing_contact_inference_normalized"]
+
+
+def test_recorded_no_contact_fact_is_never_rewritten():
+    current = visit(
+        next_contact_at=None,
+        process_description="客户确认准备工作已完成，双方尚未约定下一次联系日期。",
+    )
+    snapshot = _interactive_snapshot(current, build(current))
+    text = "双方尚未约定下一次联系日期。"
+    assert _repair_unrecorded_contact_claim(text, snapshot) == (text, [])
 
 
 def test_recorded_commitment_paraphrase_keeps_business_payload():

@@ -110,6 +110,20 @@ _DOWNGRADE = re.compile(r'(?:目标|代收|收货|采购沟通).{0,18}(?:未达�
 _TRANSFER_DONE = re.compile(r'(?:已|已经)(?:将|把)?[^，,。；]{0,16}(?:转交|转发|转告|发给|反馈给)')
 
 
+def _recorded_missing_contact_agreement(state):
+    """Whether process/customer text explicitly records no next-contact agreement."""
+    return any(
+        fact.get('source_field') in {'process_description', 'customer_feedback'}
+        and fact.get('record_status') == 'negative_fact'
+        and re.search(
+            r'(?:未|没有|尚未)(?:约定|安排|确定)'
+            r'[^，,。；;]{0,8}(?:联系|拜访)(?:时间|日期)',
+            str(fact.get('text') or ''),
+        )
+        for fact in state.get('facts', [])
+    )
+
+
 def validate_invariants(text, state, *, require_goal_coverage=False, bindings=None):
     from .experimental_rendering_binding import text_invariants, validate_bindings
     errors = text_invariants(text, state) + unrecorded_denials(text, state)
@@ -176,11 +190,12 @@ def validate_invariants(text, state, *, require_goal_coverage=False, bindings=No
             fail('CROSS_GOAL_CONTAMINATION', sentence, goal_ids=[g['goal_id'] for g in receipt])
         if supported and align['alignment'] == 'aligned' and re.search(r'自评.{0,10}部分.{0,8}但', sentence) and re.search(r'不足以证明|未实现|未达成', sentence):
             fail('CROSS_GOAL_CONTAMINATION', sentence, goal_ids=[g['goal_id'] for g in supported])
-        if fields.get('next_contact_at') == 'missing' and re.search(
+        if (fields.get('next_contact_at') == 'missing' and not _recorded_missing_contact_agreement(state)
+                and re.search(
                 r'(?:未|没有|尚未)(?:约定|安排|确定)'
                 r'[^\uff0c,。；;]{0,8}(?:联系|拜访)(?:时间|日期)',
                 sentence,
-        ) and not _UNCERTAIN.search(sentence):
+        ) and not _UNCERTAIN.search(sentence)):
             fail('NOT_RECORDED_AS_NEGATIVE_FACT', sentence, field='next_contact_at')
     if bindings is None and require_goal_coverage and align['computed_goal_summary'] == 'partially_achieved':
         # Check only the recognizable supported/unresolved relation; this is not
