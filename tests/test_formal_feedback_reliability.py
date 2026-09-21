@@ -112,6 +112,43 @@ def test_deterministic_repair_preserves_facts_evidence_and_unrelated_sections(tm
         subject.close()
 
 
+def test_deterministic_repair_handles_chained_known_violations_without_second_model_call(
+    tmp_path, monkeypatch,
+):
+    subject = reviewer(tmp_path)
+    record = visit()
+    payload = valid_payload(subject, record)
+    next(item for item in payload["sections"] if item["code"] == "N")["suggestion"] = (
+        "同时可在期望结果中补充下次需要收集的具体信息方向，使下一步行动更加明确。"
+    )
+    next(item for item in payload["sections"] if item["code"] == "O_KR")["suggestion"] = (
+        "建议在关键结果中补充本次需要收集的具体信息类别，例如客户主营产品方向、采购需求或供应商资质要求等，以便后续验证目标达成情况。"
+    )
+    calls = []
+
+    def request(*args, **kwargs):
+        lease = args[3]
+        calls.append(kwargs.get("repair", False))
+        try:
+            return deepcopy(payload), {}
+        finally:
+            lease.release()
+
+    monkeypatch.setattr(subject, "_request", request)
+    try:
+        parsed, _ = subject._analyze(record, False)
+        assert calls == [False]
+        assert [audit["violation_code"] for audit in parsed._semantic_gate["targeted_repairs"]] == [
+            "post_advice_truthfulness_conflict",
+            "post_requirement_provenance_conflict",
+        ]
+        repaired = {item.code: item.suggestion for item in parsed.sections}
+        assert repaired["N"].startswith("下一步可以")
+        assert repaired["O_KR"].startswith("下一步可以")
+    finally:
+        subject.close()
+
+
 def test_unresolved_feedback_keeps_the_boundary_without_changing_score_facts(tmp_path, monkeypatch):
     subject = reviewer(tmp_path)
     record = visit()

@@ -1796,8 +1796,10 @@ class ChatModelReviewer(SemanticReviewer):
                 # Advice-strength, completed-fact and unresolved-boundary
                 # failures are wording-only violations of an otherwise parsed
                 # candidate.  Repair the exact affected text deterministically
-                # and re-run every existing validator.  Do not re-roll the
-                # complete formal analysis for these known safety boundaries.
+                # and re-run every existing validator.  A candidate can contain
+                # more than one independent known violation: each pass reveals
+                # the next existing gate, without making another model request
+                # or changing facts, verdicts, evidence, goal reviews or scores.
                 if not precheck and not deterministic_feedback_repair_used:
                     from .formal_feedback_repairs import repair_feedback_candidate
 
@@ -1810,9 +1812,41 @@ class ChatModelReviewer(SemanticReviewer):
                     if deterministic is not None:
                         deterministic_feedback_repair_used = True
                         repaired_payload, repair_audit = deterministic
-                        parsed, quoted = self._validate_observed(repaired_payload, data)
-                        parsed._semantic_gate["targeted_repair"] = repair_audit
-                        return parsed, quoted
+                        repair_audits = [repair_audit]
+                        seen_repairs = {
+                            (repair_audit["violation_code"], tuple(repair_audit["targets"]))
+                        }
+                        # There are four supported gate types.  Each gate returns
+                        # all of its affected targets in one pass, so this bound
+                        # accepts a complete deterministic repair session while
+                        # preventing an accidental non-converging loop.
+                        for _ in range(4):
+                            try:
+                                parsed, quoted = self._validate_observed(repaired_payload, data)
+                            except (ModelCallError, ValueError, KeyError, TypeError) as repair_exc:
+                                next_repair = repair_feedback_candidate(
+                                    repaired_payload,
+                                    _failure_reason(repair_exc),
+                                    dict(getattr(repair_exc, "details", {})),
+                                    data,
+                                )
+                                if next_repair is None:
+                                    raise
+                                repaired_payload, next_audit = next_repair
+                                repair_key = (
+                                    next_audit["violation_code"],
+                                    tuple(next_audit["targets"]),
+                                )
+                                if repair_key in seen_repairs:
+                                    raise
+                                seen_repairs.add(repair_key)
+                                repair_audits.append(next_audit)
+                            else:
+                                parsed._semantic_gate["targeted_repair"] = repair_audits[0]
+                                if len(repair_audits) > 1:
+                                    parsed._semantic_gate["targeted_repairs"] = repair_audits
+                                return parsed, quoted
+                        raise ModelCallError("post_feedback_repair_not_converged")
                 from .async_opinion import transient_failure
                 if not precheck and transient_failure(exc) and transient_repairs < 2:
                     from time import sleep
