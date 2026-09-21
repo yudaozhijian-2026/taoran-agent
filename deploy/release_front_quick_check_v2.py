@@ -9,7 +9,7 @@ import subprocess
 import sys
 import time
 import urllib.request
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 ROOT = pathlib.Path("/TAORAN agent/isolated-submit-test-20260916")
 RELEASE_NAME = "1.0.6rc61-20260921"
@@ -211,7 +211,7 @@ def verify():
         "other_containers_unchanged": True,
         "production_container_unchanged": True,
         "rollback_path": str(BACKUP),
-        "verified_at": datetime.now(UTC).isoformat(),
+        "verified_at": datetime.now(timezone.utc).isoformat(),  # noqa: UP017 - deployment host is Python 3.8
     }
     (RELEASE / "deployment.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2)
