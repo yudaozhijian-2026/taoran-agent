@@ -2974,10 +2974,15 @@ def _quick_check_run(
     user_id: str | None = None,
 ) -> dict[str, Any]:
     from .content_cache import run_with_knowledge_basis
+    from .front_quick_check_wording_v2 import enabled as wording_v2_enabled
+    from .front_quick_check_wording_v2 import project as project_front_wording
     from .front_v46.decision_ledger import build as build_decision_ledger
     from .front_v46.decision_ledger import with_validated_analysis
     from .front_v46.joint_consistency import errors as joint_consistency_errors
     from .front_v46.joint_consistency import repair_advice as repair_joint_advice
+
+    display_v2 = wording_v2_enabled(settings) and hasattr(canonical_request.visit, "model_dump")
+    analysis_events = Queue() if display_v2 else events
     started = monotonic()
     decision_ledger = (
         build_decision_ledger(canonical_request.visit)
@@ -2999,11 +3004,20 @@ def _quick_check_run(
         canonical_request.visit,
         settings,
         knowledge_basis,
-        events=events,
+        events=analysis_events,
         **preview_kwargs,
     )
     analysis_elapsed = int((monotonic() - analysis_started) * 1000)
     validated_analysis = str(analysis_stage.get("feedback_text") or "").strip()
+    if display_v2:
+        if validated_analysis:
+            display = project_front_wording(
+                canonical_request.visit, validated_analysis=validated_analysis,
+            )
+            events.put({"type": "preview_replace", "text": display["analysis"]})
+            events.put({"type": "preview_complete", "status": "completed"})
+        else:
+            events.put({"type": "preview_complete", "status": "unavailable"})
 
     # Stage 2 starts only after Stage 1 has finished.  The existing final
     # reviewer remains the authority for suggestions and confirmations; its
@@ -3039,7 +3053,7 @@ def _quick_check_run(
         # third model request for ``validated_analysis_missing``.
         if final_analysis and not str(shared_ledger.get("validated_analysis") or "").strip():
             shared_ledger = with_validated_analysis(decision_ledger, final_analysis)
-        if not validated_analysis and final_analysis:
+        if not display_v2 and not validated_analysis and final_analysis:
             events.put({"type": "preview_replace", "text": final_analysis})
             events.put({"type": "preview_complete", "status": "completed"})
         final_suggestion = _quick_check_final_suggestion(final.get("feedback_text", ""))
@@ -3155,6 +3169,7 @@ def _quick_check_run(
         # A few internal compatibility tests call this worker with a deliberately
         # minimal namespace.  Persist an artifact only for a real API request;
         # the quick-check result itself remains usable for those lightweight calls.
+        front_findings = []
         request_context = getattr(canonical_request, "context", None)
         if (
             request_context is not None
@@ -3190,6 +3205,23 @@ def _quick_check_run(
                 ),
             )
             final["front_analysis_artifact_id"] = artifact.artifact_id
+            front_findings = [item.model_dump(mode="json") for item in artifact.findings]
+        if display_v2:
+            # The full original artifact above is authoritative for Deep Review.
+            # This projection changes only the user-visible stream/poll result.
+            display = project_front_wording(
+                canonical_request.visit, front_review=final.get("front_review"),
+                validated_analysis=final_analysis, findings=front_findings,
+            )
+            final_analysis = display["analysis"]
+            final_suggestion = display["advice"]
+            final["feedback_text"] = display["feedback_text"]
+            final["final_feedback_hash"] = hashlib.sha256(
+                display["feedback_text"].encode()
+            ).hexdigest()
+            final["front_wording_v2"] = display
+            events.put({"type": "preview_replace", "text": final_analysis})
+            events.put({"type": "preview_complete", "status": "completed"})
         events.put({"type": "suggestion_replace", "text": final_suggestion})
         events.put({"type": "suggestion_complete", "status": "completed"})
         preview = {
