@@ -24,6 +24,7 @@ _INTERNAL_OR_JUDGING = re.compile(
 )
 _HARD_CADENCE = re.compile(
     r"(?:必须|确保|应当|须|需要)[^，。；\n]{0,24}跨(?:北京时间)?(?:自然)?(?:月|季度)|"
+    r"(?:请|建议)[^，。；\n]{0,36}(?:联系|日期|时间)[^，。；\n]{0,24}跨(?:北京时间)?(?:自然)?(?:月|季度)|"
     r"(?:潜力客户|目标客户)[^，。；\n]{0,18}(?:必须|要求|需)[^，。；\n]{0,18}跨(?:北京时间)?(?:自然)?(?:月|季度)"
 )
 _PASS_ONLY = re.compile(
@@ -97,7 +98,6 @@ def _businessize_goal_review(
     text = _normalize_sentence(reason)
     if not text:
         return ""
-
     broad = bool(re.search(r"(?:过于|比较)?宽泛|含糊|无法(?:核验|评估|判断)", text))
     if broad:
         outcome = next(
@@ -117,7 +117,7 @@ def _businessize_goal_review(
 
     # Prefer the factual process/result portion over a mechanical goal opening.
     body = re.sub(
-        r"^(?:原目标|原定目标|原定关键结果|原目标要求|原目标包含)(?:为|是|要求)?[^，。]{0,160}[，,]",
+        r"^(?:原目标|原定目标|原定关键结果|原目标要求|原目标包含)(?:为|是|要求)?[^，。]{0,160}[，,。]",
         "",
         text,
         count=1,
@@ -269,6 +269,17 @@ def _businessize_advice(text: str) -> str:
     value = value.replace("下一步逻辑不完整", "下一步安排还不够明确")
     value = value.replace("客户共识不足", "双方尚未就下一步安排形成明确约定")
     value = re.sub(r"(?:以便|从而)?符合(?:潜力客户|目标客户|商机客户)[^，。；\n]{0,18}(?:标准|要求)", "", value)
+    # Remove the complete generated cadence clause. This avoids leaving a
+    # sentence fragment such as “以。” after the hard requirement is removed.
+    clauses = []
+    for clause in re.split(r"(?<=[。；;])", value):
+        if re.search(
+            r"(?:联系|日期|时间)[^。；\n]{0,36}跨(?:北京时间)?(?:自然)?(?:月|季度)",
+            clause,
+        ):
+            continue
+        clauses.append(clause)
+    value = "".join(clauses)
     value = _HARD_CADENCE.sub("", value)
     value = re.sub(r"[，,；;]\s*[，,；;]", "，", value)
     return _ensure_sentence(value.strip("，,；;。 ")) if value.strip("，,；;。 ") else ""

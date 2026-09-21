@@ -207,6 +207,24 @@ def test_case_11_date_not_after_visit_remains_clear_hard_problem():
     assert "重新确认一个后续可执行的联系时间" in visible
 
 
+def test_polite_hard_cadence_clause_is_removed_without_sentence_fragment():
+    v = visit(next_contact_at=None)
+    f = facts(
+        v,
+        fields=["next_contact_at"],
+        n_suggestion=(
+            "请在下一次联系客户时间安排中填写晚于本次拜访日期且跨自然季度的"
+            "具体日期，以符合要求。"
+        ),
+    )
+    analysis, advice = render(v, f)
+    visible = analysis + "\n" + "\n".join(advice)
+    assert "原目标要求" not in visible
+    assert "跨自然季度" not in visible
+    assert "以。" not in visible
+    assert "当前还没有明确下一次联系时间" in visible
+
+
 @pytest.mark.parametrize("forbidden", [
     "next_action_logic_ok", "customer_consensus_met", "needs_revision", "not_evaluated",
     "N-01", "finding_id", "decision_ledger", "field_paths", "validator", "schema",
