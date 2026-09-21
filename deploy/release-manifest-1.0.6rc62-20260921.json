@@ -1,0 +1,79 @@
+{
+  "release_version": "1.0.6rc62",
+  "git_commit": "7d1178b8ec2aae26a7f2e015ca936e969769ed0b",
+  "image": "taoran-submit-test:1.0.6rc62-20260921",
+  "image_id": "sha256:1c2e1b4987b064753c826a27948d3d1b9042c50c44a4f483777e4af7b2e14658",
+  "container": "taoran-submit-test-agent",
+  "health_internal": "ok",
+  "health_external": "ok",
+  "database_integrity": "ok",
+  "active_jobs": 0,
+  "restart_count": 0,
+  "agent_env_sha256": "25356756fa6fc5afdba842634bbe6c8b6be329f2ce6b6c2dfd05a55ba5b3e6d9",
+  "field_mapping_sha256": "c979d1d89198305cc1dbdb0d65bea7bba4de7660e9c31cca2ef70ed7df6a1d5e",
+  "tenant_registry_sha256": "e4aa0f347795d4b75509cc35c7cf6f0fca4cdb7896121e6078b3451953115622",
+  "other_containers_unchanged": true,
+  "production_container_unchanged": true,
+  "rollback_path": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc62-20260921-front-wording-v2",
+  "verified_at": "2026-09-21T08:21:23.632194+00:00",
+  "baseline_commit": "5cbc4116546425426e0ae2d0d66948bb5efa0075",
+  "release_scope": "isolated-submit-test-only",
+  "acceptance_status": "presentation_pass_with_preexisting_live_failure",
+  "validation": {
+    "python_passed": 762,
+    "browser_plugin_passed": 82,
+    "ruff": "passed",
+    "wheel": "passed",
+    "real_browser": "passed_without_submit",
+    "frozen_comparison": {
+      "records": 30,
+      "before": {
+        "average_length": 267.27,
+        "average_body_length": 245.27,
+        "average_suggestion_count": 1.47,
+        "goal_repetition_records": 10,
+        "form_repetition_records": 5,
+        "self_agreement_records": 6
+      },
+      "after": {
+        "average_length": 185,
+        "average_body_length": 185,
+        "average_suggestion_count": 2.17,
+        "goal_repetition_records": 0,
+        "form_repetition_records": 0,
+        "self_agreement_records": 0
+      },
+      "artifact_unchanged": 30,
+      "scores_unchanged": 30,
+      "evidence_exact_match": 30,
+      "length_reduction_percent": 30.78,
+      "body_length_reduction_percent": 24.57
+    },
+    "live_comparison": {
+      "attempted": 30,
+      "before_completed": 29,
+      "after_completed": 29,
+      "identical_inputs": 30,
+      "paired": 29,
+      "before_mean_body": 241.24,
+      "after_mean_body": 175.52,
+      "grounded": 29,
+      "deployed_projection_reproducible": 29,
+      "failed_records": [
+        "BFJL2026092000351"
+      ],
+      "body_reduction_percent": 27.24
+    }
+  },
+  "production_evidence": {
+    "image": "dsm-taoran-v2:1.0.10-feedback-recovery-20260920",
+    "image_id": "sha256:d9945f50d8bcc3e0124608859b524e752c184469b91034cd0090fb03aae5247d",
+    "started_at": "2026-09-20T13:38:32.844965384Z",
+    "restart_count": 0
+  },
+  "original_rollback": {
+    "commit": "5cbc4116546425426e0ae2d0d66948bb5efa0075",
+    "image": "taoran-submit-test:1.0.6rc60-20260921",
+    "script": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc61-20260921-front-wording-v2/rollback.sh"
+  }
+}

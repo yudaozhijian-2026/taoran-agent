@@ -58,8 +58,8 @@ def main():
                 "average_body_length": round(mean(len(re.sub(r"提交后，系统将自动生成正式评分和反馈意见。", "", t).strip()) for t in texts),2),
                 "average_suggestion_count": round(mean(len(re.findall(r"(?m)^\s*\d+[、.]",t)) for t in texts),2),
                 "goal_repetition_records": sum(bool(re.search(r"原目标为|原定目标",t)) for t in texts),
-                "form_repetition_records": sum(bool(re.search(r"(?:客户类型为|拜访日期为|拜访方式为|微信沟通，已预约|下一步目的为)",t)) for t in texts),
-                "self_agreement_records": sum(bool(re.search(r"自评.{0,12}一致",t)) for t in texts)}
+                "form_repetition_records": sum(bool(re.search(r"(?:本次.{0,10}(?:潜力客户|目标客户|商机客户)|潜力客户，微信|客户类型为|拜访日期为|拜访方式为|下一步目的为|下一步计划于)",t)) for t in texts),
+                "self_agreement_records": sum(bool(re.search(r"(?:自评[^。\n]{0,25}(?:一致|相符|合理)|与自评相符)",t)) for t in texts)}
     summary = {"records":len(rows), "before":metrics("before"), "after":metrics("after"),
                "artifact_unchanged":sum(r["artifact_unchanged"] for r in rows),
                "scores_unchanged":sum(r["scores_unchanged"] for r in rows),
