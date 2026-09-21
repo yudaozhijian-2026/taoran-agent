@@ -1,0 +1,50 @@
+{
+  "release_version": "1.0.6rc57",
+  "release_scope": "isolated-submit-test-only",
+  "deployed_at": "2026-09-21T14:45:00+08:00",
+  "git_commit": "0f228c6",
+  "git_branch": "codex/contact-preview-grounding-20260921",
+  "git_tag": "submit-test-v1.0.6rc57-20260921-r1",
+  "base_release": {
+    "version": "1.0.6rc56",
+    "git_commit": "b37228f",
+    "image": "taoran-submit-test:1.0.6rc56-20260921",
+    "image_id": "sha256:ec5ef97091f38365f4ba2ad3b29d03e9e41bc3e3f87cd2465a4e46c06202293a"
+  },
+  "deployed_image": {
+    "name": "taoran-submit-test:1.0.6rc57-20260921",
+    "image_id": "sha256:47d5af33070c2ff7f8ab084fcc7a939df0769c30948366f05e0e2a98bd7a90c6"
+  },
+  "verification": {
+    "python_tests": "709 passed",
+    "browser_tests": "82 passed",
+    "ruff": "passed",
+    "compose_validation": "passed",
+    "internal_health": "ok",
+    "public_health": "ok",
+    "database_quick_check": "ok",
+    "active_evaluation_jobs_after_deploy": 0,
+    "container_restart_count": 0,
+    "runtime_configuration_unchanged": true,
+    "former_case_7": {
+      "check_id": "qc_15183ceb99f6496fa93fcd025e6e42f5",
+      "status": "completed",
+      "content_complete": true,
+      "attempt_count": 1,
+      "elapsed_seconds": 6.855
+    }
+  },
+  "backup_path": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc57-20260921",
+  "rollback": {
+    "compose": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc57-20260921/compose.yaml",
+    "database": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc57-20260921/taoran_agent.db",
+    "image": "taoran-submit-test:1.0.6rc56-20260921"
+  },
+  "unmodified_services": [
+    "dsm-taoran-v2-agent",
+    "dsm-q40-api-1",
+    "dsm-q40-web-1",
+    "dsm-library-v11-web-app-1",
+    "jiandaoyun-feishu-plugin-plugin-1"
+  ]
+}
