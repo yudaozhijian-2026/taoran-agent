@@ -30,7 +30,9 @@ _POSITIVE_COMPLETION = re.compile(
     r"|(?:确认|同意|承诺|完成|确定)(?:.{0,8})(?:完成|成功|妥当)"
 )
 _UNRESOLVED_AS_FAILED = re.compile(
-    r"(?:目标|关键结果|原定事项).{0,18}(?:未达到|没有达到|未达成|没有达成|失败)"
+    r"(?:目标|关键结果|原定事项)[^。；\n]{0,120}"
+    r"(?:故|因此|所以)?(?:判定|判断|认定)?(?:为)?"
+    r"(?:未达到|没有达到|未达成|没有达成|失败)"
     r"|(?:调整|改为|校准为).{0,10}(?:未达到|没有达到|未达成)"
 )
 _OUTCOME_DENIAL = re.compile(
@@ -43,6 +45,12 @@ _COMMITMENT = re.compile(
 _COMMITMENT_AS_COMPLETE = re.compile(
     r"(?:客户.{0,18}(?:承诺|同意|确认|约定).{0,30})?"
     r"(?:已经|已)(?:提供|交付|完成|提交|安排|实施|确认完毕)"
+)
+_FUTURE_OUTCOME = re.compile(
+    r"(?:承诺|约定|计划|预计|拟于|将|会|后续|下一步|下周|下次|待)"
+)
+_COMPLETED_OUTCOME = re.compile(
+    r"(?:已|已经|完成|取得|收到|发来|补发|签署|核对无遗漏)"
 )
 
 
@@ -222,13 +230,28 @@ def preserve_outcomes(
 ) -> str:
     """Add grounded progress without turning a future promise into completion."""
     result = str(analysis or "").strip()
-    if achievement_status == "unresolved" and not re.search(
-        r"不足以.{0,8}(?:判断|确认).{0,8}(?:达成|达到)|无法可靠判断", result
-    ):
-        result += "当前原定关键结果较宽泛或证据不足，现有记录不足以可靠判断是否完全达成。"
+    if achievement_status == "unresolved":
+        # A non-verifiable goal may not be converted into a negative outcome.
+        # Remove only the unsupported terminal conclusion; retain the factual
+        # explanation that made the goal non-verifiable.
+        result = re.sub(
+            r"[，,] *(?:故|因此|所以)?(?:判定|判断|认定)?(?:为)?"
+            r"(?:目标)?(?:尚)?(?:未达成|未达到|没有达成|没有达到)(?=[，。；]|$)",
+            "",
+            result,
+        )
+        if not re.search(
+            r"不足以.{0,12}(?:判断|确认).{0,12}(?:达成|达到)|"
+            r"无法可靠判断|(?:无法|不能)(?:完整|准确)?评估",
+            result,
+        ):
+            result += "当前原定关键结果较宽泛或证据不足，现有记录不足以可靠判断是否完全达成。"
     if outcomes and not any(item["quote"][:12] in result for item in outcomes):
         quote = outcomes[0]["quote"]
-        if _COMMITMENT.search(quote) or _COMMITMENT.search(source_text):
+        is_future = bool(_FUTURE_OUTCOME.search(quote)) and not bool(
+            _COMPLETED_OUTCOME.search(quote)
+        )
+        if is_future:
             result += f"本次已记录客户的后续承诺“{quote}”，这是有效进展，但承诺事项尚待后续实际完成。"
         else:
             result += f"同时，本次已明确记录“{quote}”这一具体成果。"

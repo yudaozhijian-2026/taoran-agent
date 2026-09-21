@@ -63,6 +63,26 @@ def test_golden_unassessable_is_unresolved_not_not_achieved():
     )
 
 
+def test_golden_long_unassessable_reason_cannot_end_as_not_achieved():
+    text = (
+        "原定关键结果为项目顺利实施，过于宽泛无法核验，"
+        "过程记录客户将提供设备清单不足以证明项目顺利实施已达成，故判定未达成。"
+    )
+    assert achievement_boundary_hits(
+        text,
+        achievement_status="unresolved",
+        target="facts.reason",
+    )
+    rendered = preserve_outcomes(
+        text,
+        achievement_status="unresolved",
+        outcomes=[],
+        source_text="客户下周一提供设备清单。",
+    )
+    assert "故判定未达成" not in rendered
+    assert "不足以可靠判断" in rendered
+
+
 def test_golden_specific_outcome_is_preserved_under_vague_goal():
     data = {
         "process_description": "客户明确需要3套办公桌，规格为1500×700mm。",
@@ -97,3 +117,34 @@ def test_golden_customer_commitment_is_progress_not_completion():
         source,
         "facts.reason",
     ) == []
+
+
+def test_completed_outcome_is_not_rewritten_as_future_commitment():
+    rendered = preserve_outcomes(
+        "原目标已达成。",
+        achievement_status="achieved",
+        outcomes=[{
+            "field": "process_description",
+            "quote": "客户已邮件发来六台设备清单并确认安装位置",
+        }],
+        source_text=(
+            "客户已邮件发来六台设备清单并确认安装位置。"
+            "客户承诺本周五完成电源准备。"
+        ),
+    )
+    assert "后续承诺" not in rendered
+    assert "客户已邮件发来六台设备清单" in rendered
+
+
+def test_future_outcome_remains_progress_not_completed_result():
+    rendered = preserve_outcomes(
+        "原目标较宽泛。",
+        achievement_status="unresolved",
+        outcomes=[{
+            "field": "process_description",
+            "quote": "客户下周一提供两台设备清单",
+        }],
+        source_text="客户下周一提供两台设备清单。",
+    )
+    assert "这是有效进展" in rendered
+    assert "尚待后续实际完成" in rendered
