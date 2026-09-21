@@ -143,7 +143,35 @@ def test_wait_generation_and_review_timings_have_distinct_meanings():
         "generation_ms": 3800,
         "semantic_review_ms": 300,
         "status": "completed",
+        "failure_reason": None,
+        "model_request_id": None,
+        "diagnostic_evidence_id": None,
     }
+    assert result["first_byte_wait_ms"] == 1200
+    assert result["generation_ms"] == 3800
+
+
+def test_phase_timings_preserve_failure_reason_and_request_id():
+    from types import SimpleNamespace
+
+    result = phase_timings(
+        SimpleNamespace(
+            model_attempts=[
+                {
+                    "model_queue_ms": 0,
+                    "model_first_byte_ms": 900,
+                    "model_complete_ms": 1700,
+                    "model_request_id": "req-stage2",
+                    "failure_reason": "invalid_contract",
+                    "diagnostic_evidence_id": "evidence-1",
+                }
+            ]
+        ),
+        1800,
+    )
+    assert result["model_request_id"] == "req-stage2"
+    assert result["failure_reason"] == "invalid_contract"
+    assert result["attempts"][0]["diagnostic_evidence_id"] == "evidence-1"
 
 
 def test_running_task_reuses_but_interrupted_task_can_restart_from_form(

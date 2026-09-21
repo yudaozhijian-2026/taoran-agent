@@ -14,6 +14,7 @@ import httpx
 
 from ..business_wording import SALESPERSON_WORDING_GUIDANCE, salesperson_feedback_hits
 from ..config import Settings
+from ..llm import _model_request_id
 from ..models import VisitDraftInput
 from ..token_usage import UsageClient
 from .experimental_assessment import goal_violation
@@ -165,33 +166,44 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
          "拜访方式只能使用表单原选项‘面对面拜访、视频会议、电话拜访、微信/邮件/QQ沟通’，"
          "不得概括成异步沟通、同步沟通、线上沟通或线下沟通。"
          "输出简洁完整的实际分析正文，围绕本次原定目标说明已记录事实和不足以判断的部分。"
+         "正文控制在160个汉字以内、最多3个短段，不重复转述同一事实。"
          "直接输出自然中文，不写标题、占位说明或格式示例。信息不足时说明具体缺少什么，不补造事实。"},
         {"role": "user", "content": json.dumps({"untrusted_visit_data": snapshot}, ensure_ascii=False)},
     ]
 
 
-def _interactive_preview_safe(text: str, snapshot: dict[str, Any]) -> bool:
+def _interactive_preview_violations(text: str, snapshot: dict[str, Any]) -> list[str]:
+    violations: list[str] = []
     if salesperson_feedback_hits(text):
-        return False
+        violations.append("salesperson_wording_leak")
     if _ADVICE_DIRECTIVE.search(text):
-        return False
-    if boundary_issues(text, snapshot):
-        return False
+        violations.append("analysis_contains_advice")
+    violations.extend(
+        str(item.get("rule") or "record_boundary_conflict")
+        for item in boundary_issues(text, snapshot)
+        if isinstance(item, dict)
+    )
     # The analysis may describe a future plan already recorded in the form;
     # only an actual purpose substitution is unsafe here.
     if goal_violation(text, snapshot) == "purpose_substituted_for_goal":
-        return False
+        violations.append("purpose_substituted_for_goal")
     allowed = set(snapshot.get("opportunity_stages", []))
     if set(re.findall(r"(?<![A-Za-z0-9])P[1-9](?![0-9])", text)) - allowed:
-        return False
+        violations.append("unsupported_opportunity_stage")
     if allowed and re.search(r"(?:商机)?阶段.{0,8}(?:未填|未明确|未体现|未提供)", text):
-        return False
+        violations.append("recorded_opportunity_stage_ignored")
     if re.search(r"(?<![A-Za-z_])(?:opportunity|potential|target|achieved|partially_achieved)(?![A-Za-z_])", text):
-        return False
+        violations.append("internal_enum_leak")
     from .feedback_consistency import preview_errors
-    if preview_errors(text, snapshot):
-        return False
-    return not detect_unsupported_specific_facts(text, snapshot, interactive=True)["failure_category"]
+    violations.extend(str(item) for item in preview_errors(text, snapshot))
+    unsupported = detect_unsupported_specific_facts(text, snapshot, interactive=True)["failure_category"]
+    if unsupported:
+        violations.append(str(unsupported))
+    return list(dict.fromkeys(violations))
+
+
+def _interactive_preview_safe(text: str, snapshot: dict[str, Any]) -> bool:
+    return not _interactive_preview_violations(text, snapshot)
 
 
 def _feedback_body(raw: str) -> str:
@@ -353,6 +365,7 @@ def _stream_semantic_preview_once(
     emitted = 0
     displayed = []
     recommendation_repairs = []
+    validation_errors: list[str] = []
     def emit_normalized_piece(piece):
         displayed.append(piece)
         emit(piece)
@@ -361,13 +374,17 @@ def _stream_semantic_preview_once(
     def emit_piece(piece):
         wording_stream.feed(business_wording(piece))
     first_text_ms: int | None = None
+    model_request_id: str | None = None
+    request_started: float | None = None
     try:
+        request_started = monotonic()
         with UsageClient(settings, follow_redirects=False) as client, client.stream(
             "POST", settings.llm_api_url,
             headers={"Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}", "Content-Type": "application/json"},
             json=body, timeout=settings.frontend_model_timeout_seconds,
         ) as response:
             response.raise_for_status()
+            model_request_id = _model_request_id(response, {})
             for line in response.iter_lines():
                 if not line.startswith("data:"):
                     continue
@@ -375,6 +392,7 @@ def _stream_semantic_preview_once(
                 if not value or value == "[DONE]":
                     continue
                 event = json.loads(value)
+                model_request_id = _model_request_id(response, event) or model_request_id
                 choices = event.get("choices") if isinstance(event, dict) else None
                 if not isinstance(choices, list) or not choices:
                     continue
@@ -383,7 +401,7 @@ def _stream_semantic_preview_once(
                 if not isinstance(content, str) or not content:
                     continue
                 if first_text_ms is None:
-                    first_text_ms = int((monotonic() - started) * 1000)
+                    first_text_ms = int((monotonic() - (request_started or started)) * 1000)
                 raw += content
                 preview = _stream_feedback_body(raw, interactive=interactive)
                 boundary = _flushable_length(preview, emitted, final=_CLOSE in raw)
@@ -411,7 +429,8 @@ def _stream_semantic_preview_once(
         feedback = "".join(displayed).strip()
         from ..semantic_observation import observe
         findings = observe(boundary_issues, feedback, snapshot, scope="preview")
-        safe = _interactive_preview_safe(feedback, snapshot)
+        validation_errors = _interactive_preview_violations(feedback, snapshot)
+        safe = not validation_errors
         findings += observe(lambda: ([{"rule": "preview_interpretation_conflict"}]
             if not safe else []), scope="preview")
         if interactive and not safe:
@@ -423,6 +442,10 @@ def _stream_semantic_preview_once(
         return {
             "diagnostic_evidence_id": evidence_id,
             "status": "completed", "first_real_ai_text_ms": first_text_ms,
+            "model_first_byte_ms": first_text_ms,
+            "model_complete_ms": int((monotonic() - (request_started or started)) * 1000),
+            "model_request_id": model_request_id,
+            "failure_reason": None,
             "semantic_complete_ms": int((monotonic() - started) * 1000),
             "feedback_hash": hashlib.sha256(feedback.encode()).hexdigest(),
             "feedback_length": len(feedback),
@@ -436,15 +459,25 @@ def _stream_semantic_preview_once(
         from ..model_failure_evidence import save_failure_evidence
         evidence_id = save_failure_evidence(settings, stage="frontend_preview_format",
             candidate={"text": raw}, details={"failure_reason": category,
+                "validation_errors": validation_errors,
                 "feedback_length": len(_feedback_body(raw)), "has_open": _OPEN in raw,
                 "has_close": _CLOSE in raw})
         return {"status": "failed", "failure_category": category,
+            "failure_reason": category,
             "first_real_ai_text_ms": first_text_ms,
+            "model_first_byte_ms": first_text_ms,
+            "model_complete_ms": int((monotonic() - (request_started or started)) * 1000),
+            "model_request_id": model_request_id,
+            "validation_errors": validation_errors,
             "semantic_complete_ms": int((monotonic() - started) * 1000),
             "diagnostic_evidence_id": evidence_id}
     except (httpx.HTTPError, OSError):
         return {"status": "failed", "failure_category": "upstream_service_error",
+            "failure_reason": "upstream_service_error",
             "first_real_ai_text_ms": first_text_ms,
+            "model_first_byte_ms": first_text_ms,
+            "model_complete_ms": int((monotonic() - (request_started or started)) * 1000),
+            "model_request_id": model_request_id,
             "semantic_complete_ms": int((monotonic() - started) * 1000)}
 
 

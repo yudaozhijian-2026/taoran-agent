@@ -12,7 +12,7 @@ from typing import Any
 from ..models import VisitDraftInput
 from ..record_contract import visit_contract
 
-VERSION = "front-decision-ledger-v2-20260920"
+VERSION = "front-decision-ledger-v3-20260921"
 
 _FIELD_CODES = {
     "customer_type_ii": "T",
@@ -142,3 +142,74 @@ def with_validated_analysis(
     if repair_errors:
         result["joint_repair_errors"] = list(dict.fromkeys(repair_errors))[:8]
     return result
+
+
+def deterministic_advice(
+    visit_snapshot: dict[str, Any], ledger: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    """Render only high-confidence gaps locally.
+
+    The model still handles semantic judgement.  These short suggestions cover
+    facts already fixed by the decision ledger, so the second model stage does
+    not spend tokens restating an empty field or an obvious placeholder.
+    """
+    if not isinstance(ledger, dict):
+        return []
+    advice: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    customer_type = str(visit_snapshot.get("customer_type_ii") or "")
+    standard = str(ledger.get("contact_time_standard") or "")
+
+    for item in ledger.get("required_advice", []):
+        if not isinstance(item, dict):
+            continue
+        code = str(item.get("code") or "")
+        field = str(item.get("field") or "")
+        reason = str(item.get("reason") or "")
+        if not code or not field or (code, field) in seen:
+            continue
+        text = ""
+        value = str(visit_snapshot.get(field) or "").strip()
+        if field == "expected_key_result":
+            if reason == "not_filled":
+                text = "请补充想取得的关键结果，写明本次希望客户确认、提供或完成的具体事项。"
+            elif reason in {"obviously_not_specific", "not_specific"}:
+                text = (
+                    f"想取得的关键结果“{value}”较笼统，请写明希望客户本次确认、提供或完成什么。"
+                    if value else "请写明希望客户本次确认、提供或完成的具体事项。"
+                )
+        elif field == "next_action_expected_result":
+            if reason == "not_filled":
+                text = "请补充下次拜访期望的关键结果，写明希望客户下一步确认、提供或完成的具体事项。"
+            elif reason in {"obviously_not_specific", "not_specific"}:
+                text = (
+                    f"下次拜访期望的关键结果“{value}”较笼统，请结合本次事实写明客户下一步将确认、提供或完成什么。"
+                    if value else "请结合本次事实，写明客户下一步将确认、提供或完成的具体事项。"
+                )
+        elif field == "next_contact_at":
+            if reason == "not_filled":
+                if standard == "different_calendar_month":
+                    text = "请补充下一次联系客户的具体日期，并按目标客户要求安排在不同自然月。"
+                elif standard == "different_calendar_quarter":
+                    text = "请补充下一次联系客户的具体日期，并按潜力客户要求安排在不同自然季度。"
+                else:
+                    text = "请补充下一次联系客户的具体日期；商机客户建议与客户达成下一次拜访时间共识。"
+            elif reason == "customer_type_date_standard_not_met":
+                if standard == "different_calendar_month":
+                    text = "当前联系日期不符合目标客户的时间安排，请调整到不同自然月。"
+                elif standard == "different_calendar_quarter":
+                    text = "当前联系日期不符合潜力客户的时间安排，请调整到不同自然季度。"
+                elif "商机" in customer_type or customer_type == "opportunity":
+                    text = "请结合本次拜访事实，确认当前联系日期是否已与客户形成下一步共识。"
+        elif field in {"other_purpose", "next_action_other_purpose"}:
+            label = "具体其他目的" if field == "other_purpose" else "下一步具体其他目的"
+            text = f"已选择其他目的，请补充{label}，说明本次要解决或推进的具体事项。"
+        if text:
+            seen.add((code, field))
+            advice.append({
+                "code": code,
+                "field": field,
+                "reason": reason,
+                "text": text,
+            })
+    return advice[:6]

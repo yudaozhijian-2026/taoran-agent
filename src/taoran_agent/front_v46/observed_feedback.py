@@ -561,6 +561,8 @@ def configure_advice_only(messages, schema):
         "同一TAORAN维度的多个字段问题合并为一条item，suggestion必须逐一说清covered_fields中每个字段的问题；"
         "不同维度不合并。covered_fields只填输入允许的原始字段键，不要输出proofs或自己编写引用。"
         "每条suggestion只说一组相关问题，结合本次原文给可直接修改的方向，尽量不超过80个汉字。"
+        "local_advice_already_covered是服务端已依据确定性事实直接生成的建议；不要重复这些字段，"
+        "只补充仍需语义判断且确有必要的意见。"
         "confirmations只用于已有原文存在歧义且会影响结论的情况；字段缺失必须放入items。"
         "required_advice中每个code和field必须由items中同code建议及covered_fields覆盖，不得遗漏。"
         "有建议时suggestion_status=has_suggestions；确实无缺口时为no_change_needed；只有需确认项时为needs_confirmation。"
@@ -683,7 +685,13 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
     from pydantic import ValidationError
 
     from ..goal_contract import goals
-    from ..llm import ModelCallError, _failure_reason, _load_model_json, _read_chat_response
+    from ..llm import (
+        ModelCallError,
+        _failure_reason,
+        _load_model_json,
+        _model_request_id,
+        _read_chat_response,
+    )
 
     started = monotonic()
     timeout = timeout_seconds or reviewer.settings.frontend_model_timeout_seconds
@@ -700,8 +708,8 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
     schema = (AdvicePayload if advice_only else Payload).model_json_schema()
     item_schema = "AdviceItem" if advice_only else "Item"
     schema["$defs"][item_schema]["properties"]["code"]["enum"] = expected_codes
-    schema["$defs"][item_schema]["properties"]["suggestion"]["maxLength"] = 140
-    schema["properties"]["suggestion_reason"]["maxLength"] = 160
+    schema["$defs"][item_schema]["properties"]["suggestion"]["maxLength"] = 100
+    schema["properties"]["suggestion_reason"]["maxLength"] = 100
     code_repair = not patch_paths and repair_candidate is not None and any(
         item.get("code") not in expected_codes for item in repair_candidate.get("items", []))
     required_advice = [gap for gap in snapshot.get("required_advice", [])
@@ -723,6 +731,9 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             "required_advice": required_advice,
             "coverage_plan": coverage_plan,
             "original_goals": [{"goal_id": g.goal_id, "source_text": g.source_text} for g in goals(source)]}
+    local_advice = [item for item in snapshot.get("local_advice", []) if isinstance(item, dict)]
+    if local_advice:
+        data["local_advice_already_covered"] = local_advice
     if advice_only:
         data["validated_analysis"] = validated_analysis
     messages = [{"role": "system", "content": ""},
@@ -777,7 +788,8 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             raise ModelCallError("queue_timeout")
         telemetry["model_queue_ms"] = lease.wait_ms
         body = {"model": reviewer.settings.llm_model, "messages": messages, "temperature": 0,
-                "stream": True, "response_format": {"type": "json_object"}}
+                "stream": True,
+                "response_format": {"type": "json_object"}}
         if (reviewer.settings.llm_model or "").lower().startswith("glm-"):
             body["thinking"] = {"type": "disabled"}
         request_started = monotonic()
@@ -801,7 +813,11 @@ def _generate_once(reviewer, items, snapshot, timeout_seconds, repair_errors=Non
             probe.completed(envelope, first, last)
         analysis_wording_stream.flush()
         suggestion_wording_stream.flush()
-        telemetry.update(model_first_byte_ms=first, model_complete_ms=last)
+        telemetry.update(
+            model_first_byte_ms=first,
+            model_complete_ms=last,
+            model_request_id=_model_request_id(response, envelope),
+        )
         choice = envelope["choices"][0]
         if choice.get("finish_reason") == "length":
             raise ModelCallError("output_truncated")
