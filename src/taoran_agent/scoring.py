@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .company_policy import (
     COMPANY_POLICY_VERSION,
@@ -18,6 +19,7 @@ from .models import (
     SelfAssessment,
     Severity,
     VisitDraftInput,
+    VisitMethod,
 )
 from .rules import is_meaningful, normalized_text
 from .scoring_contract import (
@@ -139,18 +141,42 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
             )
         )
 
-    baseline = visit.actual_end_at
-    baseline_source = "actual_end_at" if baseline else None
-    if baseline is None and visit.actual_start_at is not None:
-        baseline = visit.actual_start_at + timedelta(minutes=visit.duration_minutes or 0)
-        baseline_source = (
-            "actual_start_at+duration_minutes" if visit.duration_minutes else "actual_start_at"
+    is_non_face_to_face = visit.visit_method in {
+        VisitMethod.VIDEO,
+        VisitMethod.PHONE,
+        VisitMethod.ASYNCHRONOUS_MESSAGE,
+    }
+    is_face_to_face = not is_non_face_to_face
+    baseline = None
+    baseline_source = None
+    submitted_business_date = None
+    allowed_submission_dates: list[str] = []
+    if is_face_to_face:
+        baseline = visit.actual_end_at
+        baseline_source = "actual_end_at" if baseline else None
+        if baseline is None and visit.actual_start_at is not None:
+            baseline = visit.actual_start_at + timedelta(minutes=visit.duration_minutes or 0)
+            baseline_source = (
+                "actual_start_at+duration_minutes" if visit.duration_minutes else "actual_start_at"
+            )
+        timely = bool(
+            baseline
+            and visit.submitted_at
+            and timedelta(0) <= visit.submitted_at - baseline <= SUBMISSION_TIMELINESS_WINDOW
         )
-    timely = bool(
-        baseline
-        and visit.submitted_at
-        and timedelta(0) <= visit.submitted_at - baseline <= SUBMISSION_TIMELINESS_WINDOW
-    )
+        timeliness_standard = "face_to_face_24_hours"
+    else:
+        if visit.submitted_at is not None:
+            submitted = visit.submitted_at
+            if submitted.tzinfo is not None:
+                submitted = submitted.astimezone(ZoneInfo("Asia/Shanghai"))
+            submitted_business_date = submitted.date()
+        allowed_dates = (visit.visit_date, visit.visit_date + timedelta(days=1))
+        allowed_submission_dates = [value.isoformat() for value in allowed_dates]
+        timely = submitted_business_date in allowed_dates
+        baseline = visit.visit_date
+        baseline_source = "visit_date"
+        timeliness_standard = "non_face_to_face_visit_day_or_next_day"
     if visit.submitted_at is None:
         issues.append(
             Issue(
@@ -162,7 +188,7 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                 suggestion="由简道云系统元数据提供首次提交时间，禁止使用最后更新时间替代。",
             )
         )
-    if baseline is None:
+    if is_face_to_face and baseline is None:
         issues.append(
             Issue(
                 code="Q33_VISIT_END_BASELINE_MISSING",
@@ -209,6 +235,9 @@ def score_q33(visit: VisitDraftInput) -> tuple[QuestionScore, list[Issue]]:
                         "submitted_at": visit.submitted_at,
                         "visit_end_baseline": baseline,
                         "baseline_source": baseline_source,
+                        "timeliness_standard": timeliness_standard,
+                        "submitted_business_date": submitted_business_date,
+                        "allowed_submission_dates": allowed_submission_dates,
                         "company_policy_version": COMPANY_POLICY_VERSION,
                         "tenant_configurable": False,
                         "window_hours": SUBMISSION_TIMELINESS_HOURS,

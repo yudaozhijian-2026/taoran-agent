@@ -34,10 +34,67 @@ def test_p6_retires_purpose_matching():
 @pytest.mark.parametrize("hours,passed", [(0,True),(24,True),(24.001,False),(-0.001,False)])
 def test_fixed_timeliness(hours, passed):
     end = datetime(2026,9,3,10,tzinfo=UTC)
-    v = visit(actual_end_at=end, submitted_at=end+timedelta(hours=hours))
+    v = visit(
+        visit_method="face_to_face",
+        actual_end_at=end,
+        submitted_at=end+timedelta(hours=hours),
+    )
     score, _ = score_q33(v)
     assert score.components[1].passed == passed
     assert score.max_score == 50
+
+
+@pytest.mark.parametrize(
+    "submitted_at,passed",
+    [
+        ("2026-09-03T00:00:00+08:00", True),
+        ("2026-09-03T23:59:59+08:00", True),
+        ("2026-09-04T00:00:00+08:00", True),
+        ("2026-09-04T23:59:59+08:00", True),
+        ("2026-09-02T23:59:59+08:00", False),
+        ("2026-09-05T00:00:00+08:00", False),
+    ],
+)
+def test_non_face_to_face_timeliness_uses_visit_day_and_next_day(submitted_at, passed):
+    v = visit(
+        visit_method="asynchronous_message",
+        actual_start_at=None,
+        actual_end_at=None,
+        duration_minutes=None,
+        submitted_at=submitted_at,
+    )
+    score, issues = score_q33(v)
+    component = score.components[1]
+    assert component.passed == passed
+    assert component.details["timeliness_standard"] == (
+        "non_face_to_face_visit_day_or_next_day"
+    )
+    assert component.details["allowed_submission_dates"] == ["2026-09-03", "2026-09-04"]
+    assert not any(issue.code == "Q33_VISIT_END_BASELINE_MISSING" for issue in issues)
+
+
+@pytest.mark.parametrize("method", ["video", "phone", "asynchronous_message"])
+def test_all_non_face_to_face_methods_use_calendar_day_policy(method):
+    v = visit(
+        visit_method=method,
+        actual_start_at=None,
+        actual_end_at=None,
+        submitted_at="2026-09-04T15:59:59Z",
+    )
+    score, _ = score_q33(v)
+    assert score.components[1].passed is True
+
+
+def test_missing_visit_method_cannot_claim_non_face_to_face_calendar_policy():
+    v = visit(
+        visit_method=None,
+        actual_start_at=None,
+        actual_end_at=None,
+        submitted_at="2026-09-03T10:00:00+08:00",
+    )
+    score, issues = score_q33(v)
+    assert score.components[1].passed is False
+    assert any(issue.code == "Q33_VISIT_END_BASELINE_MISSING" for issue in issues)
 
 
 def test_refetch_is_authorized_and_uses_original_target(monkeypatch):
