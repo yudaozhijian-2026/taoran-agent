@@ -1,0 +1,170 @@
+{
+  "release_version": "1.0.6rc63",
+  "git_commit": "13279294524d98d209a5312ddee85d0190b38257",
+  "git_tag": "submit-test-v1.0.6rc63-r2-20260921",
+  "image": "taoran-submit-test:1.0.6rc63-r2-20260921",
+  "image_id": "sha256:8f4434618107effd1892204c1d4dd352e1d717d68dc75398e9057672e2132435",
+  "container": "taoran-submit-test-agent",
+  "health_internal": "ok",
+  "health_external": "ok",
+  "database_integrity": "ok",
+  "active_jobs": 0,
+  "restart_count": 0,
+  "agent_env_sha256": "25356756fa6fc5afdba842634bbe6c8b6be329f2ce6b6c2dfd05a55ba5b3e6d9",
+  "field_mapping_sha256": "c979d1d89198305cc1dbdb0d65bea7bba4de7660e9c31cca2ef70ed7df6a1d5e",
+  "tenant_registry_sha256": "e4aa0f347795d4b75509cc35c7cf6f0fca4cdb7896121e6078b3451953115622",
+  "other_containers_unchanged": true,
+  "production_container_unchanged": true,
+  "rollback_path": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc63-r2-20260921-front-wording-v21",
+  "verified_at": "2026-09-21T09:44:13.577952+00:00",
+  "baseline_branch": "codex/front-quick-check-wording-v2-20260921",
+  "baseline_commit": "f8a38532d53e9411adcb6ced329093ce1e356dbd",
+  "implementation_commits": [
+    "2940d3ce530a24d8afd72e820c5d187efef13bd5",
+    "73391d94e99c2f2a95a777abe504fd6540153e42"
+  ],
+  "deployment_source_commit": "13279294524d98d209a5312ddee85d0190b38257",
+  "release_scope": "isolated-submit-test-only",
+  "validation": {
+    "python_passed": 766,
+    "python_warning": "existing Starlette/httpx deprecation warning",
+    "browser_plugin_passed": 82,
+    "ruff": "passed",
+    "wheel": "passed",
+    "frozen_original_v2_v21": {
+      "records": 30,
+      "original": {
+        "average_length": 267.27,
+        "average_suggestion_count": 1.47,
+        "record_highlight_template": 0,
+        "long_raw_record_echo": 0,
+        "generic_existing_plan_template": 0,
+        "self_assessment_without_conflict": 0,
+        "forced_quarter": 24,
+        "forced_month": 1,
+        "unsupported_sales_action": 0
+      },
+      "v2": {
+        "average_length": 185,
+        "average_suggestion_count": 2.17,
+        "record_highlight_template": 28,
+        "long_raw_record_echo": 7,
+        "generic_existing_plan_template": 13,
+        "self_assessment_without_conflict": 3,
+        "forced_quarter": 0,
+        "forced_month": 0,
+        "unsupported_sales_action": 0
+      },
+      "v21": {
+        "average_length": 186.23,
+        "average_suggestion_count": 2.03,
+        "record_highlight_template": 0,
+        "long_raw_record_echo": 0,
+        "generic_existing_plan_template": 0,
+        "self_assessment_without_conflict": 0,
+        "forced_quarter": 0,
+        "forced_month": 0,
+        "unsupported_sales_action": 0
+      },
+      "confirmed_next_contact_missed": 0,
+      "future_customer_event_misclassified": 0,
+      "missing_plan_without_planning_advice": 0,
+      "artifact_unchanged": 30,
+      "scores_unchanged": 30,
+      "evidence_exact_match": 30
+    },
+    "live_rc62_rc63": {
+      "attempted": 30,
+      "v2_completed": 29,
+      "v21_completed": 29,
+      "paired_completed": 28,
+      "identical_inputs": 30,
+      "v21_grounded": 29,
+      "v21_deployed_projection_reproducible": 29,
+      "paired_v2_average_length": 176.18,
+      "paired_v21_average_length": 186.25,
+      "v2_failed": [
+        "BFJL2026092000351"
+      ],
+      "v21_failed": [
+        "BFJL2026092000350"
+      ]
+    },
+    "qualitative": {
+      "Grounded": {
+        "PASS": 30,
+        "REVIEW": 0,
+        "FAIL": 0,
+        "pass_rate_percent": 100.0
+      },
+      "Specific": {
+        "PASS": 30,
+        "REVIEW": 0,
+        "FAIL": 0,
+        "pass_rate_percent": 100.0
+      },
+      "Actionable": {
+        "PASS": 30,
+        "REVIEW": 0,
+        "FAIL": 0,
+        "pass_rate_percent": 100.0
+      },
+      "Natural": {
+        "PASS": 30,
+        "REVIEW": 0,
+        "FAIL": 0,
+        "pass_rate_percent": 100.0
+      },
+      "Concise": {
+        "PASS": 30,
+        "REVIEW": 0,
+        "FAIL": 0,
+        "pass_rate_percent": 100.0
+      },
+      "Evidence-safe": {
+        "PASS": 30,
+        "REVIEW": 0,
+        "FAIL": 0,
+        "pass_rate_percent": 100.0
+      },
+      "Time-advice-correct": {
+        "PASS": 30,
+        "REVIEW": 0,
+        "FAIL": 0,
+        "pass_rate_percent": 100.0
+      },
+      "fictional_customer_facts": 0,
+      "induced_nonexistent_facts": 0,
+      "unsupported_sales_actions": 0,
+      "unassessable_goal_misclassified_achieved": 0,
+      "unassessable_goal_misclassified_not_achieved": 0,
+      "review_method": "逐条对照冻结输入、V2.1展示、analysis_basis、suggestion_basis人工复核"
+    }
+  },
+  "protected_paths": {
+    "api.py": "ce0fbd3ef426c4e3ea397ef894f0c619d6aea5ce",
+    "scoring.py": "fe1433aa661c4824961b9d82831688aca72aa818",
+    "front_analysis_artifact.py": "ba6c84c796c430e3694033364ee036a09365e72f",
+    "backend_salesperson_wording_v2.py": "0b4fbc6db19d50d20d071ca344f21c8f1f66201c",
+    "writeback.py": "50a0ed2b9cfc265bf1cba4fa841cc2c8bae5bf11"
+  },
+  "production_evidence": {
+    "release_version": "1.0.11",
+    "image": "dsm-taoran-v2:1.0.11-present-date-feedback-20260921",
+    "image_id": "sha256:ff8b74e7dbfeb47edd7a855613cfc664c22e65c12afe4085cb90e4c125ada356",
+    "started_at": "2026-09-21T08:43:55.514390681Z",
+    "restart_count": 0,
+    "health": "healthy",
+    "database_integrity": "ok",
+    "compose_config_hash": "cb3dd70663fed9aa638ab889b7cba9554aa28d3d75426cdaff935cdd658ba685"
+  },
+  "rollback": {
+    "code": "f8a38532d53e9411adcb6ced329093ce1e356dbd",
+    "image": "taoran-submit-test:1.0.6rc63-20260921",
+    "image_id": "sha256:887c2832dd2d3be0f5574f8674e612298433421c98fd4736a45ac3ecc10ea67e",
+    "script": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc63-r2-20260921-front-wording-v21/rollback.sh",
+    "full_v2_image": "taoran-submit-test:1.0.6rc62-20260921",
+    "full_v2_image_id": "sha256:1c2e1b4987b064753c826a27948d3d1b9042c50c44a4f483777e4af7b2e14658",
+    "full_v2_script": "/TAORAN agent/isolated-submit-test-20260916/backups/before-1.0.6rc63-20260921-front-wording-v21/rollback.sh"
+  }
+}
