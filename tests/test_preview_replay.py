@@ -215,6 +215,51 @@ def test_stage_two_analysis_hydrates_ledger_without_third_model_call(monkeypatch
     assert '客户已确认安装位置' in result['final']['feedback_text']
 
 
+def test_two_stage_timings_keep_each_model_request_identity(monkeypatch):
+    def analysis(_visit, _settings, events):
+        events.put({'type': 'preview_complete', 'status': 'unavailable'})
+        return {
+            'status': 'failed',
+            'failure_category': 'invalid_preview_format',
+            'attempt_count': 1,
+            'model_queue_ms': 4,
+            'model_attempts': [{
+                'model_first_byte_ms': 900,
+                'model_complete_ms': 1800,
+                'model_request_id': 'req-analysis',
+                'failure_reason': 'invalid_preview_format',
+            }],
+        }
+
+    def advice(*args, **kwargs):
+        return {
+            'status': 'completed',
+            'feedback_text': (
+                '本次拜访分析：客户已确认安装位置。\n\n'
+                'AI改善建议：\n请补充下一次联系时间。'
+            ),
+            'phase_timings': {
+                'total_ms': 2100,
+                'attempts': [{
+                    'model_queue_ms': 2,
+                    'first_byte_wait_ms': 700,
+                    'generation_ms': 1200,
+                    'model_request_id': 'req-suggestion',
+                    'failure_reason': None,
+                }],
+            },
+        }
+
+    monkeypatch.setattr(api, '_quick_check_run_preview', analysis)
+    monkeypatch.setattr(api, '_quick_check_run_final', advice)
+    result = api._quick_check_run(SimpleNamespace(visit=None), None, Queue())
+    timings = result['final']['phase_timings']
+    assert timings['analysis']['model_request_id'] == 'req-analysis'
+    assert timings['analysis']['failure_reason'] == 'invalid_preview_format'
+    assert timings['suggestion']['model_request_id'] == 'req-suggestion'
+    assert timings['two_stage']['analysis_recovered_by'] == 'stage2_fallback'
+
+
 def test_validation_status_preserves_retained_snapshot_until_final_replace():
     t = task({'status': 'processing'})
     t['future'] = Future()

@@ -99,6 +99,23 @@ def phase_timings(review, total_ms):
                 else None,
                 "semantic_review_ms": audit.get("latency_ms"),
                 "status": item.get("failure_reason") or "completed",
+                "failure_reason": item.get("failure_reason"),
+                "model_request_id": item.get("model_request_id"),
+                "diagnostic_evidence_id": item.get("diagnostic_evidence_id"),
             }
         )
+    if result["attempts"]:
+        final = result["attempts"][-1]
+        result.update({
+            "attempt_count": len(result["attempts"]),
+            "model_queue_ms": final.get("model_queue_ms"),
+            "first_byte_wait_ms": final.get("first_byte_wait_ms"),
+            "generation_ms": final.get("generation_ms"),
+            "model_request_id": final.get("model_request_id"),
+            "failure_reason": next(
+                (item.get("failure_reason") for item in result["attempts"]
+                 if item.get("failure_reason")),
+                None,
+            ),
+        })
     return result

@@ -1,4 +1,8 @@
-from taoran_agent.front_v46.decision_ledger import build, with_validated_analysis
+from taoran_agent.front_v46.decision_ledger import (
+    build,
+    deterministic_advice,
+    with_validated_analysis,
+)
 from taoran_agent.front_v46.experimental_record_state import boundary_issues
 from taoran_agent.front_v46.experimental_semantic_streaming_v22 import _supported_commitment
 from taoran_agent.front_v46.joint_consistency import errors, repair_advice
@@ -38,6 +42,15 @@ def test_customer_time_boundary_is_kept_in_shared_ledger():
     required = {(item["code"], item["field"]) for item in ledger["required_advice"]}
     assert ledger["contact_time_standard"] == "different_calendar_quarter"
     assert ("N", "next_contact_at") in required
+
+
+def test_deterministic_advice_uses_actual_value_and_customer_time_standard():
+    current = visit().model_dump(mode="json")
+    advice = deterministic_advice(current, build(visit()))
+    by_field = {item["field"]: item["text"] for item in advice}
+    assert "保持联系" in by_field["next_action_expected_result"]
+    assert "潜力客户" in by_field["next_contact_at"]
+    assert "不同自然季度" in by_field["next_contact_at"]
 
 
 def test_validated_analysis_is_shared_with_advice_stage():

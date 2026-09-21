@@ -14,6 +14,7 @@ import httpx
 
 from ..business_wording import SALESPERSON_WORDING_GUIDANCE, salesperson_feedback_hits
 from ..config import Settings
+from ..llm import _model_request_id
 from ..models import VisitDraftInput
 from ..token_usage import UsageClient
 from .experimental_assessment import goal_violation
@@ -165,6 +166,7 @@ def _interactive_messages(snapshot: dict[str, Any]) -> list[dict[str, str]]:
          "拜访方式只能使用表单原选项‘面对面拜访、视频会议、电话拜访、微信/邮件/QQ沟通’，"
          "不得概括成异步沟通、同步沟通、线上沟通或线下沟通。"
          "输出简洁完整的实际分析正文，围绕本次原定目标说明已记录事实和不足以判断的部分。"
+         "正文控制在160个汉字以内、最多3个短段，不重复转述同一事实。"
          "直接输出自然中文，不写标题、占位说明或格式示例。信息不足时说明具体缺少什么，不补造事实。"},
         {"role": "user", "content": json.dumps({"untrusted_visit_data": snapshot}, ensure_ascii=False)},
     ]
@@ -361,13 +363,17 @@ def _stream_semantic_preview_once(
     def emit_piece(piece):
         wording_stream.feed(business_wording(piece))
     first_text_ms: int | None = None
+    model_request_id: str | None = None
+    request_started: float | None = None
     try:
+        request_started = monotonic()
         with UsageClient(settings, follow_redirects=False) as client, client.stream(
             "POST", settings.llm_api_url,
             headers={"Authorization": f"Bearer {settings.llm_api_key.get_secret_value()}", "Content-Type": "application/json"},
             json=body, timeout=settings.frontend_model_timeout_seconds,
         ) as response:
             response.raise_for_status()
+            model_request_id = _model_request_id(response, {})
             for line in response.iter_lines():
                 if not line.startswith("data:"):
                     continue
@@ -375,6 +381,7 @@ def _stream_semantic_preview_once(
                 if not value or value == "[DONE]":
                     continue
                 event = json.loads(value)
+                model_request_id = _model_request_id(response, event) or model_request_id
                 choices = event.get("choices") if isinstance(event, dict) else None
                 if not isinstance(choices, list) or not choices:
                     continue
@@ -383,7 +390,7 @@ def _stream_semantic_preview_once(
                 if not isinstance(content, str) or not content:
                     continue
                 if first_text_ms is None:
-                    first_text_ms = int((monotonic() - started) * 1000)
+                    first_text_ms = int((monotonic() - (request_started or started)) * 1000)
                 raw += content
                 preview = _stream_feedback_body(raw, interactive=interactive)
                 boundary = _flushable_length(preview, emitted, final=_CLOSE in raw)
@@ -423,6 +430,10 @@ def _stream_semantic_preview_once(
         return {
             "diagnostic_evidence_id": evidence_id,
             "status": "completed", "first_real_ai_text_ms": first_text_ms,
+            "model_first_byte_ms": first_text_ms,
+            "model_complete_ms": int((monotonic() - (request_started or started)) * 1000),
+            "model_request_id": model_request_id,
+            "failure_reason": None,
             "semantic_complete_ms": int((monotonic() - started) * 1000),
             "feedback_hash": hashlib.sha256(feedback.encode()).hexdigest(),
             "feedback_length": len(feedback),
@@ -439,12 +450,20 @@ def _stream_semantic_preview_once(
                 "feedback_length": len(_feedback_body(raw)), "has_open": _OPEN in raw,
                 "has_close": _CLOSE in raw})
         return {"status": "failed", "failure_category": category,
+            "failure_reason": category,
             "first_real_ai_text_ms": first_text_ms,
+            "model_first_byte_ms": first_text_ms,
+            "model_complete_ms": int((monotonic() - (request_started or started)) * 1000),
+            "model_request_id": model_request_id,
             "semantic_complete_ms": int((monotonic() - started) * 1000),
             "diagnostic_evidence_id": evidence_id}
     except (httpx.HTTPError, OSError):
         return {"status": "failed", "failure_category": "upstream_service_error",
+            "failure_reason": "upstream_service_error",
             "first_real_ai_text_ms": first_text_ms,
+            "model_first_byte_ms": first_text_ms,
+            "model_complete_ms": int((monotonic() - (request_started or started)) * 1000),
+            "model_request_id": model_request_id,
             "semantic_complete_ms": int((monotonic() - started) * 1000)}
 
 

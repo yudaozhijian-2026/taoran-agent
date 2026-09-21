@@ -82,6 +82,7 @@ from .models import (
     JiandaoyunCheckRequest,
     JiandaoyunEvaluationRequest,
     JiandaoyunSubmittedEvent,
+    KnowledgeWordingItem,
     KnowledgeWordingResult,
     PostEvaluationRequest,
     PrecheckRequest,
@@ -1935,8 +1936,24 @@ def _enhance_front_suggestions(
                 "reason": "not_specific",
             }
     required_advice = list(required_advice_by_field.values())
-    if required_advice:
-        taoran_snapshot["required_advice"] = required_advice
+    local_advice: list[dict[str, str]] = []
+    if experimental and decision_ledger:
+        from .front_v46.decision_ledger import deterministic_advice
+
+        local_advice = deterministic_advice(visit_analysis_context, decision_ledger)
+    locally_covered = {
+        (str(item.get("code") or ""), str(item.get("field") or ""))
+        for item in local_advice
+    }
+    model_required_advice = [
+        item for item in required_advice
+        if (str(item.get("code") or ""), str(item.get("field") or ""))
+        not in locally_covered
+    ]
+    if model_required_advice:
+        taoran_snapshot["required_advice"] = model_required_advice
+    if local_advice:
+        taoran_snapshot["local_advice"] = local_advice
     if experimental:
         taoran_snapshot["experimental_speaker_hints"] = attribution_hints(str(visit_snapshot.get("process_description") or ""))
     # Keep an exact wording for an unchanged form under the same judgment basis.
@@ -2117,6 +2134,28 @@ def _enhance_front_suggestions(
                 model_attempts=[],
             )
         wording = KnowledgeWordingResult.model_validate(canonical).model_copy(update=updates)
+    if local_advice:
+        local_items = [
+            KnowledgeWordingItem(
+                code=item["code"],
+                suggestion=item["text"],
+                specific=False,
+            )
+            for item in local_advice
+        ]
+        seen = {item.suggestion.strip() for item in local_items}
+        merged_items = [
+            *local_items,
+            *(item for item in wording.items if item.suggestion.strip() not in seen),
+        ]
+        wording = wording.model_copy(update={
+            "items": merged_items[:16],
+            "suggestion_status": "has_suggestions",
+            "suggestion_reason": (
+                wording.suggestion_reason
+                or "当前记录仍有明确缺失或不具体的内容。"
+            ),
+        })
     return _apply_knowledge_wording(response, wording, settings, experimental=experimental)
 
 
@@ -2834,12 +2873,15 @@ def _quick_check_run_preview(visit, settings, events, decision_ledger=None):
 
     lease = None
     pieces: list[str] = []
+    queue_started = monotonic()
+    model_queue_ms = 0
     try:
         reviewer = get_agent(settings).semantic_reviewer
         if isinstance(reviewer, ChatModelReviewer):
             lease = reviewer.model_capacity.acquire("frontend", settings.frontend_model_timeout_seconds)
             if lease is None:
                 raise TimeoutError("preview_queue_timeout")
+            model_queue_ms = lease.wait_ms
         preview = stream_semantic_preview_v22(
             settings,
             visit,
@@ -2848,10 +2890,16 @@ def _quick_check_run_preview(visit, settings, events, decision_ledger=None):
             decision_ledger=decision_ledger,
         )
     except Exception:  # noqa: BLE001 - auxiliary failures must not discard Final
-        preview = {"status": "failed", "failure_category": "preview_service_error"}
+        preview = {
+            "status": "failed",
+            "failure_category": "preview_service_error",
+            "failure_reason": "preview_service_error",
+            "model_queue_ms": int((monotonic() - queue_started) * 1000),
+        }
     finally:
         if lease is not None:
             lease.release()
+    preview = {**preview, "model_queue_ms": model_queue_ms}
     analysis = "".join(pieces).strip()
     if preview.get("status") == "completed" and analysis:
         preview = {**preview, "feedback_text": analysis}
@@ -2861,6 +2909,57 @@ def _quick_check_run_preview(visit, settings, events, decision_ledger=None):
         preview = {**preview, "status": "failed"}
         events.put({"type": "preview_complete", "status": "unavailable"})
     return preview
+
+
+def _quick_check_stage_timing(
+    stage: dict[str, Any], *, fallback_total_ms: int | None = None,
+) -> dict[str, Any]:
+    """Normalize one model stage without hiding failed/retried attempts."""
+    attempts = [item for item in stage.get("model_attempts", []) if isinstance(item, dict)]
+    final_attempt = attempts[-1] if attempts else stage
+    first = final_attempt.get("model_first_byte_ms")
+    complete = final_attempt.get("model_complete_ms")
+    failure_reason = next(
+        (
+            str(item.get("failure_reason") or item.get("failure_category"))
+            for item in attempts
+            if item.get("failure_reason") or item.get("failure_category")
+        ),
+        stage.get("failure_reason") or stage.get("failure_category"),
+    )
+    return {
+        "status": stage.get("status", "failed"),
+        "attempt_count": stage.get("attempt_count", len(attempts) or 1),
+        "model_queue_ms": stage.get("model_queue_ms", final_attempt.get("model_queue_ms")),
+        "first_byte_wait_ms": first,
+        "generation_ms": (
+            max(0, complete - first)
+            if isinstance(first, int) and isinstance(complete, int)
+            else None
+        ),
+        "model_complete_ms": complete,
+        "model_request_id": final_attempt.get("model_request_id") or stage.get("model_request_id"),
+        "failure_reason": failure_reason,
+        "total_ms": stage.get("semantic_complete_ms", fallback_total_ms),
+        "attempts": attempts,
+    }
+
+
+def _quick_check_suggestion_timing(final: dict[str, Any]) -> dict[str, Any]:
+    phase = final.get("phase_timings") if isinstance(final.get("phase_timings"), dict) else {}
+    attempts = [item for item in phase.get("attempts", []) if isinstance(item, dict)]
+    last = attempts[-1] if attempts else {}
+    return {
+        "status": final.get("status", "failed"),
+        "attempt_count": phase.get("attempt_count", len(attempts) or 1),
+        "model_queue_ms": last.get("model_queue_ms", phase.get("model_queue_ms")),
+        "first_byte_wait_ms": last.get("first_byte_wait_ms", phase.get("first_byte_wait_ms")),
+        "generation_ms": last.get("generation_ms", phase.get("generation_ms")),
+        "model_request_id": last.get("model_request_id", phase.get("model_request_id")),
+        "failure_reason": phase.get("failure_reason") or final.get("failure_category"),
+        "total_ms": phase.get("total_ms") or final.get("full_feedback_ms"),
+        "attempts": attempts,
+    }
 
 
 @usage_scope("frontend_final")
@@ -3029,6 +3128,11 @@ def _quick_check_run(
             }
             final["phase_timings"] = {
                 **final.get("phase_timings", {}),
+                "analysis": _quick_check_stage_timing(
+                    analysis_stage,
+                    fallback_total_ms=analysis_elapsed,
+                ),
+                "suggestion": _quick_check_suggestion_timing(final),
                 "two_stage": {
                     "analysis_ms": analysis_elapsed,
                     "suggestion_initial_ms": initial_suggestion_elapsed,
@@ -3111,6 +3215,11 @@ def _quick_check_run(
     elapsed = int((monotonic() - started) * 1000)
     final["phase_timings"] = {
         **final.get("phase_timings", {}),
+        "analysis": _quick_check_stage_timing(
+            analysis_stage,
+            fallback_total_ms=analysis_elapsed,
+        ),
+        "suggestion": _quick_check_suggestion_timing(final),
         "two_stage": {
             "analysis_ms": analysis_elapsed,
             "suggestion_initial_ms": initial_suggestion_elapsed,
@@ -3120,6 +3229,12 @@ def _quick_check_run(
             "total_ms": elapsed,
             "analysis_status": analysis_stage.get("status", "failed"),
             "suggestion_status": final.get("status", "failed"),
+            "analysis_recovered_by": (
+                "stage2_fallback"
+                if analysis_stage.get("status") != "completed"
+                and bool(_quick_check_final_analysis(final.get("feedback_text", "")))
+                else None
+            ),
         },
     }
     events.put({"type": "preview_complete", **preview})
