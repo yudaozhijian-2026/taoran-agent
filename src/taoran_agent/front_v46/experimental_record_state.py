@@ -89,7 +89,18 @@ def boundary_issues(text, context):
                 or re.search(r"(?:未填写|未提供)(?:具体)?" + label, sentence)
             ):
                 issues.append({"error_type": "recorded_as_missing", "field": field, "text": sentence})
+        recorded_no_agreement = any(
+            fact.get("source_field") in {"process_description", "customer_feedback"}
+            and fact.get("record_status") == "negative_fact"
+            and re.search(
+                r"(?:未|没有|尚未)(?:约定|安排|确定)"
+                r"[^，,。；;]{0,8}(?:联系|拜访)(?:时间|日期)",
+                str(fact.get("text") or ""),
+            )
+            for fact in state["BUSINESS_SEMANTIC_STATE"].get("facts", [])
+        )
         if (state["field_states"]["next_contact_at"] == "not_recorded"
+                and not recorded_no_agreement
                 and re.search(
                     r"(?:未|没有|尚未)(?:约定|安排|确定)"
                     r"[^\uff0c,。；;]{0,8}(?:联系|拜访)(?:时间|日期)",
