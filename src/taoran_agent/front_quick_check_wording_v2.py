@@ -12,9 +12,16 @@ from zoneinfo import ZoneInfo
 
 from .front_v46.experimental_business_semantic_state import classify_field_state
 from .goal_normalization import normalize_expected_key_result
+from .pilot_final_consistency import (
+    complete_sentences,
+    contact_plan_state,
+    customer_response_state,
+    goal_presentation_state,
+    source_text,
+)
 from .record_contract import visit_contract
 
-VERSION = "front-quick-check-wording-v2.1-20260921"
+VERSION = "front-quick-check-wording-v2.2-20260922"
 _VAGUE = re.compile(
     r"^(?:项目顺利实施|推进项目|收集信息|了解需求|保持联系|保持关系|继续跟进|"
     r"后续跟进|沟通一下|了解一下|测试|测试测试)[。！!\s]*$"
@@ -238,7 +245,7 @@ def _analysis_summary(raw: dict, facts: list[dict]) -> str:
     size = re.search(r"(\d{3,4})\s*(?:mm)?[×xX*]\s*(\d{3,4})\s*mm", text)
     if desk and size and "办公桌" in text:
         return (
-            f"本次已经明确客户计划采购{desk[1]}张{size[1]}×{size[2]}mm组合办公桌，"
+            f"本次已经明确客户计划采购{desk[1]}张{size[0]}组合办公桌，"
             "采购数量和规格需求已经比较清楚。"
         )
     if "培训" in text:
@@ -302,9 +309,12 @@ def _analysis_summary(raw: dict, facts: list[dict]) -> str:
             return "本次已取得设备清单，并确认预算审批已通过及采购负责人。"
         return f"本次已取得{equipment}清单，相关清单信息已经记录。"
     if "审核" in text:
-        return "本次已跟进审核进度，但集团端仍未反馈，当前推进节点尚不明确。"
-    compact = re.sub(r"^(?:本次|销售)(?:已经|已)?", "", facts[0]["quote"])
-    return f"本次记录已明确{compact[:72].rstrip('，,；;')}。"
+        quote = complete_sentences(facts[0]["quote"], limit=1)
+        return "本次记录显示：" + (quote[0] if quote else "审核进度仍待进一步确认。")
+    quote = complete_sentences(facts[0]["quote"], limit=2)
+    if quote:
+        return "本次记录显示：" + "".join(quote)
+    return "当前记录还没有可核对的具体过程事实。"
 
 
 def _specific_next_step(raw: dict) -> tuple[str, dict] | None:
@@ -366,6 +376,7 @@ def _specific_next_step(raw: dict) -> tuple[str, dict] | None:
 
 def _contact_advice(raw: dict, presence: dict, visit: Any) -> tuple[dict, dict | None]:
     contact = contact_state(raw)
+    shared_plan = contact_plan_state(raw)
     future_event = _future_customer_event(raw)
     if presence.get("next_contact_at") != "empty":
         if visit.next_contact_at is None or visit.visit_date is None:
@@ -451,20 +462,27 @@ def _contact_advice(raw: dict, presence: dict, visit: Any) -> tuple[dict, dict |
             "source": "business_need",
             "evidence": contact["evidence"],
         }
-    customer_type = str(raw.get("customer_type_ii") or "")
-    cadence = {
-        "potential": "按潜力客户的维护节奏，可以参考跨自然季度安排后续联系",
-        "target": "按目标客户的维护节奏，可以参考跨自然月安排后续联系",
-    }.get(customer_type)
+    existing_plan = {
+        "explicit_date": "记录中已经有明确日期的后续联系安排，建议如实填写到“下一次联系时间”。",
+        "relative_time": "记录中已经有相对时间的后续联系安排，建议在实际确认具体日期后如实填写。",
+        "event_trigger": "记录中已经有事件触发型的后续联系安排，建议在条件满足后如实填写具体日期。",
+    }.get(shared_plan.state)
+    if existing_plan:
+        return contact, {
+            "text": existing_plan,
+            "source": "record_fact",
+            "evidence": [
+                {"field": "process_description", "quote": quote}
+                for quote in shared_plan.evidence
+            ],
+        }
     text = (
         "当前还没有填写下一次联系时间，记录中也未看到明确的后续联系安排。"
-        "建议结合下一步推进事项规划联系时间"
+        "建议结合下一步推进事项和客户实际进展规划联系时间"
     )
-    if cadence:
-        text += f"；{cadence}，具体时间以客户实际推进情况为准"
     return contact, {
         "text": text + "。",
-        "source": "customer_type_cadence_reference" if cadence else "business_need",
+        "source": "business_need",
         "evidence": [],
     }
 
@@ -559,7 +577,13 @@ def project(
             )
             if computed != raw.get("self_assessment"):
                 alignment.update(computed_goal_summary=computed, alignment="overstated")
-    achievement = "unresolved" if goal_problem else alignment["computed_goal_summary"]
+    presentation = goal_presentation_state(
+        goal,
+        alignment["computed_goal_summary"],
+        raw.get("self_assessment"),
+        goal_quality=goal_state,
+    )
+    achievement = presentation.achievement
     facts = _facts(raw, sections)
     analysis = _analysis_summary(raw, facts)
     if not facts and presence.get("process_description") == "not_received":
@@ -721,6 +745,49 @@ def project(
                 [field],
             )
 
+    blocking_codes = {
+        code
+        for code in ("O_KR", "R", "A2", "N")
+        if by_code.get(code, {}).get("verdict") == "needs_revision"
+    }
+    covered_by = {
+        "O_KR": {"goal", "O_KR"},
+        "R": {"attribution", "process_fact"},
+        "A2": {"assessment"},
+        "N": {"next_result", "contact"},
+    }
+    missing_blocking = next(
+        (
+            code
+            for code in ("O_KR", "R", "A2", "N")
+            if code in blocking_codes
+            and not any(item["key"] in covered_by[code] for item in suggestions)
+        ),
+        None,
+    )
+    if missing_blocking:
+        code = missing_blocking
+        fallback = {
+            "O_KR": "请根据已有记录补充可核对的关键结果，再据实确认达成情况。",
+            "R": "请依据已有沟通内容补充可核对的过程事实，并区分客户回应与销售计划。",
+            "A2": "请结合已有过程事实，重新核对本次自评是否与实际进展一致。",
+            "N": "请结合本次实际进展，补充下一步希望确认的具体事项或安排。",
+        }[code]
+        suggestions.append({
+            "key": "front_final_consistency",
+            "text": fallback,
+            "priority": 1,
+            "suggestion_basis": {
+                "source": "front_review",
+                "evidence": _facts(raw, [by_code[code]]),
+                "fields": list(by_code[code].get("field_paths") or {
+                    "O_KR": ["expected_key_result"],
+                    "R": ["process_description"],
+                    "A2": ["self_assessment"],
+                    "N": ["next_action_expected_result"],
+                }[code]),
+            },
+        })
     selected = sorted(suggestions, key=lambda item: item["priority"])[:3]
     notices = [
         f"系统尚未收到“{label}”，请检查字段传递。"
@@ -738,7 +805,7 @@ def project(
         f"{index}. {item['text']}" for index, item in enumerate(selected, 1)
     )
     if not advice:
-        advice = "当前没有需要优先修改的内容。"
+        advice = "当前没有影响提交的明显问题。"
     if notices:
         advice += "\n\n系统提示：\n" + "\n".join(notices)
     return {
@@ -753,6 +820,10 @@ def project(
         "goal_source": "key_result",
         "contact_state": contact["state"],
         "contact_timing_kind": contact.get("timing_kind"),
+        "contact_plan_state": contact_plan_state(raw).state,
+        "customer_response_state": customer_response_state(source_text(raw)).state,
+        "assessment_alignment": presentation.assessment_alignment,
+        "front_final_consistency": "blocking_issue" if blocking_codes else "no_blocking_issue",
         "analysis_basis": facts,
         "suggestions": selected,
         "system_notices": notices,

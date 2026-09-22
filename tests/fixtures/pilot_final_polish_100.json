@@ -1,0 +1,3198 @@
+{
+  "description": "100条已完成隔离全流程测试的原始拜访输入快照；仅用于内容回归。",
+  "source_runs": [
+    "full-flow-real30-20260921/fullflow-results.json",
+    "real30-reselected-front-feedback-20260922/final-results.json",
+    "real40-reselected-front-feedback-20260922/final-results.json"
+  ],
+  "records": [
+    {
+      "source_record_code": "BFJL2026092145740",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "KH2025032707514",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "沟通点单情况",
+        "process_description": "正常招呼下，主要是想打听最新进度，目前还是没啥反应，他也让物资随时关注着情况，可以提了就通知我。",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T16:22:17+08:00",
+        "actual_end_at": "2026-09-20T19:22:17+08:00",
+        "submitted_at": "2026-09-21T10:23:49+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "周苏"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260805179",
+            "current_stage": "P4"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092145739",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024062604453",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "沟通付款、点单",
+        "process_description": "主要沟通前面付款情况，现在在提资料走流程，前面点单也还是没动静，只有等着，他们也是无能为力。",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T14:17:22+08:00",
+        "actual_end_at": "2026-09-20T17:17:22+08:00",
+        "submitted_at": "2026-09-21T10:22:01+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "王潘"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260821326",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092145738",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "KH2025062308105",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "沟通电话",
+        "process_description": "沟通电话机功能情况，产品是满足需求，但是要涉及组网什么的设置，要接外网什么的，it上有点复杂，上级公司不同意，就驳回了他们采购申请，只能放弃",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T11:14:16+08:00",
+        "actual_end_at": "2026-09-20T14:14:16+08:00",
+        "submitted_at": "2026-09-21T10:16:55+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "唐旭"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092145737",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024061904387",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "完成合同签署",
+        "other_purpose": null,
+        "expected_key_result": "沟通付款",
+        "process_description": "沟通付款情况，现在提了付款流程，陆续走流程中，需要稍等下",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T10:54:08+08:00",
+        "actual_end_at": "2026-09-20T13:54:08+08:00",
+        "submitted_at": "2026-09-21T09:59:22+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "魏阔"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260828393",
+            "current_stage": "P1"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045732",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "SCMT0037",
+        "customer_type_ii": "目标客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访武老师主要是王老师转介绍办公类需求计划都是武老师在负责，同武老师沟通交流业务后加上微信方便后期业务开展。",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "挖掘需求",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T22:45:46+08:00",
+        "actual_end_at": "2026-09-20T23:00:46+08:00",
+        "submitted_at": "2026-09-20T23:17:11+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "武艳辉"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045731",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "SCMT0037",
+        "customer_type_ii": "目标客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访王老师主要是多熟悉并收集信息了解他们下半年是否还有计划需求，王老师这边反馈到是否有新计划主要是武老师那边他在收集需求。",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "挖掘需求",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T22:43:28+08:00",
+        "actual_end_at": "2026-09-20T22:58:28+08:00",
+        "submitted_at": "2026-09-20T23:14:23+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "王依琳"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045726",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "OA2024071804632",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "劳保入库",
+        "process_description": "拜访安监部陈老师，协助向总客户办理劳保入库",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T09:11:13+08:00",
+        "actual_end_at": "2026-09-20T10:41:13+08:00",
+        "submitted_at": "2026-09-20T22:11:40+08:00",
+        "duration_minutes": 90,
+        "participants": [
+          {
+            "contact_id": "杨子义"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045721",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "KH2025060308006",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "拿借给客户的手机",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T09:44:34+08:00",
+        "actual_end_at": "2026-09-20T10:14:34+08:00",
+        "submitted_at": "2026-09-20T21:13:23+08:00",
+        "duration_minutes": 30,
+        "participants": [
+          {
+            "contact_id": "何润熙"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260819285",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045719",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "KH2025060308006",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "了解客户近期采购需求",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T10:17:39+08:00",
+        "actual_end_at": "2026-09-20T11:02:39+08:00",
+        "submitted_at": "2026-09-20T21:12:18+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "何润熙"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260819285",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045715",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "于富强",
+        "customer_id": "KH2025011406872",
+        "customer_type_ii": "商机客户",
+        "visit_method": "电话拜访",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "1.收到连云港润众关于167kgLN-02二次招标通知，截止时间9月21日17:00，计划明天上午进行报价，价格1300元/kg。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-20T20:34:14+08:00",
+        "participants": [
+          {
+            "contact_id": "符启利"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260811227",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045714",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "于富强",
+        "customer_id": "KH2026091810866",
+        "customer_type_ii": "目标客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "实际拜访公司：杭州三维化学有限公司\n1.杭州三维化学有限公司，成立于2004年，贸易公司，有员工不到10人，拜访业务经理王孜静，客户主要市场为印度和非规范市场为主，给王经理介绍公司，业务模块，向王经理介绍推荐公司在研和商业化的原药药和中间体产品目录，对客户感兴趣的2-FXPL和吡非尼酮提供了报价。重点给客户推荐在研吉泊达星、阿来替尼、吉维司他、利司扑兰等API和中间体。首次同客户建立联系，保持联系。",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T14:30:25+08:00",
+        "actual_end_at": "2026-09-20T15:30:25+08:00",
+        "submitted_at": "2026-09-20T20:30:48+08:00",
+        "duration_minutes": 60,
+        "participants": [
+          {
+            "contact_id": "黄川"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045706",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KHBH20251225043",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "了解客户目前对PL-02 是否有需求",
+        "process_description": "了解客户目前对PL-02 是否有需求，客户反馈目前需要内部沟通，保持跟进，如果有需求的话，了解客户的目标价。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收到客户的反馈，如果价格合适，与领导沟通是否可以清理库存",
+        "next_contact_at": "2026-09-30T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-20T17:29:21+08:00",
+        "participants": [
+          {
+            "contact_id": "arpit.parikh<arpit.parikh@alembic.co.in>"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045705",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "徐锋",
+        "customer_id": "KH2025042307740",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "跟进",
+        "process_description": "拟开发右酮络芬氨丁三醇注射液（阿片镇痛）、盐酸纳美芬注射液（阿片类缓解），注射用西维来斯钠（ARDS全身炎症反应）。发来招标信息。10月30日前反馈。表示我们内部沟通下相关经验再答复是否参加。",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "跟进",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-20T17:26:01+08:00",
+        "participants": [
+          {
+            "contact_id": "王姣"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045700",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0427",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访物质部童老师，沟通订单审批事宜，已完成",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": "2026-10-20T00:00:00+08:00",
+        "actual_start_at": "2026-09-20T09:04:52+08:00",
+        "actual_end_at": "2026-09-20T10:04:52+08:00",
+        "submitted_at": "2026-09-20T17:06:14+08:00",
+        "duration_minutes": 60,
+        "participants": [
+          {
+            "contact_id": "王妮"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260918539",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045699",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0428",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访冯老师，咨询劳保采购计划，预计国庆后再确定",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": "2026-10-20T00:00:00+08:00",
+        "actual_start_at": "2026-09-20T11:02:44+08:00",
+        "actual_end_at": "2026-09-20T11:32:44+08:00",
+        "submitted_at": "2026-09-20T17:04:31+08:00",
+        "duration_minutes": 30,
+        "participants": [
+          {
+            "contact_id": "赵丹"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260806194",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045697",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "HBKH241017399",
+        "customer_type_ii": "商机客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "是",
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "跟新华研究院沟通，研究院已经启动45kg M64的采购申购流程。\n今日收到新华采购中心联系，补充M64 报价单，沟通价格和货期，账期货到票到5个工作日。，走招投标流程，等对方审核，审核通过后下合同，保持跟进。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-20T16:09:23+08:00",
+        "participants": [
+          {
+            "contact_id": "王剑平"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260731143",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045696",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "KH2026032409772",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "客户询4KG PLGL ,已经报价。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-20T16:06:10+08:00",
+        "participants": [
+          {
+            "contact_id": "于新攀"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045686",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "钱子强",
+        "customer_id": "KH2025091208725",
+        "customer_type_ii": "商机客户",
+        "visit_method": "视频会议",
+        "is_appointment": "是",
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "现有LKXA项目推进和新项目推荐",
+        "process_description": "客户拜访记录\n1.LKXA 客户2025年总计采购250KG，今年虽然签订了400KG年单，但根据制剂销售情况实际总需求200KG。和客户讨论了新增龙泽为二供，客户表示新增二供需要完成6个月的稳定性，加上注册时间需要一年时间，需要内部讨论是否有必要新增二供，如果制剂销售情况一般，客户更倾向提前3-4个月下单，而不是新增二供。\n2.WTXT 客户有立项打算，预计获批后第一年需求10KG，第二年30KG。目前需要100克样品报价。\n3.匹伐他丁钙，在评估阶段，后期需要DMF注册，目前需要100克报价。\n4.客户表示对奥格列龙非常有兴趣，此药物目前在俄罗斯开出的处方很多是给HIV病人，需要关注客户后续立项计划。\n5.客户介绍目前公司在处于快速扩张中，2025年营收做到行业top50，正在打算建第二个工厂，后期可能会立项抗肿瘤品种。\n6.Galavit（加拉维特，俄罗斯免疫调节剂）母核：酞嗪二酮（phthalazinedione），鲁米诺（luminol）的钠盐衍生物\n类别：免疫调节剂，俄罗斯原研，用于调节巨噬细胞、抑制促炎细胞因子。客户对此API的CRO感兴趣，询问我司是否可以开发，后期提供相关注册文件。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "WTXT新项目的跟进",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-20T11:20:56+08:00",
+        "participants": [
+          {
+            "contact_id": "Julia"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20251225123",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845675",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "于富强",
+        "customer_id": "KH2026070710280",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "1.实际拜访杭州涌进科创有限公司，新公司录入在审批状态。拜访了总经理黄川、业务经理李浩、李春悦，黄总从浙江进出口离开后，于2024年创建杭州涌进，目前业务主要是API和医药中间体，客户主要是日韩和印度。向黄总介绍海步公司发展历程、业务模块和产品手册等，寻找合作机会。",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T16:42:47+08:00",
+        "actual_end_at": "2026-09-18T19:42:47+08:00",
+        "submitted_at": "2026-09-18T22:40:05+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "李秀玲"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260911518",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845666",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "OA2024071804632",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "公司办公",
+        "process_description": "协助向总帮助客户办理入库的相关手续并回公司参加会议",
+        "self_assessment": "未达到目的",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T12:13:07+08:00",
+        "actual_end_at": "2026-09-18T13:13:07+08:00",
+        "submitted_at": "2026-09-18T18:13:38+08:00",
+        "duration_minutes": 60,
+        "participants": [
+          {
+            "contact_id": "杨子义"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845658",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "陈逸洋",
+        "customer_id": "KH2026071610373",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "展会邀请",
+        "process_description": "之前向客户介绍过公司主打产品。 邀请客户展会见面沟通。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "确认展会计划",
+        "next_contact_at": "2026-09-28T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-18T16:55:08+08:00",
+        "participants": [
+          {
+            "contact_id": "Jackeline Valencia Arias"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845652",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2026011309471",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": "跟进客户TJ-001 的订单进度",
+        "expected_key_result": "TH-001 客户需求的跟进",
+        "process_description": "客户反馈目前20kg 的订单需求，需要往后顺延到Q4，具体原因正在确认中，预约客户CPHI MILAN 会议，客户反馈今年暂时不计划参加，明年上海预约，届时跟进客户时间表。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收到客户的订单反馈",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-18T16:10:13+08:00",
+        "participants": [
+          {
+            "contact_id": "Nitya"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845647",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "KH2024121806679",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "跟现代研究院张仪博士，郝群博士面对面沟通\n本次会议主要围绕医药行业现状、公司项目进展及未来规划进行了深入交流。会议首先梳理了公司在研管线的进展，阿来替尼等重点仿制药的原料与中间体业务。其次，双方探讨了当前面临的市场环境与政策挑战，重点分析了国际市场竞争加剧、国内集采常态化及国家药政审评趋严带来的影响。最后交流了目前合作项目和可能会有的合作机会。\n1.BRPZ 口溶膜项目，现代后续可能获批困难。片剂已经获批\n2.YBTN API，威奇达后续可能转A困难。\n3.YBTN胶囊，还是现代持证，一心生产，后续跟现代对接采购事宜。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-17T14:00:00+08:00",
+        "actual_end_at": "2026-09-17T16:00:00+08:00",
+        "submitted_at": "2026-09-18T15:27:32+08:00",
+        "duration_minutes": 120,
+        "participants": [
+          {
+            "contact_id": "张仪"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845644",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "KH2026032409772",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "吉泊达星中间体M58 招标，采购于反馈，5家投标，我司报价最高3w，最低价2.35w，跟春侠总沟通，不再进行第二轮投标，放弃。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-18T14:55:05+08:00",
+        "participants": [
+          {
+            "contact_id": "于新攀"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845643",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0200",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "沟通商品增加标签等事宜",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": "2026-10-20T00:00:00+08:00",
+        "actual_start_at": "2026-09-18T10:21:41+08:00",
+        "actual_end_at": "2026-09-18T11:06:41+08:00",
+        "submitted_at": "2026-09-18T14:23:06+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "彭勇力"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260617644",
+            "current_stage": "P4"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845640",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0427",
+        "customer_type_ii": "商机客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "收集信息，跟进应收",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": "2026-09-20T00:00:00+08:00",
+        "actual_start_at": "2026-09-18T10:34:36+08:00",
+        "actual_end_at": "2026-09-18T11:19:36+08:00",
+        "submitted_at": "2026-09-18T14:16:49+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "王妮"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260918539",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845638",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "KH2025022607173",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "面对面拜访",
+        "is_appointment": "是",
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "催款",
+        "self_assessment": "达到目的",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T13:50:34+08:00",
+        "actual_end_at": "2026-09-18T14:20:34+08:00",
+        "submitted_at": "2026-09-18T14:02:14+08:00",
+        "duration_minutes": 30,
+        "participants": [
+          {
+            "contact_id": "李柯成"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845632",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2025111809019",
+        "customer_type_ii": "潜力客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "MNLS 100g 询盘终端Homapharmed Pharma",
+        "process_description": "MNLS 100g 询盘终端Homapharmed Pharma，客户要求我司提供COA做评估，已经给客户报价。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "跟进终端客户的报价反馈",
+        "next_contact_at": "2026-09-24T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-18T10:54:40+08:00",
+        "participants": [
+          {
+            "contact_id": "赵威棣"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845631",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2025123109364",
+        "customer_type_ii": "商机客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "土耳其客户询价BRPZ",
+        "process_description": "土耳其客户询价BRPZ，需要在欧洲市场注册，对WC & DMF 有要求，已经反馈客户我司可以提供，终端是ABDI，仍然是土耳其的同一个终端。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收到贸易商对终端客户的反馈",
+        "next_contact_at": "2026-09-30T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-18T09:49:10+08:00",
+        "participants": [
+          {
+            "contact_id": "杨经理"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-202606261647",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845629",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2025112709076",
+        "customer_type_ii": "商机客户",
+        "visit_method": "微信/邮件/QQ沟通",
+        "is_appointment": "否",
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "龙泽WTXT 的问卷，已经盖章发给客户",
+        "process_description": "给日本Yamamoto 的客户文件，工厂架构的信息，已经收到龙泽的反馈，提供给季经理，同步推进客户的检测结果。",
+        "self_assessment": "部分达到目的",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收到客户的检测结果反馈",
+        "next_contact_at": "2026-09-22T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "submitted_at": "2026-09-18T09:16:57+08:00",
+        "participants": [
+          {
+            "contact_id": "季经理"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260721961",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745579",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "OA2024080104800",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访敬主任，沟通劳保采购合作事宜。很多关系看到这个的，基本上不可能",
+        "self_assessment": "not_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "保持关系",
+        "next_contact_at": "2026-10-21T00:00:00+08:00",
+        "actual_start_at": "2026-09-17T10:01:21+08:00",
+        "actual_end_at": "2026-09-17T10:31:21+08:00",
+        "duration_minutes": 30,
+        "participants": [
+          {
+            "contact_id": "敬军"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845671",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "于富强",
+        "customer_id": "KH2025010806804",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "1.拜访杭州生物医药业务总监王保平、业务经理邱硕、陈秋安、马丽娇，重点推荐中间体产品目录，客户反馈商机（1）5kg2-氟腺嘌呤，对2-氯杂质没有特殊要求，按照贸易产品，报价2.8万/kg，货期2周；（2）利司扑兰中间体CAS：64068-00-4，50kg，报价1.6万/kg；（3）吉泊达星中间体M58,100kg数量报价2.8万/kg；M59数量100kg报价5万/kg，货期3-4周。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T09:30:58+08:00",
+        "actual_end_at": "2026-09-18T11:00:58+08:00",
+        "duration_minutes": 90,
+        "participants": [
+          {
+            "contact_id": "王保平"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260831467",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091445432",
+      "form_snapshot": {
+        "visit_date": "2026-09-14T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "KH2025062308105",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "处理需求",
+        "process_description": "处理落实客户需求，寄样机",
+        "self_assessment": "achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": "加强关系",
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-14T08:39:18+08:00",
+        "actual_end_at": "2026-09-14T20:39:21+08:00",
+        "duration_minutes": 720,
+        "participants": [
+          {
+            "contact_id": "唐旭"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091445428",
+      "form_snapshot": {
+        "visit_date": "2026-09-14T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "KH2026012709554",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "客户询罗沙司他中间体，136562-77-1，跟陈阳沟通给出报价1kg，4万/kg；5kg，2.8万/kg，货期3周，已经答复客户。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "潘炀钖"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260530481",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545465",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "徐锋",
+        "customer_id": "KH2504240007",
+        "customer_type_ii": "potential",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "跟进",
+        "process_description": "跟进之前推荐的舌下片，感觉这个项目不在他们关注范围内，并且感觉竞争压力比较大，参比制剂的问题导致的不可控因素比较多，暂时不能立项。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "跟进",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "施顺东"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845636",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "OA2023112402906",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "催款",
+        "self_assessment": "achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T10:30:29+08:00",
+        "actual_end_at": "2026-09-18T11:30:29+08:00",
+        "duration_minutes": 60,
+        "participants": [
+          {
+            "contact_id": "张"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845637",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "OA2023111302710",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "催款",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T13:50:17+08:00",
+        "actual_end_at": "2026-09-18T14:35:17+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "袁因"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260820310",
+            "current_stage": "P1"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091445425",
+      "form_snapshot": {
+        "visit_date": "2026-09-14T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "HBKH241017400",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": true,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "客户已经收到62.87kg MN-01，催收之前发货10.5kg 的货款。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "杨中青"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260731133",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545502",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "SCMT0171",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "杨主任和赵强老师一个办公室他领导主任，办公类物资采购决策者但具体的都是赵强老师在负责杨主任不过问细节，拜访时主要是多熟悉也说明来意和下次采购时由我们来给他们做服务。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "强化关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息挖掘商机",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-15T22:10:05+08:00",
+        "actual_end_at": "2026-09-15T22:40:05+08:00",
+        "duration_minutes": 30,
+        "participants": [
+          {
+            "contact_id": "杨建"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260831438",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545496",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "于富强",
+        "customer_id": "KH2025022607176",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "1.拜访台州市裕欣医药石子龙经理，贸易公司，中午同石总一起吃饭，期间沟通产品商机信息时，石总反馈布瑞哌唑化工品、吉泊达星有客户在询盘，具体客户终端信息等有明确意向，在反馈。给石总留下公司产品手册，重点推荐在研新的化工品原料和中间体，同客户保持联系。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-15T11:34:30+08:00",
+        "actual_end_at": "2026-09-15T13:34:30+08:00",
+        "duration_minutes": 120,
+        "participants": [
+          {
+            "contact_id": "石子龙"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545461",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "OA2023081802089",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "维护关系，跟进订单情况",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-15T14:32:44+08:00",
+        "actual_end_at": "2026-09-15T15:17:44+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "謝林栖老师"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260812242",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845651",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "HBKH241017022",
+        "customer_type_ii": "potential",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "客户询1kg PL-01，已经报价。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "王芳芳"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091445413",
+      "form_snapshot": {
+        "visit_date": "2026-09-14T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2026052910134",
+        "customer_type_ii": "opportunity",
+        "visit_method": "phone",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "日本共和BRPZ 的问卷评估",
+        "process_description": "日本共和BRPZ 的问卷评估，客户目前收到多家的问卷，针对之前沟通的FORM I 晶型，客户并未给出明确的反馈，最终立项无水晶型还是FORM I，与沈总沟通客户目前需要确认的信息。\n与共和 & 丰拓，确认CPHI 米兰 会议时间。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "与客户沟通BRPZ 客户的项目计划",
+        "next_contact_at": "2026-09-23T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "沈总"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-202606259569",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845639",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0435",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "其他目的",
+        "other_purpose": "沟通订单审批流程",
+        "expected_key_result": "沟通订单审批流程",
+        "process_description": "跟进订单审批流程",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "获得参与",
+        "next_contact_at": "2026-09-20T00:00:00+08:00",
+        "actual_start_at": "2026-09-18T09:05:01+08:00",
+        "actual_end_at": "2026-09-18T09:50:01+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "陈川"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260902487",
+            "current_stage": "P4"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092145735",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024061904390",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "完成合同签署",
+        "other_purpose": null,
+        "expected_key_result": "补单",
+        "process_description": "完成陆续补单，先提几个他们正常需求",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T08:49:15+08:00",
+        "actual_end_at": "2026-09-20T11:49:15+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "张刘伟"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260828392",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045727",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "OA2024071804632",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "劳保入库",
+        "process_description": "拜访安监部陈老师，协助向总客户办理劳保入库",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T09:11:52+08:00",
+        "actual_end_at": "2026-09-20T10:41:52+08:00",
+        "duration_minutes": 90,
+        "participants": [
+          {
+            "contact_id": "杨子义"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745597",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024062604448",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "保持关系",
+        "other_purpose": "验证下审核情况",
+        "expected_key_result": "加强关系",
+        "process_description": "正常拜访招呼，验证下审核情况，主任意思还是等下，晓得这个事情，但是流程上没走完也不能动，让正常走流程就是",
+        "self_assessment": "achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-17T14:49:59+08:00",
+        "actual_end_at": "2026-09-17T17:49:59+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "罗蓉"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745618",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "钱子强",
+        "customer_id": "KH2025092508801",
+        "customer_type_ii": "target",
+        "visit_method": "video",
+        "is_appointment": true,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "WTXT验证批需求确认",
+        "process_description": "客户拜访记录\n1.公司背景：1999成立，最初是开展贸易业务，2016年开始自建工厂，现有人员超过600人，在研发产品40个，2025年注射剂产线投产。抗肿瘤产线预计27年一季度建成，今年年底开始立项肿瘤品种。\n2.WTXT 项目 客户采购我们5KG API，已于6月递交注册文件，预计27年4月拿到注册证书，验证批采购数量和时间不确定，会根据MOH发补情况而定。\n3.ASZK 项目，客户立项之初寻找FORM I晶型，最终选用的晶型是无定型，已有2个供应商都是来自国内，预计27年1月获得注册证书，获批后再讨论增供。\n4.请客户在年底如有抗肿瘤产品立项清单，及时分享给我司。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收到客户抗肿瘤产品立项清单",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Olga Shvedova"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545472",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "徐锋",
+        "customer_id": "HBKH20240430044",
+        "customer_type_ii": "target",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "发展关系",
+        "other_purpose": null,
+        "expected_key_result": "跟进",
+        "process_description": "拜访戴振。跟进之前说的多替诺雷项目，是否考虑好了，还会不会换CRO。答复领导考虑了一下，还是没办法换，只能硬着头皮继续往前干，当时在气头上，到处问想换掉供应商，其实没那么容易。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "发展关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "跟进",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "戴振"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645567",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "KH2026091610846",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "获取有效商机",
+        "process_description": "拜访综合办公室胡老师，成绵高速已于25年9月开始免费，目前已经由成绵运管公司代为管理维护，虽然挂名蜀道旗下但是目前项目维护以及日常管理已经不走蜀志云商进行采购，日常运维物资均走内部系统统一配送",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T22:50:17+08:00",
+        "actual_end_at": "2026-09-16T23:05:17+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "胡老师"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645561",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "KH2026091610848",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "获取有效信息",
+        "process_description": "拜访机电管理部熊老师，机电这边都是熊老师在收集需求并下单，一般需求上来以后先会对比商场如有上架直接下单，反之则会选择询价的方式来下单，后期有需求以后熊老师也会在商品规格参数以及价格上优先质询我司，前提价格是要对比淘宝京东并要比以上价格便宜",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T20:23:44+08:00",
+        "actual_end_at": "2026-09-16T23:23:44+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "熊已"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645558",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "SCMT0172",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访仁和网源的罗老师主要是收集信息了解他们下半年是否还有物资需求计划，罗老师反馈到目前他们有一批物资采购但里面大多都是二级专区的物资，有少部分自己一级专区物资具体的没要等国网系统回复后是安检曾老师那边在具体弄，他在仁和主业安监部办公。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "挖掘商机信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T22:09:27+08:00",
+        "actual_end_at": "2026-09-16T22:24:27+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "罗晓娇"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260417141",
+            "current_stage": "P1"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045707",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "钱子强",
+        "customer_id": "KH2025091208726",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "YBTN DMF文件相关问题回复",
+        "process_description": "关于YBTN DMF文件回复客户，\n1.我们给客户质量标准中保留晶型检测，客户API入厂检测去掉晶型检测是否可以。\n2.DMF中不包含粒径信息，但发货COA中保留粒径检测项和结果。\n3.会提供修改后的3.2.S.4.5.7 Residual solvent.甲基丙烯酸酯描述。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "得到客户DMF相关问题反馈",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Tatiana Znamenskaya"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260331026",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745620",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "钱子强",
+        "customer_id": "KH2025091208736",
+        "customer_type_ii": "opportunity",
+        "visit_method": "video",
+        "is_appointment": true,
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "下一批次APTA premix需求确认",
+        "process_description": "客户拜访记录\n1.APTA premix\n客户反馈APTA FDF的注册工作还未最终完成，预计今年秋季可以完成。计划正式获批后用之前发货的50KG premix生产制剂。下一个50KG premix需求要延迟到明年1月-2月。明年预计年需求在150KG。客户APTA制剂是销售到院内市场。\n2.利司扑兰 即将完成制剂注册，API无需DMF可以按化工品进口，但反馈我司报价高，稍后给Evgney更新化工品的报价。\n3.奥列格龙 是客户感兴趣的项目，可能会采购premix，请客户如果有满足其质量要求的其他供应商质量标准，可以分享给我们。\n4.ALTN 和ABXL 项目，目前都是暂停状态，无新的进展。\n5.之前给客户推过龙泽产品多替拉韦钠，这个项目目前客户也放弃了。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "利司扑兰化工品报价更新",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Evgeny Mamistvalov"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260829407",
+            "current_stage": "P1"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645544",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024072504731",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "技术方案认可",
+        "other_purpose": null,
+        "expected_key_result": "沟通耗材问题",
+        "process_description": "沟通耗材方案情况",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T14:43:32+08:00",
+        "actual_end_at": "2026-09-16T17:43:32+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "王彬"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260703846",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845657",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "陈逸洋",
+        "customer_id": "KH2025090808691",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "击败竞争对手",
+        "other_purpose": null,
+        "expected_key_result": "了解客户价格反馈",
+        "process_description": "客户询5kg AGMLT, 之前反馈目标价是USD650/kg， 鉴于之前销售记录，仍然保持690的报价。了解客户反馈。 暂未收到回复。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "击败竞争对手",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "完成价格谈判",
+        "next_contact_at": "2026-09-25T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Rizwan"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260911515",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645562",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "SCMT0074",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息挖掘需求",
+        "process_description": "曾老师这边刚了解到他们国庆后是有一批物资采购，但没来得及详聊他要马上交资料到巡检组  只能电话沟通或等巡检组走后才能了解到具体信息。",
+        "self_assessment": "not_achieved",
+        "next_action_purpose": "强化关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息挖掘需求",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T22:14:58+08:00",
+        "actual_end_at": "2026-09-16T22:29:58+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "曾志华"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260806200",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045687",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2026091710857",
+        "customer_type_ii": "potential",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "其他目的",
+        "other_purpose": "客户APTA 需要我司与龙泽的声明",
+        "expected_key_result": "收到客户的反馈",
+        "process_description": "已经与终端客户客户反馈我司APTA 与龙泽的关系，已经给客户提供声明，跟进终端客户的项目进度，以及客户的反馈。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收到终端客户的项目进度反馈。",
+        "next_contact_at": "2026-09-24T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Elnaz Goudarzi"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545459",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "陈逸洋",
+        "customer_id": "KH2025090808691",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "击败竞争对手",
+        "other_purpose": null,
+        "expected_key_result": "确认价格",
+        "process_description": "5kg AGMLT, 客户反馈，希望采购的价格是USD650/kg， 告知客户我们成本一直在升高，仍然努力在维持原有价格给客户，没有再度降价的空间。 仍然按USD690/kg 价格报价。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "击败竞争对手",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "价格确认",
+        "next_contact_at": "2026-09-18T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Rizwan"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260911515",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045728",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "OA2024080604849",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "第三季度物资",
+        "process_description": "完善客户需求表，明日协助客户办理下单",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T18:22:21+08:00",
+        "actual_end_at": "2026-09-20T21:22:21+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "肖璐"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260702823",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645543",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2025112709078",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": true,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "终端 Ami life science 调研M63 的项目",
+        "process_description": "客户询价M58 & M59 & M63，与终端确认目前的项目进展，是新项目前期调研阶段，没有工厂体系要求，已经给客户提供报价，",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "客户项目进度",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "陆光杰"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260827344",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845674",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "于富强",
+        "customer_id": "KH2025030707319",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "1.下午拜访浙江化工进出口俞哲远经理，参观了浙江化工进出口和省医保办公大楼，浙江省医保已被化工进出口兼并，目前有业务员工350人，俞经理所在的医药中间体团队有业务人员25人。400kgS25-1已收到印度终端订单合同，主要同俞经理沟通供货时间，说明了当下排产紧张，再加上中秋国庆假期的影响等原因，俞经理同意说服终端延期至10月中旬，时间上还是让我们尽快安排下去，来争取时间，收到客户给的400kg采购合同，走合同审批。\n2.俞经理询100kg伏硫西汀中间体，2,4-二甲基苯硫酚，CAS: 13616-82-5，确认后尽快回复俞经理。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T14:00:26+08:00",
+        "actual_end_at": "2026-09-18T17:00:26+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "俞哲远"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260910511",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745596",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024062604453",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "沟通进度",
+        "process_description": "也是通过王老师问情况，说的是他们也急，到处去催了，现在流程只能等流程走完再说，现在还不能提单。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-17T09:48:14+08:00",
+        "actual_end_at": "2026-09-17T12:48:14+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "王潘"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260821326",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545468",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0282",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访陈主任，维护关系，了解采购需求",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": "2026-10-15T00:00:00+08:00",
+        "actual_start_at": "2026-09-15T11:05:40+08:00",
+        "actual_end_at": "2026-09-15T12:35:40+08:00",
+        "duration_minutes": 90,
+        "participants": [
+          {
+            "contact_id": "陈云峰"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545489",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "SCMT0360",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "劳保分装",
+        "process_description": "拜访安监部胡老师，协助胡老师完成劳保分装入",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "获取订单",
+        "next_contact_at": "2026-11-15T00:00:00+08:00",
+        "actual_start_at": "2026-09-15T15:16:38+08:00",
+        "actual_end_at": "2026-09-15T16:01:38+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "胡月"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091445403",
+      "form_snapshot": {
+        "visit_date": "2026-09-14T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0486",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "收集信息，维护关系",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": "2026-10-14T00:00:00+08:00",
+        "actual_start_at": "2026-09-14T09:27:53+08:00",
+        "actual_end_at": "2026-09-14T14:52:16+08:00",
+        "duration_minutes": 324,
+        "participants": [
+          {
+            "contact_id": "魏波"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645535",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "陈逸洋",
+        "customer_id": "KH2025120509180",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "提供文件支持，了解项目进展",
+        "process_description": "终端客户 Ferozsons Labs, 提供ASKZ稳定性数据，供客户评估。 询问客户项目评估进度。暂未反馈。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "了解终端客户项目进度，推动客户采购计划。",
+        "next_contact_at": "2026-09-23T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Ajaz Kayani"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260803157",
+            "current_stage": "P1"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845660",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "徐锋",
+        "customer_id": "KH2026090810824",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "跟进",
+        "process_description": "跟进依达拉奉右莰醇注射液和舌下片，对方表示回去开个会，下周联系看是否来公司考察",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "跟进",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "李明豪"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260914525",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745586",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2026010609406",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "土耳其 ABDI  Ibrihim 的BRPZ 项目询价",
+        "process_description": "贸易商反馈终端客户ABDI  Ibrihim 正在询价ABRPZ，新项目，邮件了解贸易商是否与终端已经建立合作。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收到客户的反馈",
+        "next_contact_at": "2026-09-23T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Zeynep Öztürk"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-202606264982",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545449",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "SCMT0593",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "给昆明客户做劳保方案",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-15T11:06:41+08:00",
+        "actual_end_at": "2026-09-15T11:59:44+08:00",
+        "duration_minutes": 53,
+        "participants": [
+          {
+            "contact_id": "刘成"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260713886",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845635",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "OA2023112402907",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "催款",
+        "self_assessment": "achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T10:38:13+08:00",
+        "actual_end_at": "2026-09-18T11:08:13+08:00",
+        "duration_minutes": 30,
+        "participants": [
+          {
+            "contact_id": "陈老师"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545510",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "钱子强",
+        "customer_id": "KH2025120109123",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "ASKZ 4个杂质MS and NMR图谱确认",
+        "process_description": "跟进代理希腊vianex ASKZ 4个杂质MS and NMR图谱确认，代理反馈还在等客户确认。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "客户确认ASKZ 4个杂质MS and NMR图谱",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Pieter Kuijpers"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260724983",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745599",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "SCMT0381",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "加强关系",
+        "process_description": "正常拜访，沟通下前面订单，他们账号登不进去，可能是前面的东西还没给他到位，也没通知我，他自己点了一批，问下还有其他的不，他口头上说的是后面给我说，只有后续保持沟通。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-17T16:54:50+08:00",
+        "actual_end_at": "2026-09-17T19:54:50+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "莫世鸣"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260430305",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745582",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KH2026091710857",
+        "customer_type_ii": "potential",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "客户先项目调研APTA 研发阶段",
+        "process_description": "客户先项目调研APTA 研发阶段，给客户报价我司API 的价格 ，同步更新COA & WC，同时给客户推荐了APTA premix，跟进终端客户的反馈。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "客户的项目跟进反馈",
+        "next_contact_at": "2026-09-23T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Elnaz Goudarzi"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545451",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "SCMT0591",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "给客户做劳保方案",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-15T10:08:45+08:00",
+        "actual_end_at": "2026-09-15T10:48:48+08:00",
+        "duration_minutes": 40,
+        "participants": [
+          {
+            "contact_id": "冯成老师"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260901470",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745612",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "于富强",
+        "customer_id": "KH2025010806796",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "1.上午由临海赶往杭州，中午拜访杭州明科生物技术采购汪波经理，明科是老客户，最近几年业务比较少，听取汪波经理建议，主要是产品报价高，终端就没有消息啦，向汪波经理介绍海步产品目录中的中间体和部分化工品原料药，协助海外推广，并及时保持联系，特别是涉及具体价格时，争取赢单。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-17T13:31:10+08:00",
+        "actual_end_at": "2026-09-17T14:31:10+08:00",
+        "duration_minutes": 60,
+        "participants": [
+          {
+            "contact_id": "王波"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645555",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "HBKH241017604",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "跟宇部兴产於部长面对面沟通\n1.关于TTPO项目，按照之前沟通的27年对接样品，28年启动供应商添加完成。\n2.D7项目，10月份交付完，於总会跟郁经理再沟通去对接下次的需求。\n3.关于其他项目，碰到合适的於总也会跟我们再进行沟通。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T11:00:00+08:00",
+        "actual_end_at": "2026-09-16T13:00:00+08:00",
+        "duration_minutes": 120,
+        "participants": [
+          {
+            "contact_id": "於振洲"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260430271",
+            "current_stage": "P1"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545494",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "钱子强",
+        "customer_id": "KH2025091208723",
+        "customer_type_ii": "opportunity",
+        "visit_method": "video",
+        "is_appointment": true,
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "目前合作项目的推进",
+        "process_description": "客户拜访记录\n1.APTA premix 项目\n客户现场电话与项目负责人确认项目情况，今年premix项目的需求数量与去年一致，但是去年的采购数量过多，目前还在消耗库存中。\n2.由于俄罗斯本土化生产需求，未来多个产品会转为采购中间体，包括APTA,ALTN,利司扑兰,LNDA。预计2027下半年开始陆续采购中间体。2027年上半年可能会有APTA premix需求。会后需要跟进客户APTA,ALTN,利司扑兰中间体路线和需求数量,先完成供应商认证，中间体未来是合作重点，不需要GMP工厂生产。\n3.目前紧急项目是LNDA中间体，LN-01/02各150KG，客户表示目前收到最低报价来自重庆爆牛。已按爆牛价格持平给客户更新价格，争取尽快确认订单。\n4.500克吉维司他订单催促客户尽快发正式订单。\n5.ABXL和YBTN项目后期还是采购API，暂未列入本土化生产名单。\n6.新项目推荐，米达美替尼暂未立项，客户已立项瑞司美替罗。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "APTA,ALTN,利司扑兰中间体路线和需求数量",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Sofia Naidis"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260731100",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845659",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "徐锋",
+        "customer_id": "KH2025090308635",
+        "customer_type_ii": "potential",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "跟进",
+        "process_description": "BD李向霞。想找我们批文中已经进集采的项目，看是否有转让的。答复只有两个项目，还在集采期限，不知道是否符合转让条件，答复口服溶液类的也不符合他们生产要求。探讨舌下片的经济价值，合作方式等。回答我们不会自己持有。关心原料药阿普昔腾坦是否做的非原研晶型，告知还是晶型A。对公司介绍中创新药101感兴趣，暂未讨论。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "跟进",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "李治达"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645520",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "王彬",
+        "customer_id": "SCMT0198",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "维护关系",
+        "process_description": "拜访朱老师，维护关系，了解需求",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "维护关系",
+        "next_contact_at": "2026-10-16T00:00:00+08:00",
+        "actual_start_at": "2026-09-16T09:10:10+08:00",
+        "actual_end_at": "2026-09-16T09:55:10+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "朱朋"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845664",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "OA2024071804632",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "公司办公",
+        "process_description": "协助向总帮助客户办理入库的相关手续并回公司参加会议",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T17:11:49+08:00",
+        "actual_end_at": "2026-09-18T18:41:49+08:00",
+        "duration_minutes": 90,
+        "participants": [
+          {
+            "contact_id": "杨子义"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091845662",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "OA2024071804632",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "公司开会",
+        "process_description": "协助向总帮助客户办理入库的相关手续并回公司参加会议",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-18T17:09:33+08:00",
+        "actual_end_at": "2026-09-18T18:39:33+08:00",
+        "duration_minutes": 90,
+        "participants": [
+          {
+            "contact_id": "杨子义"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645565",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "KH2026091610849",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "获取有效信息",
+        "process_description": "拜访安全环保部范老师，因为今天总公司组织召开会议只是简单的跟范老师做一些业务拜访递交名片，后期再择时间与客户完成对接",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T21:29:18+08:00",
+        "actual_end_at": "2026-09-16T22:29:18+08:00",
+        "duration_minutes": 60,
+        "participants": [
+          {
+            "contact_id": "范敏"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091445422",
+      "form_snapshot": {
+        "visit_date": "2026-09-14T00:00:00+08:00",
+        "employee_id": "陈逸洋",
+        "customer_id": "KH2025122209289",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "反馈交货时间， 提供文件声明",
+        "process_description": "根据客户要求，提供海步，海美洋的关系声明， 告知客户计划9月底交货。确认L/C 修改。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "其他商业机会发掘。",
+        "next_contact_at": "2026-09-23T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Mahafuza"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260608614",
+            "current_stage": "P4"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045694",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "胡家惠",
+        "customer_id": "KHBH20251225006",
+        "customer_type_ii": "target",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "跟进客户BRPZ & WTXT 的项目反馈跟进",
+        "process_description": "跟进客户BRPZ & WTXT 的项目反馈跟进，跟进客户ABXL目前暂时没有立项计划，与客户预约米兰CPHI 的行程同步给客户推荐我司的其他品种。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "客户对我司产品的感兴趣程度，与客户确认米兰行程。",
+        "next_contact_at": "2026-09-25T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Mai"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091945682",
+      "form_snapshot": {
+        "visit_date": "2026-09-18T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "KH2026020209591",
+        "customer_type_ii": "target",
+        "visit_method": "asynchronous_message",
+        "is_appointment": true,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "面对面和复旦复华史主任面对面沟通\n现场讨论了几个重点关注的研发立项品种\n1.依达拉奉右莰醇舌下片，海门车间那边设备体积大，生产成本高，后面如果要上的话，可能需要引进小一点的设备。\n2.谈论了睡眠障碍领域的几个品种，多西拉敏，雷美替胺，达利雷生，莱伯雷生等，像多西拉敏 后面立项可能会是重点考虑的品种、\n3.后面还与史总交流了国际化战略以及市场拓展，海步新型的外部合作模式，公司内部管理与数字化智能建设等内容。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "史总"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545503",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "SCMT0171",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "客情维护",
+        "process_description": "拜访韩老师这边主要是日常拜访维护客情，韩老师这边订单都是随机不给分单供应商的。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "客情维护",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-15T22:13:02+08:00",
+        "actual_end_at": "2026-09-15T22:28:02+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "韩莉"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260831438",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545485",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "HBKH241017243",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "协助项目实施",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "格利下单5kg YBTN，正在走合同审批。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "陈荣"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260816276",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092145736",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024061904390",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "完成合同签署",
+        "other_purpose": null,
+        "expected_key_result": "补单",
+        "process_description": "完成一点补单，他要根据需求适当添加，计划补单的我们没发上架，只有再考虑看其他啥东西可以",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T08:51:55+08:00",
+        "actual_end_at": "2026-09-20T11:51:55+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "张刘伟"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260828392",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745602",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "陈兰",
+        "customer_id": "KH2026081010649",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "1",
+        "process_description": "跟进汇款进度",
+        "self_assessment": "achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "1",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-17T14:23:43+08:00",
+        "actual_end_at": "2026-09-17T15:08:43+08:00",
+        "duration_minutes": 45,
+        "participants": [
+          {
+            "contact_id": "陶老师"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745575",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "吴行金",
+        "customer_id": "KH2026091610845",
+        "customer_type_ii": "potential",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "-",
+        "process_description": "采购周明月反馈制剂那边询1kg 酒石酸呫诺美林，跟陈阳沟通江西善渊进度，同时询问客户需求是否紧急，客户表示目前调研，可以接受10月份以后供货，按照江西善渊进度可以匹配，已经报价。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "-",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "周明月"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745598",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024073004772",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "收集信息",
+        "other_purpose": null,
+        "expected_key_result": "询问需求",
+        "process_description": "正常拜访，沟通下劳保需求，说现在没开始计划，我说推荐下方案，李老师还是拒绝，就说自己选就可以了，让给我们合作，也还是说不好，有风险什么的，让我们凭运气收到哪个就是哪个，只有后续再想办法沟通下。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-17T16:51:54+08:00",
+        "actual_end_at": "2026-09-17T18:51:54+08:00",
+        "duration_minutes": 120,
+        "participants": [
+          {
+            "contact_id": "李老师"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545504",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "KH2024092605483",
+        "customer_type_ii": "target",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "发展关系",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访黄莉老师主要是了解他们下半年是否还有一级专区物资采购需求计划，黄老师反馈基本上没有了，现在手里的采购都是生产上用的东西都是二级专区的。另黄老师引荐了工程公司的采购孙源老师。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "发展关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-15T22:10:41+08:00",
+        "actual_end_at": "2026-09-15T22:25:41+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "黄莉"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545490",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "SCMT0360",
+        "customer_type_ii": "potential",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "保持关系",
+        "other_purpose": null,
+        "expected_key_result": "劳保分装",
+        "process_description": "拜访安监部胡老师，协助胡老师完成劳保分装入",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "保持关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "保持关系",
+        "next_contact_at": "2026-12-15T00:00:00+08:00",
+        "actual_start_at": "2026-09-15T14:17:43+08:00",
+        "actual_end_at": "2026-09-15T15:47:43+08:00",
+        "duration_minutes": 90,
+        "participants": [
+          {
+            "contact_id": "胡月"
+          }
+        ],
+        "opportunities": []
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745589",
+      "form_snapshot": {
+        "visit_date": "2026-09-17T00:00:00+08:00",
+        "employee_id": "陈逸洋",
+        "customer_id": "KH2026071510356",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "其他目的",
+        "other_purpose": "协调产品效期，交货期",
+        "expected_key_result": "沟通产品效期及交货期",
+        "process_description": "同客户沟通关于2.5kg ASKZ 有效期问题， 目前产品将于2027年到期，经过内部询问，即使复检也只能延长6个月的复检期， 很难满足巴基斯坦药监DRAP设定的标准。 新的生产批次预计2027年2月有货。 客户仍需考虑。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "协助项目实施",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "和客户确认批次或货期",
+        "next_contact_at": "2026-09-28T00:00:00+08:00",
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Abdul Rafay Imran"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260720937",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091745571",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "钱子强",
+        "customer_id": "KH20251224015",
+        "customer_type_ii": "opportunity",
+        "visit_method": "video",
+        "is_appointment": true,
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "BFNT化工品需求确认",
+        "process_description": "客户拜访记录\n1.1999年成立，在俄罗斯，拉脱维亚有工厂，捷克有原料药研发生产基地。俄罗斯工厂员工200人左右，主要做片剂+API，产品在境内销售。拉脱维亚主要做注射剂，产品出口到60多个国家，员工40人左右。捷克场地专注复杂小分子 API 合成、工艺开发、放大与商业化生产。2016年开始涉及孤儿药开发。\n2.目前CMO业务主要大客户是STADA、Valenta等公司。\n3.目前客户已获批LKXA,BLXT,BFNT。其中BFNT 客户因为产能问题，今年会外购化工品，残留溶剂需要与已注册的质量标准一致，之前已给客户确认精制后可以满足。会后客户会确认目标价格和采购数量。\n4.吉维司他 客户已选定货源即将开始报批。\n5.目前紧急项目，奥格列龙premix，需要按照CTD格式的注册文件，已经开始筛选供应商。\n6.苏泽曲林已立项，需要API。",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "收集信息",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "BFNT化工品目标价格和采购数量",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "Valeriya Gritsenko"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260522412",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091645548",
+      "form_snapshot": {
+        "visit_date": "2026-09-16T00:00:00+08:00",
+        "employee_id": "陈治宇",
+        "customer_id": "OA2024061904390",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "完成合同签署",
+        "other_purpose": null,
+        "expected_key_result": "沟通补单",
+        "process_description": "沟通补单情况",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "加强关系",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-16T08:49:39+08:00",
+        "actual_end_at": "2026-09-16T11:49:39+08:00",
+        "duration_minutes": 180,
+        "participants": [
+          {
+            "contact_id": "张刘伟"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260828392",
+            "current_stage": "P2"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091545492",
+      "form_snapshot": {
+        "visit_date": "2026-09-15T00:00:00+08:00",
+        "employee_id": "邱仁君",
+        "customer_id": "OA2023112102855",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": true,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "劳保分装",
+        "process_description": "拜访安监部胡老师，协助胡老师完成劳保分装入",
+        "self_assessment": "partially_achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "获取有效订单",
+        "next_contact_at": "2026-11-15T00:00:00+08:00",
+        "actual_start_at": "2026-09-15T11:19:40+08:00",
+        "actual_end_at": "2026-09-15T13:19:40+08:00",
+        "duration_minutes": 120,
+        "participants": [
+          {
+            "contact_id": "王老师"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260828395",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026091445419",
+      "form_snapshot": {
+        "visit_date": "2026-09-14T00:00:00+08:00",
+        "employee_id": "徐锋",
+        "customer_id": "KH2026090810824",
+        "customer_type_ii": "opportunity",
+        "visit_method": "asynchronous_message",
+        "is_appointment": false,
+        "purpose_code": "获得参与",
+        "other_purpose": null,
+        "expected_key_result": "跟进",
+        "process_description": "老板李明豪。制作依达拉奉右莰醇注射液和舌下片的材料反馈，对方问合作模式，从对方角度讲一下需要付哪些费用，于2029年1月获得批件生产销售。聊到研发占股，共投，告知暂时不考虑，解释舌下片有独家可能，因此没办法自己持有一套。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "获得参与",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "跟进",
+        "next_contact_at": null,
+        "actual_start_at": null,
+        "actual_end_at": null,
+        "duration_minutes": null,
+        "participants": [
+          {
+            "contact_id": "李明豪"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260914525",
+            "current_stage": "P3"
+          }
+        ]
+      }
+    },
+    {
+      "source_record_code": "BFJL2026092045729",
+      "form_snapshot": {
+        "visit_date": "2026-09-20T00:00:00+08:00",
+        "employee_id": "罗维",
+        "customer_id": "SCMT0038",
+        "customer_type_ii": "opportunity",
+        "visit_method": "face_to_face",
+        "is_appointment": false,
+        "purpose_code": "强化关系",
+        "other_purpose": null,
+        "expected_key_result": "收集信息",
+        "process_description": "拜访廖老师主要是建联说明来意，之前是雷老师负责采购现由廖老师负责各部门提需求计划采购下单工作。另向廖老师打听安检生产准备费负责专责是刘彦成老师在负责。",
+        "self_assessment": "achieved",
+        "next_action_purpose": "强化关系",
+        "next_action_other_purpose": null,
+        "next_action_expected_result": "收集信息",
+        "next_contact_at": null,
+        "actual_start_at": "2026-09-20T22:41:03+08:00",
+        "actual_end_at": "2026-09-20T22:56:03+08:00",
+        "duration_minutes": 15,
+        "participants": [
+          {
+            "contact_id": "廖明"
+          }
+        ],
+        "opportunities": [
+          {
+            "opportunity_id": "SJXM-20260529452",
+            "current_stage": "P5"
+          }
+        ]
+      }
+    }
+  ]
+}

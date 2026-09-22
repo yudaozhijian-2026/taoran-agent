@@ -58,7 +58,7 @@ def test_future_customer_event_not_contact_agreement():
     assert "下周一填写" not in advice["text"]
 
 
-def test_missing_contact_time_potential_customer_cadence():
+def test_missing_contact_time_potential_customer_uses_actual_business_schedule():
     output = render(
         customer_type_ii="potential",
         process_description="客户反馈设备运行稳定。",
@@ -66,12 +66,13 @@ def test_missing_contact_time_potential_customer_cadence():
     )
     advice = contact_advice(output)["text"]
     assert "规划联系时间" in advice
-    assert "可以参考跨自然季度" in advice
-    assert "具体时间以客户实际推进情况为准" in advice
+    assert "跨自然季度" not in advice
+    assert "客户实际进展" in advice
+    assert "具体时间以客户实际推进情况为准" not in advice
     assert "必须" not in advice
 
 
-def test_missing_contact_time_target_customer_cadence():
+def test_missing_contact_time_target_customer_uses_actual_business_schedule():
     output = render(
         customer_type_ii="target",
         process_description="客户反馈设备运行稳定。",
@@ -79,7 +80,8 @@ def test_missing_contact_time_target_customer_cadence():
     )
     advice = contact_advice(output)["text"]
     assert "规划联系时间" in advice
-    assert "可以参考跨自然月" in advice
+    assert "跨自然月" not in advice
+    assert "客户实际进展" in advice
     assert "必须" not in advice
 
 
@@ -204,7 +206,7 @@ def test_no_long_raw_record_echo():
         "客户了解下，具体的再来回复客户。"
     )
     output = render(expected_key_result="收集信息", process_description=source)
-    assert "4张1600×600mm组合办公桌" in output["analysis"]
+    assert "4张1600mm×600mm组合办公桌" in output["analysis"]
     assert "因为客户之前来参观过我们公司" not in output["analysis"]
     assert len(output["analysis"]) < len(source)
 

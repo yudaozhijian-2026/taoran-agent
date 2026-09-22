@@ -8,17 +8,28 @@ policy.  It only renders the already-authoritative result for a salesperson.
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 from typing import Any
 
 from .models import Q34SemanticFacts, VisitDraftInput
+from .pilot_final_consistency import (
+    ContactPlan,
+    CustomerResponse,
+    GoalPresentation,
+    contact_plan_state,
+    customer_response_state,
+    goal_presentation_state,
+    source_text,
+    visible_consistency_errors,
+)
 
-VERSION = "BACKEND-SALESPERSON-WORDING-V2-20260921"
+VERSION = "BACKEND-SALESPERSON-WORDING-V2.1-20260922"
 
 _INTERNAL_OR_JUDGING = re.compile(
     r"(?:下一步逻辑(?:不成立|不完整|错误|校验失败)|客户共识不足|"
     r"(?:规则|逻辑|校验)(?:不通过|失败)|不合法|不合格|"
     r"符合(?:潜力客户|目标客户|商机客户|TAORAN|N-\d+)[^，。；\n]{0,12}(?:标准|要求)|"
-    r"(?:N-\d+|finding_id|decision_ledger|field_paths|validator|schema|"
+    r"(?:(?<![A-Za-z0-9])N-\d+(?![A-Za-z0-9])|finding_id|decision_ledger|field_paths|validator|schema|"
     r"next_action_logic_ok|customer_consensus_met|needs_revision|not_evaluated))",
     re.IGNORECASE,
 )
@@ -45,6 +56,42 @@ _ACTION_FACT = re.compile(
 )
 
 
+@dataclass(frozen=True)
+class _PresentationContext:
+    source: str
+    response: CustomerResponse
+    contact: ContactPlan
+    goal: GoalPresentation
+
+
+def _presentation_context(
+    visit: VisitDraftInput,
+    facts: Q34SemanticFacts,
+) -> _PresentationContext:
+    """Build wording-only state from the accepted input and semantic result."""
+    raw = visit.model_dump(mode="json")
+    accepted_source = _source_text(facts) or source_text(raw)
+    raw["process_description"] = accepted_source
+    raw["customer_feedback"] = ""
+    audit = facts.quality_audit or {}
+    status = str(audit.get("achievement_status") or facts.purpose_achievement.value)
+    status = {
+        "supported": "achieved",
+        "partially_supported": "partially_achieved",
+        "unsupported": "not_achieved",
+    }.get(status, status)
+    return _PresentationContext(
+        source=accepted_source,
+        response=customer_response_state(accepted_source),
+        contact=contact_plan_state(raw),
+        goal=goal_presentation_state(
+            visit.expected_key_result,
+            status,
+            visit.self_assessment.value if visit.self_assessment else None,
+        ),
+    )
+
+
 def render_backend_business_feedback(
     visit: VisitDraftInput,
     semantic_facts: Q34SemanticFacts,
@@ -52,9 +99,10 @@ def render_backend_business_feedback(
     advice_items: list[str],
 ) -> tuple[str, list[str]]:
     """Render Deep Review facts as coaching without changing any decision."""
-    analysis = _render_analysis(visit, semantic_facts, analysis_text)
-    advice = _render_advice(visit, semantic_facts, advice_items)
-    _assert_safe(analysis, advice)
+    context = _presentation_context(visit, semantic_facts)
+    analysis = _render_analysis(visit, semantic_facts, analysis_text, context)
+    advice = _render_advice(visit, semantic_facts, advice_items, context)
+    _assert_safe(analysis, advice, context)
     return analysis, advice
 
 
@@ -70,10 +118,11 @@ def render_backend_safe_feedback(
     call or expose an internal label.
     """
     audit = semantic_facts.quality_audit or {}
-    status = str(audit.get("achievement_status") or semantic_facts.purpose_achievement.value)
+    context = _presentation_context(visit, semantic_facts)
+    status = context.goal.achievement
     outcome = _safe_outcome(audit.get("actual_outcomes", []))
     if status == "unresolved":
-        analysis = "当前目标描述较宽，现有记录不足以可靠判断是否已经完整达成。"
+        analysis = "现有记录不足以可靠判断本次是否已经完整达成。"
     elif status in {"partially_achieved", "partially_supported"}:
         analysis = "本次已经形成阶段性业务进展，仍有事项需要结合实际沟通继续明确。"
     elif status in {"achieved", "supported"}:
@@ -91,13 +140,13 @@ def render_backend_safe_feedback(
         if item:
             advice.append(item)
     policy = _contact_policy(semantic_facts)
-    contact = _contact_advice(visit, semantic_facts, policy)
+    contact = _contact_advice(visit, semantic_facts, policy, context)
     if contact:
         advice.append(contact)
     if not advice and any(section.verdict == "needs_revision" for section in semantic_facts.sections):
         advice.append("可以结合实际沟通，补充本次尚未明确的具体业务信息，并据实记录结果。")
     advice = _deduplicate_sentences(advice)
-    _assert_safe(analysis, advice)
+    _assert_safe(analysis, advice, context)
     return analysis, advice
 
 
@@ -115,10 +164,11 @@ def _render_analysis(
     visit: VisitDraftInput,
     facts: Q34SemanticFacts,
     fallback: str,
+    context: _PresentationContext,
 ) -> str:
     audit = facts.quality_audit or {}
     goal_reviews = [item for item in audit.get("goal_reviews", []) if isinstance(item, dict)]
-    status = str(audit.get("achievement_status") or facts.purpose_achievement.value)
+    status = context.goal.achievement
     outcomes = [item for item in audit.get("actual_outcomes", []) if isinstance(item, dict)]
 
     progress = ""
@@ -128,6 +178,8 @@ def _render_analysis(
             status=status,
             goal=str(visit.expected_key_result or "").strip(),
             outcomes=outcomes,
+            goal_quality=context.goal.quality,
+            source=context.source,
         )
     if not progress:
         progress = _businessize_existing_analysis(fallback, status=status)
@@ -136,7 +188,7 @@ def _render_analysis(
             str(outcomes[0].get("quote") or "")
         ) + "。"
 
-    gaps = _important_gap_sentences(visit, facts)
+    gaps = _important_gap_sentences(visit, facts, context)
     parts = _deduplicate_sentences([progress, *gaps])
     return "\n\n".join(part for part in parts if part).strip()
 
@@ -147,11 +199,15 @@ def _businessize_goal_review(
     status: str,
     goal: str,
     outcomes: list[dict[str, Any]],
+    goal_quality: str,
+    source: str,
 ) -> str:
     text = _normalize_sentence(reason)
     if not text:
         return ""
-    broad = bool(re.search(r"(?:过于|比较)?宽泛|含糊|无法(?:核验|评估|判断)", text))
+    broad = goal_quality != "specific" or bool(
+        re.search(r"(?:过于|比较)?宽泛|含糊|无法(?:核验|评估|判断)", text)
+    )
     if broad:
         outcome = next(
             (_clean_outcome_quote(str(item.get("quote") or "")) for item in outcomes),
@@ -162,11 +218,23 @@ def _businessize_goal_review(
             pieces.append(f"本次已经记录了具体业务进展：{outcome}。")
         if goal:
             pieces.append(
-                f"不过“{goal}”这个目标本身比较宽，现有记录不足以判断是否完成了原计划的全部内容。"
+                f"“{goal}”这个目标本身比较宽，现有记录不足以判断是否完成了原计划的全部内容。"
             )
         else:
             pieces.append("现有目标描述比较宽，当前记录不足以判断是否完成了原计划的全部内容。")
         return "".join(pieces)
+
+    sales_only_decision = bool(
+        re.search(r"(?:销售|我方|我们)[^。；\n]{0,16}(?:决定|确认|拒绝|放弃|暂不)", source)
+        and not re.search(r"(?:客户|对方)[^。；\n]{0,16}(?:决定|确认|拒绝|放弃|暂不)", source)
+        and re.search(r"(?:客户|对方)[^。；\n]{0,16}(?:决定|确认|拒绝|放弃|暂不)", text)
+    )
+    if sales_only_decision or any(
+        actor in text and actor not in source for actor in ("集团端", "总部", "客户内部")
+    ):
+        outcome = _safe_outcome(outcomes)
+        if outcome:
+            return "本次已经记录了具体业务进展：" + outcome + "。"
 
     # Prefer the factual process/result portion over a mechanical goal opening.
     body = re.sub(
@@ -226,7 +294,11 @@ def _businessize_existing_analysis(text: str, *, status: str) -> str:
     return result
 
 
-def _important_gap_sentences(visit: VisitDraftInput, facts: Q34SemanticFacts) -> list[str]:
+def _important_gap_sentences(
+    visit: VisitDraftInput,
+    facts: Q34SemanticFacts,
+    context: _PresentationContext,
+) -> list[str]:
     sections = {section.code: section for section in facts.sections}
     audit = facts.quality_audit or {}
     bases = audit.get("advice_basis", {}) if isinstance(audit.get("advice_basis"), dict) else {}
@@ -252,7 +324,12 @@ def _important_gap_sentences(visit: VisitDraftInput, facts: Q34SemanticFacts) ->
     if policy.get("date_state") == "missing" or (
         not policy and getattr(visit, "next_contact_at", None) is None
     ):
-        results.append("当前还没有明确下一次联系时间。")
+        plan_message = {
+            "explicit_date": "记录中已经有明确的后续联系日期，建议如实填写到下一次联系时间。",
+            "relative_time": "记录中已经有相对时间的后续联系安排，建议在实际确认具体日期后如实填写。",
+            "event_trigger": "记录中已经有事件触发型的后续联系安排，建议在条件满足后如实填写具体日期。",
+        }.get(context.contact.state)
+        results.append(plan_message or "当前还没有明确下一次联系时间。")
     elif policy.get("after_visit") is False:
         results.append("当前下一次联系时间不晚于本次拜访日期，现有安排还不能作为后续可执行时间。")
 
@@ -262,11 +339,16 @@ def _important_gap_sentences(visit: VisitDraftInput, facts: Q34SemanticFacts) ->
         and policy.get("customer_consensus_required")
         and facts.customer_consensus_met is False
     ):
-        results.append(_consensus_analysis(_source_text(facts)))
+        results.append(_consensus_analysis(context.response))
 
     assessment = sections.get("A2")
     assessment_basis = bases.get("A2", {}) if isinstance(bases.get("A2"), dict) else {}
-    if assessment is not None and assessment.verdict == "needs_revision" and assessment_basis:
+    if (
+        assessment is not None
+        and assessment.verdict == "needs_revision"
+        and assessment_basis
+        and context.goal.assessment_alignment == "mismatch"
+    ):
         results.append("当前自评与本次已经取得的实际结果存在差异，需要依据真实进展重新核对。")
     return results
 
@@ -275,6 +357,7 @@ def _render_advice(
     visit: VisitDraftInput,
     facts: Q34SemanticFacts,
     advice_items: list[str],
+    context: _PresentationContext,
 ) -> list[str]:
     audit = facts.quality_audit or {}
     bases = audit.get("advice_basis", {}) if isinstance(audit.get("advice_basis"), dict) else {}
@@ -292,7 +375,7 @@ def _render_advice(
             suggestion = _remove_contact_time_clause(suggestion)
         if section.code == "N" and facts.customer_consensus_met is False:
             suggestion = _remove_consensus_judgement(suggestion)
-            consensus_advice = _consensus_advice(_source_text(facts))
+            consensus_advice = _consensus_advice(context.response)
             if consensus_advice:
                 rendered.append(consensus_advice)
         if suggestion:
@@ -307,7 +390,7 @@ def _render_advice(
     policy = _contact_policy(facts)
     date_gap = date_gap or policy.get("date_state") == "missing" or policy.get("after_visit") is False
     if date_gap or policy.get("period_met") is False:
-        contact = _contact_advice(visit, facts, policy)
+        contact = _contact_advice(visit, facts, policy, context)
         if contact:
             rendered.append(contact)
 
@@ -357,48 +440,56 @@ def _contact_advice(
     visit: VisitDraftInput,
     facts: Q34SemanticFacts,
     policy: dict[str, Any],
+    context: _PresentationContext,
 ) -> str:
-    source = _source_text(facts)
-    confirmed = _customer_confirmed_schedule(source)
-    customer_type = str(policy.get("customer_type") or "")
+    confirmed = context.response.state in {"confirmed_response", "partial_response"}
 
     if policy.get("date_state") == "missing":
+        existing = {
+            "explicit_date": "记录中已经有明确的后续联系日期，建议如实填写到下一次联系时间。",
+            "relative_time": "记录中已经有相对时间的后续联系安排，建议在实际确认具体日期后如实填写。",
+            "event_trigger": "记录中已经有事件触发型的后续联系安排，建议在条件满足后如实填写具体日期。",
+        }.get(context.contact.state)
+        if existing:
+            return existing
         base = "当前还没有明确下一次联系时间，建议结合客户实际安排和下一步推进事项确定一个可执行的时间点。"
-        if confirmed:
-            base = "记录中已经有客户确认的后续时间和事项，建议将双方真实约定填写到下一次联系时间安排中，并按约推进。"
-        return base + _cadence_reference(customer_type)
+        return base
     if policy.get("after_visit") is False:
         return "当前下一次联系时间不晚于本次拜访日期，建议结合实际客户安排重新确认一个后续可执行的联系时间。"
     if policy.get("period_met") is False:
         if confirmed:
-            return ""  # A real customer appointment outranks a generic cadence reference.
+            return ""  # A real customer response outranks a generic cadence reference.
         return (
             "当前已经安排了下一次联系时间。如果该时间尚未与客户确认，可以进一步核实客户是否方便，"
-            "并根据实际互动节奏调整。" + _cadence_reference(customer_type)
+            "并根据实际互动节奏调整。"
         )
     return ""
 
 
-def _cadence_reference(customer_type: str) -> str:
-    if customer_type == "potential":
-        return "后续制定持续维护计划时，可以参考潜力客户适当拉开联系周期的管理建议。"
-    if customer_type == "target":
-        return "后续制定持续跟进计划时，可以参考目标客户按月规划联系节奏的管理建议。"
-    return ""
-
-
-def _consensus_analysis(source: str) -> str:
-    if _CONDITIONAL.search(source) and re.search(r"客户|对方", source):
+def _consensus_analysis(response: CustomerResponse) -> str:
+    if response.state == "no_response":
+        return "当前尚未记录客户对该事项的明确回应。"
+    if response.state == "partial_response":
+        return "客户已经对部分事项作出回应，但本次下一步安排仍待进一步确认。"
+    if response.state == "confirmed_response" and any(
+        _CONDITIONAL.search(item) for item in response.evidence
+    ):
         return "客户已经表达了有条件的推进意向，相关条件是否满足仍需确认。"
-    if re.search(r"客户|对方", source):
+    if response.state == "confirmed_response":
         return "客户已经对相关事项作出回应，但现有记录还不足以确认双方已经就下一步安排形成明确约定。"
     return "当前记录主要体现了销售侧计划，本次拜访中还没有明确看到客户对下一步安排的回应。"
 
 
-def _consensus_advice(source: str) -> str:
-    if _CONDITIONAL.search(source) and re.search(r"客户|对方", source):
+def _consensus_advice(response: CustomerResponse) -> str:
+    if response.state == "no_response":
+        return "建议在下一次互动中先确认客户对该事项的明确回应，再根据实际回应安排后续事项。"
+    if response.state == "partial_response":
+        return "建议围绕客户尚未回应的事项，进一步确认双方下一步要推进的具体安排。"
+    if response.state == "confirmed_response" and any(
+        _CONDITIONAL.search(item) for item in response.evidence
+    ):
         return "建议先确认客户提出的相关条件是否满足，再落实双方下一步的具体安排。"
-    if re.search(r"客户|对方", source):
+    if response.state == "confirmed_response":
         return "建议围绕本次客户回应，进一步确认双方下一步要推进的事项和安排。"
     return "建议在下一次互动中确认客户希望继续推进的具体事项，而不只保留销售侧计划。"
 
@@ -457,6 +548,8 @@ def _deduplicate_sentences(items: list[str]) -> list[str]:
         if not value:
             continue
         key = re.sub(r"[，。；：、\s]", "", value)
+        if key in normalized:
+            continue
         if any(key in old or old in key for old in normalized if min(len(key), len(old)) >= 12):
             continue
         result.append(value)
@@ -464,7 +557,11 @@ def _deduplicate_sentences(items: list[str]) -> list[str]:
     return result
 
 
-def _assert_safe(analysis: str, advice: list[str]) -> None:
+def _assert_safe(
+    analysis: str,
+    advice: list[str],
+    context: _PresentationContext | None = None,
+) -> None:
     visible = "\n".join([analysis, *advice])
     hit = _INTERNAL_OR_JUDGING.search(visible)
     if hit:
@@ -472,3 +569,14 @@ def _assert_safe(analysis: str, advice: list[str]) -> None:
     hard = _HARD_CADENCE.search(visible)
     if hard:
         raise ValueError(f"backend_salesperson_wording_v2_hard_cadence:{hard.group(0)}")
+    if context:
+        errors = visible_consistency_errors(
+            visible,
+            response=context.response,
+            contact=context.contact,
+            goal=context.goal,
+        )
+        if errors:
+            raise ValueError(
+                "backend_salesperson_wording_v2_pilot_final_consistency:" + ",".join(errors)
+            )

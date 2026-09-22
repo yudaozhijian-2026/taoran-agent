@@ -91,7 +91,7 @@ def test_version_and_pure_wording_layer_do_not_mutate_formal_result():
     before_visit = deepcopy(v.model_dump())
     before_facts = deepcopy(f.model_dump())
     analysis, advice = render(v, f)
-    assert VERSION == "BACKEND-SALESPERSON-WORDING-V2-20260921"
+    assert VERSION == "BACKEND-SALESPERSON-WORDING-V2.1-20260922"
     assert analysis and advice
     assert v.model_dump() == before_visit
     assert f.model_dump() == before_facts
@@ -166,13 +166,13 @@ def test_case_7_broad_goal_keeps_actual_outcome():
     assert "目标本身比较宽" in analysis
 
 
-def test_case_8_missing_date_is_soft_and_cadence_is_reference_only():
+def test_case_8_missing_date_is_soft_and_uses_actual_customer_schedule():
     v = visit(next_contact_at=None)
     f = facts(v)
     _, advice = render(v, f)
     visible = "".join(advice)
     assert "结合客户实际安排" in visible
-    assert "可以参考潜力客户" in visible
+    assert "跨自然季度" not in visible
     assert "必须" not in visible and "确保" not in visible
 
 
@@ -194,7 +194,7 @@ def test_case_10_sales_only_date_plan_requests_confirmation_not_period_complianc
     _, advice = render(v, f)
     visible = "".join(advice)
     assert "核实客户是否方便" in visible
-    assert "可以参考潜力客户" in visible
+    assert "跨自然季度" not in visible
     assert "必须" not in visible
 
 
