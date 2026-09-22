@@ -152,6 +152,36 @@ def test_unknown_goal_repair_does_not_trigger_second_model_call(monkeypatch):
     assert result["initial_validation_errors"] == ["unknown_goal_assessed"]
 
 
+def test_missing_goal_fact_boundary_uses_deterministic_repair_without_retry(monkeypatch):
+    from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as stream
+
+    calls = []
+
+    def first_candidate(*args, **kwargs):
+        calls.append(kwargs)
+        return {
+            "status": "failed",
+            "failure_category": "preview_business_boundary_conflict",
+            "failure_reason": "preview_business_boundary_conflict",
+            "validation_errors": ["fabricated_specific_fact"],
+            "feedback_text": "本次记录包含招标价格和竞争信息。",
+        }
+
+    monkeypatch.setattr(stream, "_stream_semantic_preview_once", first_candidate)
+    result = stream.stream_semantic_preview_v22(
+        object(),
+        visit(process_description="客户提供招标价格及竞争信息。"),
+        lambda _text: None,
+        interactive=True,
+    )
+    assert len(calls) == 1
+    assert result["status"] == "completed"
+    assert result["analysis_model_call_count"] == 1
+    assert result["goal_repair_applied"] is True
+    assert result["initial_validation_errors"] == ["fabricated_specific_fact"]
+    assert "客户提供招标价格及竞争信息" in result["feedback_text"]
+
+
 def test_unknown_goal_repair_uses_one_real_stream_request(tmp_path, monkeypatch):
     from taoran_agent.config import Settings
     from taoran_agent.front_v46 import experimental_semantic_streaming_v22 as stream

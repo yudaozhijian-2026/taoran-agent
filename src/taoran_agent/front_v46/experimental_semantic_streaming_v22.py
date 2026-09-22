@@ -638,7 +638,18 @@ def stream_semantic_preview_v22(
             deterministic_goal_repair(snapshot)
             if interactive
             and result.get("failure_category") == "preview_business_boundary_conflict"
-            and {"unknown_goal_assessed", "broad_goal_assessed"}.intersection(initial_errors)
+            # For an unassessable goal, the deterministic renderer uses only
+            # the original recorded facts.  It can therefore also safely
+            # replace a candidate that failed the concrete-fact guard, rather
+            # than issuing a second analysis request for the same boundary.
+            and initial_errors
+            and set(initial_errors).issubset(
+                {
+                    "unknown_goal_assessed",
+                    "broad_goal_assessed",
+                    "fabricated_specific_fact",
+                }
+            )
             and isinstance(snapshot, dict)
             else None
         )
