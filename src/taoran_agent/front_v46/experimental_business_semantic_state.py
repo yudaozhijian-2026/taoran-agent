@@ -6,7 +6,9 @@ source spans, not normalized descriptions, remain the evidence boundary.
 import re
 from dataclasses import asdict, dataclass
 
-VERSION = 'business-semantic-state-v36'
+from ..goal_normalization import normalize_expected_key_result
+
+VERSION = 'business-semantic-state-v37-goal-boundary'
 FIELD_NAMES = (
     'expected_key_result', 'purpose_code', 'other_purpose', 'process_description',
     'customer_feedback', 'self_assessment', 'deviation_reason', 'next_action_purpose',
@@ -82,6 +84,12 @@ def classify_field_state(field, value):
     """
     if value is None or isinstance(value, str) and not value.strip() or isinstance(value, (list, dict, tuple)) and not value:
         return 'missing'
+    if field == 'expected_key_result':
+        goal = normalize_expected_key_result(value)
+        if goal.goal_state == 'missing_placeholder':
+            return 'missing' if goal.legacy_status == 'missing' else 'placeholder'
+        if goal.goal_state == 'broad':
+            return 'vague'
     if not isinstance(value, str):
         return 'assessable'
     text = value.strip()

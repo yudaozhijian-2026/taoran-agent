@@ -5,6 +5,7 @@ time and outcome stay unknown; no customer-specific rules or acceptance lists.
 """
 import re
 
+from ..goal_normalization import normalize_expected_key_result
 from .experimental_attribution import speaker_spans
 from .experimental_business_semantic_state import (
     build_business_state,
@@ -12,7 +13,7 @@ from .experimental_business_semantic_state import (
 )
 from .experimental_semantic_invariants import validate_invariants
 
-VERSION = "record-state-v36"
+VERSION = "record-state-v37-goal-boundary"
 FIELDS = {
     "expected_key_result": "goal", "purpose_code": "purpose",
     "other_purpose": "purpose", "process_description": "reported_event",
@@ -26,7 +27,9 @@ field_states=not_recorded只代表未记录，不代表没有发生或未约定�
 goal.parts是目标文字分项，不是实际已达成项；逐项比较对应事实。暂无采购计划属于已获得的需求现状信息，不等于存在积极采购意向。
 信息确认类目标中，明确的否定回答也是确认结果：询问现阶段需求得到暂无计划，已经获得该需求状态；不得再写尚未确认需求。只有目标明确要求积极意向或采购承诺时，否定回答才不能满足该要求。复合目标需分别说已确认当前状态、下一步承诺在记录中尚未体现，不用后者否认前者。
 客户表示会转告的已发生事实是“作出表态”，转告是否完成仍未知。self_report只描述销售自评，不作为AI已核实结论。
-goal.status为missing/placeholder时禁止推断目标、判断该目标达成或不达成；只说明目标无法解释，实际过程另述。
+目标达成判断的唯一来源是expected_key_result。goal_source=key_result时，拜访目的、过程、客户反馈和下一步都不得替代原始目标。
+goal_state=missing_placeholder时，目标达成必须保持unresolved；只说明没有填写可用于判断达成情况的具体关键结果，实际过程另述。
+goal_state=broad时，目标达成同样保持unresolved；可说明关键结果表述较宽，但不得用拜访目的或过程自行定义验收目标。
 复合目标和部分达成必须分别保留已有信息与尚未确认部分；不能从某项未证实推导整体自评错误。
 后续建议允许确认新信息，但不得暗示这些信息已发生。保留正确事实，不强行凑自评差距。
 """
@@ -63,14 +66,15 @@ def build(context):
                 "end": match.end(), "quote": quote, "role": role,
                 "actor_hint": actor, "modality_hint": modality,
                 "negative_statement": bool(re.search(r"没有|暂无|不再|不会|未能|暂不", quote))})
-    goal = str(context.get("expected_key_result") or "").strip()
-    status = "missing" if not goal else "placeholder" if re.fullmatch(r"[\d\s.\-_/]+|待填|待定|无|暂无|不详", goal) else "provided"
-    parts = [] if status != "provided" else [part for part in re.split(r"[，,；;。]|并且|以及|并(?=同意|承诺|确认)", goal) if part.strip()]
+    normalized_goal = normalize_expected_key_result(context.get("expected_key_result"))
+    goal = normalized_goal.goal_normalized or ""
+    parts = [] if normalized_goal.goal_state == "missing_placeholder" else [part for part in re.split(r"[，,；;。]|并且|以及|并(?=同意|承诺|确认)", goal) if part.strip()]
     from .experimental_rendering_guidance import rendering_input
     rendering = rendering_input(build_business_state(context))
     return {**rendering, "version": VERSION, "field_states": states, "sources": sources,
         "BUSINESS_SEMANTIC_STATE": build_business_state(context),
-        "goal": {"status": status, "text": goal, "parts": [
+        "goal": {"status": normalized_goal.legacy_status, "text": goal,
+            **normalized_goal.as_dict(), "parts": [
             {"id": f"g{i}", "text": part, "attainment": "unassessed"} for i, part in enumerate(parts)]}}
 
 
@@ -108,13 +112,22 @@ def boundary_issues(text, context):
                 )
                 and not re.search(r"(?:记录|填写|表单).{0,8}(?:未|没有|尚未)(?:体现|记录|显示)", sentence)):
             issues.append({"error_type": "missing_as_absent", "field": "next_contact_at", "text": sentence})
-        if state["goal"]["status"] in {"missing", "placeholder"}:
+        if state["goal"]["goal_state"] == "missing_placeholder":
             # An explicitly unknown target cannot become any named business goal.
             named = [str(context.get("purpose_code") or ""), str(context.get("process_description") or "")]
             inferred = any(value and len(value) <= 16 and re.search(re.escape(value) + r"(?:这一|的)?目标", sentence) for value in named)
             substituted = re.search(r"(?:本次|拜访)?目标(?:是|为|就是)[^，,。；]+", sentence)
             assessment = "目标" in sentence and re.search(r"(?:不足以证明|未能|尚未|已经|已)(?:实现|达成)|不足以证明.{0,24}目标.{0,10}(?:实现|达成)", sentence) and not re.search(r"自评(?:为|是)?(?:达到|已|部分|未)", sentence)
-            disclaimer = re.search(r"(?:不能|不得|不应|不要|不是|并非).{0,16}(?:当作|替代|代替|视为)|无法(?:确定|判断|解释)|目标.{0,8}(?:不清楚|不明确|占位)", sentence)
+            disclaimer = re.search(r"(?:不能|不得|不应|不要|不是|并非).{0,16}(?:当作|替代|代替|视为)|无法.{0,8}(?:确定|判断|解释)|目标.{0,8}(?:不清楚|不明确|占位)", sentence)
             if (inferred or substituted or assessment) and not disclaimer:
                 issues.append({"error_type": "unknown_goal_assessed", "field": "expected_key_result", "text": sentence})
+        if state["goal"]["goal_state"] == "broad":
+            assessment = "目标" in sentence and re.search(
+                r"(?:目标.{0,12}(?:已经|已|尚未|未能|不足以证明).{0,8}(?:实现|达成)|"
+                r"(?:已经|已|尚未|未能|不足以证明).{0,12}目标.{0,8}(?:实现|达成))",
+                sentence,
+            )
+            disclaimer = re.search(r"无法(?:确定|判断)|关键结果.{0,8}(?:较宽|不明确|不具体)", sentence)
+            if assessment and not disclaimer:
+                issues.append({"error_type": "broad_goal_assessed", "field": "expected_key_result", "text": sentence})
     return issues
