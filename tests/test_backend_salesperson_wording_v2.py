@@ -235,3 +235,17 @@ def test_salesperson_visible_text_never_exposes_internal_terms(forbidden):
     f = facts(v)
     analysis, advice = render(v, f)
     assert forbidden not in analysis + "\n" + "\n".join(advice)
+
+
+def test_analysis_is_one_paragraph_with_front_style_sentence_flow():
+    v = visit(next_action_expected_result="继续确认培训安排", next_contact_at=None)
+    f = facts(v, consensus=False, fields=["next_action_expected_result", "next_contact_at"])
+    for section in f.sections:
+        if section.code == "A2":
+            section.verdict = "needs_revision"
+            section.suggestion = "请结合实际进展核对自评。"
+    f.quality_audit["advice_basis"]["A2"] = {"fields": ["self_assessment"]}
+    analysis, _ = render(v, f)
+    assert "\n" not in analysis
+    assert analysis.endswith("。")
+    assert "当前还没有明确下一次联系时间。" in analysis

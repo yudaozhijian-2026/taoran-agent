@@ -950,3 +950,29 @@ test('ack reports visible durations for suggestion-contract policy without chang
   assert.equal(sent.acknowledge_clicked_ms,15000);
   assert.equal(h.messages[0][0].pluginMessage.feedback_text,'完整意见');
 });
+
+test('current goal-boundary policy streams analysis before showing improvement advice', async () => {
+  const policy='front-v46-goal-boundary-v14-20260922';
+  const analysis='客户已确认设备清单，安装日期仍待确认。';
+  const advice='1、补充实际确认的安装日期。';
+  const feedback=`本次拜访分析：${analysis}\n\nAI改善建议：\n${advice}`;
+  const h=harness([new Error('initial transport unavailable'), {
+    check_id:'qc_test',input_hash:'v1',status:'completed',content_complete:true,final_usable:true,
+    preview_status:'completed',preview_feedback_text:analysis,
+    suggestion_status:'completed',suggestion_feedback_text:advice,
+    final_feedback_text:feedback,
+  }],undefined,{submitConfirmation:true,taskVersion:'v1',openingId:'opening',frontPolicy:policy});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(h.nodes.previewLabel.textContent,'本次拜访分析');
+  h.source.emit('preview_snapshot',{check_id:'qc_test',text:analysis,status:'completed'});
+  assert.equal(h.nodes.content.textContent,'客');
+  for (let i=0;i<analysis.length;i++) await h.tick(18);
+  assert.equal(h.nodes.content.textContent,analysis);
+  assert.equal(h.nodes.finalPanel.hidden,false);
+  assert.equal(h.nodes.finalContent.textContent,'改善建议生成中');
+  h.source.emit('suggestion_snapshot',{check_id:'qc_test',text:advice,status:'completed'});
+  h.source.emit('final_completed',{check_id:'qc_test',feedback_text:feedback});
+  for (let i=0;i<advice.length;i++) await h.tick(18);
+  assert.equal(h.nodes.finalContent.textContent,advice);
+  assert.equal(h.nodes.ack.disabled,false);
+});

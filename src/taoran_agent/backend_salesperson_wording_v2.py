@@ -190,7 +190,8 @@ def _render_analysis(
 
     gaps = _important_gap_sentences(visit, facts, context)
     parts = _deduplicate_sentences([progress, *gaps])
-    return "\n\n".join(part for part in parts if part).strip()
+    # Keep the visit analysis as one coherent paragraph, matching the Front Quick Check presentation.
+    return "".join(part for part in parts if part).strip()
 
 
 def _businessize_goal_review(
