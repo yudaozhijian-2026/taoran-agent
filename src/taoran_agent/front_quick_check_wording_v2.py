@@ -11,6 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .front_v46.experimental_business_semantic_state import classify_field_state
+from .goal_normalization import normalize_expected_key_result
 from .record_contract import visit_contract
 
 VERSION = "front-quick-check-wording-v2.1-20260921"
@@ -495,7 +496,9 @@ def project(
         for field in ("expected_key_result", "next_action_expected_result")
     }
     goal = str(raw.get("expected_key_result") or "").strip()
-    goal_problem = bool(_VAGUE.fullmatch(goal)) or (
+    goal_boundary = normalize_expected_key_result(raw.get("expected_key_result"))
+    missing_goal = goal_boundary.goal_state == "missing_placeholder"
+    broad_goal = goal_boundary.goal_state == "broad" or bool(_VAGUE.fullmatch(goal)) or (
         by_code.get("O_KR", {}).get("verdict") == "needs_revision"
         and bool(
             re.search(
@@ -504,10 +507,18 @@ def project(
             )
         )
     )
-    goal_problem = goal_problem or field_states.get("expected_key_result") in {
+    missing_goal = missing_goal or field_states.get("expected_key_result") in {
         "missing",
         "placeholder",
     }
+    goal_problem = missing_goal or broad_goal
+    goal_state = (
+        "missing_placeholder"
+        if missing_goal
+        else "broad"
+        if broad_goal
+        else "specific"
+    )
     alignment = {"computed_goal_summary": "unresolved", "alignment": "not_assessable"}
     if not goal_problem:
         explicit = set()
@@ -553,7 +564,9 @@ def project(
     analysis = _analysis_summary(raw, facts)
     if not facts and presence.get("process_description") == "not_received":
         analysis = "当前暂时无法核对本次实际进展。"
-    if goal_problem:
+    if missing_goal:
+        analysis = analysis.rstrip("。") + "；当前没有填写可用于判断达成情况的具体关键结果，因此无法据此判断本次目标是否达成。"
+    elif broad_goal:
         analysis = analysis.rstrip("。") + "；但当前关键结果表述比较宽，现有记录不足以判断是否已经完整实现。"
     elif achievement == "partially_achieved":
         analysis += "已有进展，但仍有目标事项待落实，目前只能确认部分完成。"
@@ -577,7 +590,16 @@ def project(
     def basis(field):
         return [{"field": field, "quote": str(raw[field])}] if raw.get(field) else []
 
-    if goal_problem:
+    if missing_goal:
+        add(
+            "goal",
+            "请补充本次想取得的关键结果，写明可核对的具体事项；再结合已有进展确认自评，不必补写尚未发生的结果。",
+            2,
+            "goal_quality",
+            basis("expected_key_result"),
+            ["expected_key_result", "self_assessment"],
+        )
+    elif broad_goal:
         add(
             "goal",
             "先把关键结果写成可核对的具体事项，再结合已有进展确认自评；不必补写尚未发生的结果。",
@@ -725,6 +747,10 @@ def project(
         "advice": advice,
         "feedback_text": f"本次拜访分析：{analysis}\n\nAI改善建议：\n{advice}",
         "achievement": achievement,
+        "goal_raw": goal_boundary.goal_raw,
+        "goal_state": goal_state,
+        "goal_assessable": goal_state == "specific",
+        "goal_source": "key_result",
         "contact_state": contact["state"],
         "contact_timing_kind": contact.get("timing_kind"),
         "analysis_basis": facts,

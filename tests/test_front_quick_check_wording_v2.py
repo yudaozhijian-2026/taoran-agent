@@ -93,6 +93,31 @@ def test_unresolved_preserves_stage_progress():
     assert "assessment" not in {x["key"] for x in output["suggestions"]}
 
 
+def test_placeholder_goal_uses_missing_goal_wording_and_preserves_facts():
+    output = render(
+        expected_key_result="-",
+        self_assessment="achieved",
+        process_description="客户承诺下周提供六台设备清单。",
+    )
+    assert output["goal_state"] == "missing_placeholder"
+    assert output["goal_assessable"] is False
+    assert output["goal_source"] == "key_result"
+    assert output["achievement"] == "unresolved"
+    assert "当前没有填写可用于判断达成情况的具体关键结果，因此无法据此判断本次目标是否达成。" in output["analysis"]
+    assert "关键结果表述比较宽" not in output["analysis"]
+    assert "提供六台设备清单" in output["analysis"]
+
+
+def test_broad_goal_keeps_broad_goal_wording():
+    output = render(
+        expected_key_result="项目顺利实施",
+        process_description="客户承诺下周提供六台设备清单。",
+    )
+    assert output["goal_state"] == "broad"
+    assert output["goal_assessable"] is False
+    assert "当前关键结果表述比较宽，现有记录不足以判断是否已经完整实现。" in output["analysis"]
+
+
 def test_normal_assessment_silent_and_clear_conflict_visible():
     v = visit(expected_key_result="确认预算", process_description="客户确认预算。", self_assessment="achieved")
     normal = project(v, front_review={"sections": [{"code": "A2", "verdict": "met", "reason": "自评一致"}]})
