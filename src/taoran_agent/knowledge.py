@@ -2,17 +2,31 @@ from __future__ import annotations
 
 import hashlib
 import json
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 ACTIVE_KNOWLEDGE_STATUSES = {"已批准", "已确认"}
 DEFAULT_QUERY = "TAORAN"
-REQUIRED_KNOWLEDGE_IDS = ("DSM-BS-01-06",)
+REQUIRED_KNOWLEDGE_IDS = ("DSM-BS-01-06", "DSM-BS-01-07", "DSM-MP-01")
+TAORAN_RUNTIME_KNOWLEDGE_IDS = (
+    "DSM-BS-000",
+    "DSM-BS-01-06",
+    "DSM-BS-01-07",
+    "DSM-MP-01",
+)
+APPROVED_FALLBACK_RESOURCE = "taoran_knowledge_approved_fallback_v1_18_0.json"
+APPROVED_MASTER_VERSION = "1.18.0"
+APPROVED_MASTER_SNAPSHOT_HASH = (
+    "d42289b24083d8b917e008a71bd722cf72a09725d06082ea048286dd99935e3a"
+)
+APPROVED_RECORD_COUNT = 151
+EXCLUDED_RECORD_COUNT = 7
 
 
 class KnowledgeRecord(BaseModel):
@@ -39,6 +53,12 @@ class TaoranKnowledgeSnapshot(BaseModel):
     retrieved_at: datetime
     record_count: int = Field(ge=1)
     records: list[KnowledgeRecord] = Field(min_length=1)
+    source_knowledge_base_version: str | None = None
+    source_master_snapshot_hash: str | None = None
+    included_records: int | None = Field(default=None, ge=1)
+    excluded_records: int | None = Field(default=None, ge=0)
+    generated_at: datetime | None = None
+    approved_content_snapshot_hash: str | None = None
 
     @model_validator(mode="after")
     def validate_snapshot(self) -> TaoranKnowledgeSnapshot:
@@ -64,11 +84,201 @@ class TaoranKnowledgeSnapshot(BaseModel):
         return hashlib.sha256(digest_input.encode("utf-8")).hexdigest()
 
 
+@dataclass(frozen=True)
+class KnowledgeCompleteness:
+    status: Literal["COMPLETE", "INCOMPLETE", "UNAVAILABLE"]
+    reason: str | None = None
+    missing_required_ids: tuple[str, ...] = ()
+    empty_content_ids: tuple[str, ...] = ()
+
+    @property
+    def complete(self) -> bool:
+        return self.status == "COMPLETE"
+
+
+@dataclass(frozen=True)
+class KnowledgeSelection:
+    snapshot: TaoranKnowledgeSnapshot
+    source: Literal["remote_api", "approved_bundled_snapshot"]
+    remote_status: Literal["COMPLETE", "INCOMPLETE", "UNAVAILABLE"]
+    fallback_active: bool
+    fallback_reason: str | None
+    last_error: str | None = None
+
+
+class KnowledgeUnavailableError(RuntimeError):
+    """Neither the remote snapshot nor the approved fallback is usable."""
+
+
+def taoran_runtime_records(
+    snapshot: TaoranKnowledgeSnapshot,
+) -> list[KnowledgeRecord]:
+    """Return TAORAN's approved prompt projection from one selected snapshot."""
+    records_by_id = {record.id: record for record in snapshot.records}
+    return [
+        records_by_id[record_id]
+        for record_id in TAORAN_RUNTIME_KNOWLEDGE_IDS
+        if record_id in records_by_id
+    ]
+
+
+def _canonical_sha256(value: Any) -> str:
+    raw = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def assess_remote_knowledge(
+    snapshot: TaoranKnowledgeSnapshot,
+) -> KnowledgeCompleteness:
+    records_by_id = {record.id: record for record in snapshot.records}
+    missing = tuple(
+        record_id for record_id in REQUIRED_KNOWLEDGE_IDS if record_id not in records_by_id
+    )
+    if missing:
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason="required_record_missing",
+            missing_required_ids=missing,
+        )
+    required_empty = tuple(
+        record_id
+        for record_id in REQUIRED_KNOWLEDGE_IDS
+        if not records_by_id[record_id].content.strip()
+    )
+    if required_empty:
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason="required_content_missing",
+            empty_content_ids=required_empty,
+        )
+    empty = tuple(record.id for record in snapshot.records if not record.content.strip())
+    if empty:
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason="empty_content_present",
+            empty_content_ids=empty,
+        )
+    invalid_status = tuple(
+        record.id
+        for record in snapshot.records
+        if record.status not in ACTIVE_KNOWLEDGE_STATUSES
+    )
+    if invalid_status:
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason="invalid_record_status",
+        )
+    invalid_version = tuple(
+        record.id for record in snapshot.records if not record.version.strip()
+    )
+    if invalid_version:
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason="invalid_record_version",
+        )
+    return KnowledgeCompleteness(status="COMPLETE")
+
+
+def assess_approved_fallback(
+    snapshot: TaoranKnowledgeSnapshot,
+) -> KnowledgeCompleteness:
+    if (
+        snapshot.source != "approved_bundled_snapshot"
+        or snapshot.source_knowledge_base_version != APPROVED_MASTER_VERSION
+        or snapshot.source_master_snapshot_hash != APPROVED_MASTER_SNAPSHOT_HASH
+        or snapshot.record_count != APPROVED_RECORD_COUNT
+        or snapshot.included_records != APPROVED_RECORD_COUNT
+        or snapshot.excluded_records != EXCLUDED_RECORD_COUNT
+    ):
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason="fallback_provenance_invalid",
+        )
+    completeness = assess_remote_knowledge(snapshot)
+    if not completeness.complete:
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason=f"fallback_{completeness.reason}",
+            missing_required_ids=completeness.missing_required_ids,
+            empty_content_ids=completeness.empty_content_ids,
+        )
+    for record in snapshot.records:
+        actual = hashlib.sha256(record.content.encode("utf-8")).hexdigest()
+        if actual != record.content_hash:
+            return KnowledgeCompleteness(
+                status="INCOMPLETE",
+                reason="fallback_content_hash_mismatch",
+            )
+    canonical_records = [
+        record.model_dump(mode="json")
+        for record in sorted(snapshot.records, key=lambda item: item.id)
+    ]
+    if snapshot.approved_content_snapshot_hash != _canonical_sha256(canonical_records):
+        return KnowledgeCompleteness(
+            status="INCOMPLETE",
+            reason="fallback_snapshot_hash_mismatch",
+        )
+    return KnowledgeCompleteness(status="COMPLETE")
+
+
+def _remote_error_reason(error: Exception) -> tuple[str, str]:
+    if isinstance(error, (httpx.TimeoutException, TimeoutError)):
+        return "remote_timeout", type(error).__name__
+    if isinstance(error, httpx.HTTPStatusError):
+        return "remote_http_error", type(error).__name__
+    if isinstance(error, (json.JSONDecodeError, ValidationError, ValueError)):
+        return "remote_parse_error", type(error).__name__
+    return "remote_unavailable", type(error).__name__
+
+
+def select_knowledge_snapshot(
+    remote_snapshot: TaoranKnowledgeSnapshot | None,
+    fallback_snapshot: TaoranKnowledgeSnapshot,
+    *,
+    remote_error: Exception | None = None,
+) -> KnowledgeSelection:
+    if remote_snapshot is not None and remote_error is None:
+        remote = assess_remote_knowledge(remote_snapshot)
+        if remote.complete:
+            return KnowledgeSelection(
+                snapshot=remote_snapshot,
+                source="remote_api",
+                remote_status="COMPLETE",
+                fallback_active=False,
+                fallback_reason=None,
+            )
+        remote_status: Literal["INCOMPLETE", "UNAVAILABLE"] = "INCOMPLETE"
+        fallback_reason = remote.reason
+        last_error = None
+    else:
+        remote_status = "UNAVAILABLE"
+        fallback_reason, last_error = _remote_error_reason(
+            remote_error or RuntimeError("remote_unavailable")
+        )
+
+    fallback = assess_approved_fallback(fallback_snapshot)
+    if not fallback.complete:
+        raise KnowledgeUnavailableError(fallback.reason or "fallback_unavailable")
+    return KnowledgeSelection(
+        snapshot=fallback_snapshot,
+        source="approved_bundled_snapshot",
+        remote_status=remote_status,
+        fallback_active=True,
+        fallback_reason=fallback_reason,
+        last_error=last_error,
+    )
+
+
 def load_taoran_knowledge_snapshot(path: str | Path | None = None) -> TaoranKnowledgeSnapshot:
     if path:
         raw = Path(path).read_text(encoding="utf-8")
     else:
-        resource = files("taoran_agent.data").joinpath("taoran_knowledge_snapshot_v1.json")
+        resource = files("taoran_agent.data").joinpath(APPROVED_FALLBACK_RESOURCE)
         raw = resource.read_text(encoding="utf-8")
     return TaoranKnowledgeSnapshot.model_validate_json(raw)
 

@@ -69,6 +69,8 @@ def test_knowledge_client_respects_live_api_limit() -> None:
         "/v1/knowledge/search",
         "/v1/knowledge/DSM-BS-TEST",
         "/v1/knowledge/DSM-BS-01-06",
+        "/v1/knowledge/DSM-BS-01-07",
+        "/v1/knowledge/DSM-MP-01",
     ]
 
 
@@ -85,7 +87,7 @@ def test_knowledge_client_reuses_complete_search_items_without_detail_calls() ->
             "content_hash": record_id + "-hash",
             "updated_at": "2026-08-31T00:00:00Z",
         }
-        for record_id in ("DSM-BS-000", "DSM-BS-01-07", "DSM-BS-01-06")
+        for record_id in ("DSM-MP-01", "DSM-BS-01-07", "DSM-BS-01-06")
     ]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -115,7 +117,7 @@ def test_knowledge_client_accepts_compact_release_records_without_storage_metada
             "content": f"{record_id}正式内容",
             "release_version": "2026-09",
         }
-        for record_id in ("DSM-BS-01-06", "DSM-BS-01-07")
+        for record_id in ("DSM-BS-01-06", "DSM-BS-01-07", "DSM-MP-01")
     ]
 
     snapshot = KnowledgeApiClient(
@@ -126,7 +128,7 @@ def test_knowledge_client_accepts_compact_release_records_without_storage_metada
         ),
     ).fetch_taoran_snapshot()
 
-    assert snapshot.record_count == 2
+    assert snapshot.record_count == 3
     assert snapshot.records[0].content_hash == hashlib.sha256(
         records[0]["content"].encode("utf-8")
     ).hexdigest()

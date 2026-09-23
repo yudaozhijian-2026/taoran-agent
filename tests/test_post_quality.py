@@ -21,7 +21,13 @@ def test_p3_collect_information_is_authoritative_and_not_a_kr_pass():
     v = visit(customer_type_ii="opportunity", opportunity_stage="P3", purpose_code="收集信息")
     context = quality_context(v, load_taoran_knowledge_snapshot())
     assert context["purpose"]["matches"] is True
-    assert set(context["purpose"]["allowed"]) == {"收集信息","强化关系","其他目的","击败竞争对手"}
+    assert set(context["purpose"]["allowed"]) == {
+        "收集信息",
+        "强化关系",
+        "其他目的",
+        "赢得商务竞争",
+        "击败竞争对手",
+    }
     assert quality_hits("拜访目的与P3阶段不匹配", "T", context)
     assert not quality_hits("关键结果未说明具体收集什么信息", "O_KR", context)
     assert not quality_hits("拜访目的与关键结果不一致", "O_KR", context)

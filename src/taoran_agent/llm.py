@@ -66,7 +66,7 @@ from .experimental_rendering_binding import (
 from .experimental_rendering_guidance import RENDERING_INSTRUCTION, rendering_input
 from .experimental_semantic_invariants import validate_invariants
 from .field_labels import display_field_name
-from .knowledge import TaoranKnowledgeSnapshot
+from .knowledge import TaoranKnowledgeSnapshot, taoran_runtime_records
 from .model_capacity import ModelCapacityController, ModelCapacityLease
 from .model_failure_evidence import save_failure_evidence
 from .models import (
@@ -897,7 +897,7 @@ class ChatModelReviewer(SemanticReviewer):
         knowledge = (
             "\n".join(
                 f"{item.id} {item.version}：{item.content}"
-                for item in selected_snapshot.records
+                for item in taoran_runtime_records(selected_snapshot)
             )
             if use_knowledge
             else ""

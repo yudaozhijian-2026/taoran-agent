@@ -61,6 +61,19 @@ def test_mapping_is_extracted_p5_is_retained_and_p6_is_removed() -> None:
     )
 
 
+def test_current_master_p1_to_p5_range_does_not_hide_common_purposes() -> None:
+    content = """标准行为：
+潜力客户目的包括收集信息、保持接触、其他目的；
+目标客户包括收集信息、发展关系、其他目的；
+商机客户依据具体项目P1—P5当前阶段选择适用目的，包括收集信息、强化关系，以及P1获得参与资格、P2认可技术方案、P3赢得商务竞争、P4完成合同签署等对应目的；P5交接后协助实施；其余统一归入“其他目的”并加文本说明。
+质量要求：目的与阶段一致。
+"""
+    mapping = structure_purpose_mapping(mapping_record(content))
+
+    assert mapping.opportunity_common == ("收集信息", "强化关系", "其他目的")
+    assert mapping.opportunity_by_stage["P3"] == ("赢得商务竞争",)
+
+
 @pytest.mark.parametrize(
     ("customer_type", "stage", "expected", "unexpected"),
     [

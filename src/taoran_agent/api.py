@@ -65,7 +65,12 @@ from .jiandaoyun_api import (
     find_jiandaoyun_record_by_field,
     get_jiandaoyun_record,
 )
-from .knowledge import KnowledgeApiClient, TaoranKnowledgeSnapshot, load_taoran_knowledge_snapshot
+from .knowledge import (
+    KnowledgeApiClient,
+    TaoranKnowledgeSnapshot,
+    load_taoran_knowledge_snapshot,
+    select_knowledge_snapshot,
+)
 from .llm import (
     KNOWLEDGE_WORDING_PROMPT_VERSION,
     PROMPT_VERSION,
@@ -317,10 +322,16 @@ _pipeline_metrics: dict[str, dict[str, int]] = {}
 _knowledge_snapshot_state: dict[str, Any] = {
     "status": "not_loaded",
     "source": None,
+    "remote_status": None,
+    "fallback_active": False,
+    "fallback_reason": None,
     "snapshot_hash": None,
+    "source_master_version": None,
     "age_ms": None,
+    "last_refresh": None,
     "last_refresh_at": None,
     "last_error": None,
+    "usable": False,
 }
 _prewarm_state_lock = Lock()
 _prewarm_state: dict[str, Any] = {
@@ -403,10 +414,18 @@ def _monitoring_snapshot() -> dict[str, Any]:
         if cached:
             knowledge["age_ms"] = int((monotonic() - cached[0]) * 1000)
             knowledge["fresh"] = knowledge["age_ms"] <= get_settings().knowledge_snapshot_cache_seconds * 1000
-            knowledge["usable"] = knowledge["age_ms"] <= get_settings().knowledge_snapshot_stale_seconds * 1000
+            knowledge["usable"] = (
+                cached[1].source == "approved_bundled_snapshot"
+                or knowledge["age_ms"]
+                <= get_settings().knowledge_snapshot_stale_seconds * 1000
+            )
         else:
             knowledge.update({"fresh": False, "usable": False})
-    return {"pipelines": pipelines, "knowledge_snapshot": knowledge}
+    return {
+        "pipelines": pipelines,
+        "knowledge": knowledge,
+        "knowledge_snapshot": knowledge,
+    }
 
 
 def _prewarm_component(
@@ -530,24 +549,29 @@ def _fetch_live_knowledge_snapshot(
     if knowledge_basis.get() is not None:
         return pinned_snapshot('live')
     secret = settings.knowledge_api_key
-    if secret is None:
-        raise ValueError("knowledge_api_not_configured")
     cache_key = hashlib.sha256(
         (
             settings.knowledge_api_base_url
             + "\0"
-            + secret.get_secret_value()
+            + (secret.get_secret_value() if secret is not None else "not-configured")
         ).encode()
     ).hexdigest()
     now = monotonic()
     with _live_knowledge_cache_lock:
         cached = _live_knowledge_cache.get(cache_key)
         if cached and now - cached[0] <= settings.knowledge_snapshot_cache_seconds:
+            cached_source = (
+                "approved_bundled_snapshot"
+                if cached[1].source == "approved_bundled_snapshot"
+                else "remote_api"
+            )
             _knowledge_snapshot_state.update({
-                "status": "ready",
-                "source": "cache",
+                "status": "degraded" if cached_source == "approved_bundled_snapshot" else "ready",
+                "source": cached_source,
                 "snapshot_hash": cached[1].snapshot_hash,
-                "last_error": None,
+                "source_master_version": cached[1].source_knowledge_base_version,
+                "fallback_active": cached_source == "approved_bundled_snapshot",
+                "usable": True,
             })
             return cached[1]
         future = _live_knowledge_inflight.get(cache_key)
@@ -565,27 +589,61 @@ def _fetch_live_knowledge_snapshot(
 
             def refresh() -> TaoranKnowledgeSnapshot:
                 try:
-                    snapshot = KnowledgeApiClient(
-                        settings.knowledge_api_base_url,
-                        secret.get_secret_value(),
-                        refresh_timeout,
-                    ).fetch_taoran_snapshot()
+                    fallback_snapshot = load_taoran_knowledge_snapshot(
+                        settings.knowledge_snapshot_path
+                    )
+                    remote_snapshot = None
+                    remote_error = None
+                    try:
+                        if secret is None:
+                            raise RuntimeError("knowledge_api_not_configured")
+                        remote_snapshot = KnowledgeApiClient(
+                            settings.knowledge_api_base_url,
+                            secret.get_secret_value(),
+                            refresh_timeout,
+                        ).fetch_taoran_snapshot()
+                    except Exception as exc:  # noqa: BLE001 - classified without response data
+                        remote_error = exc
+                    selection = select_knowledge_snapshot(
+                        remote_snapshot,
+                        fallback_snapshot,
+                        remote_error=remote_error,
+                    )
+                    snapshot = selection.snapshot
+                    refreshed_at = datetime.now(UTC).isoformat()
                     with _live_knowledge_cache_lock:
                         _live_knowledge_cache[cache_key] = (monotonic(), snapshot)
                         _knowledge_snapshot_state.update({
-                            "status": "ready",
-                            "source": "remote_api",
+                            "status": "degraded" if selection.fallback_active else "ready",
+                            "source": selection.source,
+                            "remote_status": selection.remote_status,
+                            "fallback_active": selection.fallback_active,
+                            "fallback_reason": selection.fallback_reason,
                             "snapshot_hash": snapshot.snapshot_hash,
-                            "last_refresh_at": datetime.now(UTC).isoformat(),
-                            "last_error": None,
+                            "source_master_version": snapshot.source_knowledge_base_version,
+                            "last_refresh": refreshed_at,
+                            "last_refresh_at": refreshed_at,
+                            "last_error": selection.last_error,
+                            "usable": True,
                         })
                     return snapshot
                 except Exception as exc:
                     with _live_knowledge_cache_lock:
                         _knowledge_snapshot_state.update({
                             "status": "stale" if stale is not None else "unavailable",
-                            "source": "stale_cache" if stale is not None else "remote_api",
+                            "source": (
+                                "approved_bundled_snapshot"
+                                if stale is not None
+                                and stale[1].source == "approved_bundled_snapshot"
+                                else "remote_api"
+                            ),
+                            "remote_status": "UNAVAILABLE",
+                            "fallback_active": (
+                                stale is not None
+                                and stale[1].source == "approved_bundled_snapshot"
+                            ),
                             "last_error": type(exc).__name__,
+                            "usable": stale is not None,
                         })
                     raise
 
@@ -599,10 +657,18 @@ def _fetch_live_knowledge_snapshot(
 
             future.add_done_callback(clear_inflight)
         if stale is not None:
+            stale_source = (
+                "approved_bundled_snapshot"
+                if stale[1].source == "approved_bundled_snapshot"
+                else "remote_api"
+            )
             _knowledge_snapshot_state.update({
                 "status": "refreshing",
-                "source": "stale_cache",
+                "source": stale_source,
                 "snapshot_hash": stale[1].snapshot_hash,
+                "source_master_version": stale[1].source_knowledge_base_version,
+                "fallback_active": stale_source == "approved_bundled_snapshot",
+                "usable": True,
             })
             return stale[1]
     try:

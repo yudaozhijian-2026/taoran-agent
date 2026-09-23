@@ -1,0 +1,32 @@
+{
+  "status": "APPROVED_FALLBACK_SNAPSHOT_GENERATED",
+  "source_knowledge_base_version": "1.18.0",
+  "source_master_raw_sha256": "a6c211b778638af894c47c312c1b6f5822b8dda35781f4d1ed458c7e928cb577",
+  "source_master_snapshot_hash": "d42289b24083d8b917e008a71bd722cf72a09725d06082ea048286dd99935e3a",
+  "source_master_records": 158,
+  "included_records": 151,
+  "excluded_records": 7,
+  "generated_at": "2026-09-23T05:40:00.784333+00:00",
+  "approved_content_snapshot_hash": "73ea48e0c98be0ed02a060dd60a022c28c38c3ff67d624655ef658d522759032",
+  "snapshot_file_sha256": "ef7ad0982dfad0335bd40a04ab358b8aa5aa5795f02739924d7e913f891899ed",
+  "required_records": {
+    "DSM-BS-01-06": {
+      "version": "v1.0.2",
+      "content_length": 791,
+      "source_content_hash": "618fee14ee32d9f3ebef19e82cd92e8d8ffc5d14cc33fdf907f5ea2485d45c17",
+      "source_content_sha256": "618fee14ee32d9f3ebef19e82cd92e8d8ffc5d14cc33fdf907f5ea2485d45c17"
+    },
+    "DSM-BS-01-07": {
+      "version": "v1.0.2",
+      "content_length": 709,
+      "source_content_hash": "c51146099ac5c4a3ad8432f4d28cce354613ba9234e4eb42942fbfc6f41bbd24",
+      "source_content_sha256": "c51146099ac5c4a3ad8432f4d28cce354613ba9234e4eb42942fbfc6f41bbd24"
+    },
+    "DSM-MP-01": {
+      "version": "v1.5.1",
+      "content_length": 2564,
+      "source_content_hash": "89e6089f7171d69c9860ff308ccb40cfa0bb5304096e34eb9d7a3c9d5d736d7f",
+      "source_content_sha256": "89e6089f7171d69c9860ff308ccb40cfa0bb5304096e34eb9d7a3c9d5d736d7f"
+    }
+  }
+}

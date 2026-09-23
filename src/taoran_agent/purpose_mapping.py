@@ -29,6 +29,7 @@ _COMPANY_CUSTOMER_PURPOSES = {
 }
 _COMPANY_STAGE_PURPOSES = {
     "P1": ("获得参与",),
+    "P3": ("击败竞争对手",),
     "P5": ("完成合同签署",),
 }
 
@@ -192,7 +193,7 @@ def _opportunity_purposes(text: str) -> tuple[list[str], dict[str, list[str]]]:
     # 知识正文可能先写“按P1-P6使用……和阶段目的”，这里先移除范围文字，
     # 避免把范围中的P1误识别成P1的具体目的。
     normalized = re.sub(
-        r"P1\s*(?:-|－|—|–|至|到)\s*P6",
+        r"P1\s*(?:-|－|—|–|至|到)\s*P[56]",
         "商机各阶段",
         section,
         flags=re.IGNORECASE,
@@ -208,7 +209,7 @@ def _opportunity_purposes(text: str) -> tuple[list[str], dict[str, list[str]]]:
 
     common_text = normalized[: stage_matches[0].start()]
     common_text = re.sub(
-        r"^.*?(?:使用|包括|包含|可选择|选择)",
+        r"^.*(?:使用|包括|包含|可选择|选择)",
         "",
         common_text,
         count=1,
@@ -235,7 +236,8 @@ def _opportunity_purposes(text: str) -> tuple[list[str], dict[str, list[str]]]:
 
 
 def _clean_purpose(value: str) -> str:
-    return re.sub(r"^[\s\-—•·（(]*|[。；;，,、\s）)]+$", "", value).strip()
+    cleaned = re.sub(r"^[\s\-—•·（(]*|[。；;，,、\s）)]+$", "", value).strip()
+    return "" if cleaned in {"以及", "和", "与", "及"} else cleaned
 
 
 def _excluded(value: str) -> bool:
