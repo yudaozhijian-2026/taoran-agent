@@ -14,9 +14,6 @@ _UNFINISHED_END = re.compile(
     r"(?:[，；：、(（]\s*|(?:因此|并且|同时|其中|例如|包括|需要|建议|因为)\s*)$"
 )
 _STRONG_REQUIREMENT = re.compile(r"(?:必须|应当|不允许|严禁|要求|须要|应调整为|应改为|只能|不得)")
-_SUPPLEMENT_COMPLETED = re.compile(
-    r"(?:补充|补写|写明|记录|完善).{0,30}(?:已|已经|明确|同意|承诺|完成|确定)"
-)
 _SAFE_CONDITIONAL = re.compile(
     r"(?:如|若|如果)(?:实际|确实)?.{0,24}(?:已|已经|明确|同意|承诺|完成|确定)"
     r".{0,48}(?:据实|若尚未|如果尚未|保持真实|继续跟进)"
@@ -27,6 +24,20 @@ _NEGATIVE_COMPLETION = re.compile(
 _POSITIVE_COMPLETION = re.compile(
     r"(?:已|已经|明确)(?:.{0,14})?(?:确认|同意|承诺|完成|确定)"
     r"|(?:确认|同意|承诺|完成|确定)(?:.{0,8})(?:完成|成功|妥当)"
+)
+_COMPLETED_CLAIM = re.compile(
+    r"(?:已|已经)(?:接受|同意|承诺|确认|完成|取得|付款|支付|下单|采购|提供|交付|发货|收货|提交|"
+    r"签约|安排|实施|回复|反馈|对接|形成|收到)"
+    r"|(?:明确|确认).{0,8}(?:接受|同意|承诺|完成|付款|支付|下单|采购|提供|交付|发货|收货|"
+    r"提交|签约|安排|实施|回复|反馈|对接|形成|收到)"
+)
+_ADVICE_ACTION = re.compile(r"(?:补充|补写|写明|完善|改写|补入|记录)")
+_ADVICE_DIRECTIVE_PREFIX = re.compile(
+    r"^(?:请|建议|需(?:要)?|应(?:当)?|必须|可以|可|务必)(?:据实|再|进一步|完整|详细)?"
+)
+_EVIDENCE_INSUFFICIENT_PREFIX = re.compile(
+    r"(?:尚无|没有|未见|缺少|缺乏|无法|不能|尚不能|尚不足以|不足以)"
+    r".{0,12}(?:表明|证明|证实|确认|认定|判断|显示|说明)?$"
 )
 _UNRESOLVED_AS_FAILED = re.compile(
     r"(?:目标|关键结果|原定事项)[^。；\n]{0,120}"
@@ -68,6 +79,14 @@ _ACTION_NOISE = re.compile(
 )
 _FUTURE_OUTCOME = re.compile(r"(?:承诺|约定|计划|预计|拟于|将|会|后续|下一步|下周|下次|待)")
 _COMPLETED_OUTCOME = re.compile(r"(?:已|已经|完成|取得|收到|发来|补发|签署|核对无遗漏)")
+_EVENT_TIME = re.compile(
+    r"(?:\d{4}[-年]\d{1,2}[-月]\d{1,2}(?:日|号)?|\d{1,2}月\d{1,2}(?:日|号)?|"
+    r"下周[一二三四五六日天]|本周[一二三四五六日天]|周[一二三四五六日天]|下周|本周|"
+    r"明天|今天|月底|月末)"
+)
+_EVENT_CONDITION = re.compile(
+    r"(?:审批通过后|收到[^，,。；;]{0,16}后|(?:如|如果|若)[^，,。；;]{0,24}(?:后|再|才|则|考虑|推进))"
+)
 
 
 class FinalFeedbackIncomplete(ValueError):
@@ -125,25 +144,60 @@ def requirement_provenance(section: Any) -> str:
 
 
 def advice_truthfulness_hits(text: str, source_text: str, target: str) -> list[dict[str, Any]]:
+    """Reject only an instruction to add an unsupported completed fact.
+
+    A completed fact can legitimately appear in a suggestion as a factual
+    recap.  In particular, the noun ``记录`` in ``本次记录中`` must not be
+    combined with a later ``已`` phrase.  Inspect directive fragments instead:
+    the writing verb and requested completed claim must share the same local
+    comma-bounded fragment.
+    """
     hits = []
     for match in re.finditer(r"[^。；\n]+", str(text or "")):
         clause = match.group().strip()
-        if not _SUPPLEMENT_COMPLETED.search(clause) or _SAFE_CONDITIONAL.search(clause):
-            continue
-        # A request to record a completed fact is allowed only when the formal
-        # record itself contains positive evidence and no conflicting negation.
-        if _NEGATIVE_COMPLETION.search(source_text) or not _POSITIVE_COMPLETION.search(source_text):
-            hits.append(
-                {
-                    "rule": "advice_requests_unproven_completed_fact",
-                    "target": target,
-                    "quote": clause,
-                    "start": match.start(),
-                    "end": match.end(),
-                    "scanned_text": text,
-                }
-            )
+        for fragment in re.finditer(r"[^，,、：:]+", clause):
+            requested = fragment.group().strip()
+            if not requested or _SAFE_CONDITIONAL.search(requested):
+                continue
+            directive = _completion_writing_directive(requested)
+            if directive is None or not _COMPLETED_CLAIM.search(requested[directive.end() :]):
+                continue
+            # A request to record a completed fact is allowed only when the
+            # formal record itself contains positive evidence and no conflicting
+            # negation.  The directive and claimed completion have already been
+            # bound to this local fragment above.
+            if _NEGATIVE_COMPLETION.search(source_text) or not _POSITIVE_COMPLETION.search(source_text):
+                start = match.start() + fragment.start()
+                hits.append(
+                    {
+                        "rule": "advice_requests_unproven_completed_fact",
+                        "target": target,
+                        "quote": requested,
+                        "start": start,
+                        "end": start + len(fragment.group()),
+                        "scanned_text": text,
+                    }
+                )
     return hits
+
+
+def _completion_writing_directive(fragment: str) -> re.Match[str] | None:
+    """Find a real writing instruction, never the noun use of ``记录``."""
+    value = fragment.strip()
+    direct = re.match(r"(?:补充|补写|写明|完善|改写|补入)", value)
+    if direct:
+        return direct
+    prefix = _ADVICE_DIRECTIVE_PREFIX.match(value)
+    if prefix is None:
+        return None
+    action = _ADVICE_ACTION.search(value, prefix.end())
+    if action is None:
+        return None
+    # ``建议核对记录中…`` and ``请说明记录显示…`` are not requests to
+    # write a fact.  The other writing verbs remain unambiguous here.
+    if action.group() == "记录" and value[action.end() :].lstrip().startswith(("中", "显示", "表明")):
+        return None
+    return action
 
 
 def unsupported_requirement_hits(
@@ -263,7 +317,7 @@ def commitment_boundary_hits(
 
     for event in candidate_future:
         if any(
-            _same_action(event["action"], source["action"]) for source in source_future_evidence
+            _same_future_event(event, source) for source in source_future_evidence
         ):
             continue
         hits.append(
@@ -357,12 +411,15 @@ def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, st
     action = _action_signature(clause, firm.end(), end)
     condition = bool(_CONDITIONAL_FUTURE.search(window))
     non_subject = bool(_NON_SUBJECT_CUSTOMER_PREFIX.search(before))
+    evidence_insufficient = bool(_EVIDENCE_INSUFFICIENT_PREFIX.search(before))
     negative_or_pending = bool(_NON_FIRM_CUSTOMER_STATE.search(window))
     completed = bool(_COMPLETED_ACTION.search(window))
     future = bool(_FUTURE_DIRECTION.search(tail))
     usage = "fact"
     if non_subject:
         usage = "sales_advice"
+    elif evidence_insufficient:
+        usage = "insufficient_evidence"
     elif condition:
         usage = "conditional"
     elif negative_or_pending:
@@ -371,7 +428,13 @@ def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, st
         usage = "completed_fact"
     state = (
         "future_commitment"
-        if not (non_subject or condition or negative_or_pending or (completed and not future))
+        if not (
+            non_subject
+            or evidence_insufficient
+            or condition
+            or negative_or_pending
+            or (completed and not future)
+        )
         and future
         else usage
     )
@@ -405,10 +468,19 @@ def _conditional_source_future_actions(text: str) -> list[dict[str, str]]:
     """
     result = []
     for clause in _sentences(text):
+        # A firm commitment is already represented with its full event window.
+        # Do not add a second, weaker conditional copy that would lose time or
+        # condition information during evidence matching.
+        if _firm_customer_commitments(clause):
+            continue
         for match in _SOURCE_CONDITIONAL_RESPONSE.finditer(clause):
             action = _action_signature(clause, match.start())
             if action.partition(":")[0]:
-                result.append({"clause": clause, "action": action})
+                result.append({
+                    "clause": clause,
+                    "action": action,
+                    "time_or_condition": _event_time_or_condition(clause),
+                })
     return result
 
 
@@ -463,6 +535,44 @@ def _same_action(left: str, right: str) -> bool:
     if not left_object or not right_object:
         return True
     return left_object in right_object or right_object in left_object
+
+
+def _same_future_event(candidate: dict[str, str], source: dict[str, str]) -> bool:
+    """Match a future promise by action/object plus explicit time and condition.
+
+    A source condition cannot support an unconditional promise.  A candidate
+    may summarize a dated source without repeating its date, but it may not
+    introduce or change an explicit date.
+    """
+    if not _same_action(candidate.get("action", ""), source.get("action", "")):
+        return False
+    candidate_window = str(candidate.get("time_or_condition") or candidate.get("clause") or "")
+    source_window = str(source.get("time_or_condition") or source.get("clause") or "")
+    candidate_conditions = _event_conditions(candidate_window)
+    source_conditions = _event_conditions(source_window)
+    if source_conditions and candidate_conditions != source_conditions:
+        return False
+    if candidate_conditions and not source_conditions:
+        return False
+    candidate_times = _event_times(candidate_window)
+    source_times = _event_times(source_window)
+    return not candidate_times or candidate_times == source_times
+
+
+def _event_time_or_condition(text: str) -> str:
+    return str(text or "")
+
+
+def _event_times(text: str) -> tuple[str, ...]:
+    return tuple(_normalize_event_marker(match.group()) for match in _EVENT_TIME.finditer(text))
+
+
+def _event_conditions(text: str) -> tuple[str, ...]:
+    return tuple(_normalize_event_marker(match.group()) for match in _EVENT_CONDITION.finditer(text))
+
+
+def _normalize_event_marker(value: str) -> str:
+    return re.sub(r"[\s，,。；;：:（）()]", "", value).replace("星期", "周")
 
 
 def preserve_outcomes(

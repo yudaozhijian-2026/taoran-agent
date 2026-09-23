@@ -8,7 +8,60 @@ from taoran_agent import feedback
 from taoran_agent.feedback import build_evaluation_feedback_with_diagnostics
 from taoran_agent.llm import _evidence_catalog
 from taoran_agent.models import Q34SemanticFacts
-from taoran_agent.scoring import score_q34
+from taoran_agent.scoring import score_q33, score_q34
+
+PRICE_SOURCE = (
+    "5kg AGMLT, 客户反馈，希望采购的价格是USD650/kg，告知客户我们成本一直在升高，"
+    "仍然努力在维持原有价格给客户，没有再度降价的空间。仍然按USD690/kg价格报价。"
+)
+ORIGINAL_0497_SUGGESTION = (
+    "本次记录中客户提出期望价格USD650/kg，销售方已按USD690/kg报价并说明无降价空间，"
+    "双方尚未就价格达成一致。下一步行动目的为击败竞争对手、期望结果为价格确认，"
+    "但过程描述中未体现客户对后续价格确认事项的明确回应。建议在下一次沟通中与客户确认"
+    "其对当前报价的具体反馈及后续采购意向，如客户已有明确回应请据实补充，"
+    "若尚未确认请保持真实状态并继续跟进。"
+)
+ORIGINAL_0497_REASON = (
+    "下一步目的为击败竞争对手、期望结果为价格确认，与本次价格沟通事实衔接。"
+    "但本次过程中客户仅表达期望价格且销售方已明确拒绝降价，双方未就后续价格确认形成共识，"
+    "下一步缺少客户对具体后续事项的明确回应。商机客户要求客户共识，"
+    "当前记录不足以证明客户已同意该下一步安排。"
+)
+SAVED_R12_N_SUGGESTION = (
+    "过程中客户提出USD650/kg而我方维持USD690/kg报价，双方尚未就价格达成一致。"
+    "建议在下一次沟通前先与客户确认其是否愿意继续就价格进行协商，并将客户对后续价格沟通的"
+    "真实回应补充到记录中。如客户已明确同意继续讨论价格，请据实补充该共识；"
+    "若客户尚未确认，请保持真实状态并继续跟进。"
+)
+SAVED_R12_N_REASON = (
+    "下一步目的为击败竞争对手、期望结果为价格确认，与本次价格分歧衔接。"
+    "但过程中客户仅提出期望价格且我方已拒绝降价，记录未体现客户对后续价格沟通的"
+    "明确回应或共识，商机客户下一步缺少客户确认。"
+)
+
+
+def _price_record():
+    return visit(
+        visit_date="2026-09-15",
+        customer_type_ii="opportunity",
+        opportunity_stage="P3",
+        visit_method="asynchronous_message",
+        purpose_code="击败竞争对手",
+        expected_key_result="确认价格",
+        process_description=PRICE_SOURCE,
+        self_assessment="partially_achieved",
+        next_action_purpose="击败竞争对手",
+        next_action_expected_result="价格确认",
+        next_contact_at="2026-09-17T16:00:00Z",
+    )
+
+
+def _price_payload(subject, record, *, suggestion=ORIGINAL_0497_SUGGESTION, reason=ORIGINAL_0497_REASON):
+    payload = valid_payload(subject, record)
+    section = next(item for item in payload["sections"] if item["code"] == "N")
+    section["suggestion"] = suggestion
+    section["reason"] = reason
+    return payload
 
 
 @pytest.mark.parametrize(
@@ -119,7 +172,7 @@ def test_deterministic_repair_handles_chained_known_violations_without_second_mo
     record = visit()
     payload = valid_payload(subject, record)
     next(item for item in payload["sections"] if item["code"] == "N")["suggestion"] = (
-        "同时可在期望结果中补充下次需要收集的具体信息方向，使下一步行动更加明确。"
+        "请补充已取得的具体信息方向，使下一步行动更加明确。"
     )
     next(item for item in payload["sections"] if item["code"] == "O_KR")["suggestion"] = (
         "建议在关键结果中补充本次需要收集的具体信息类别，例如客户主营产品方向、采购需求或供应商资质要求等，以便后续验证目标达成情况。"
@@ -195,6 +248,142 @@ def test_case29_style_advice_becomes_future_action_without_completed_fact(tmp_pa
         assert "已取得" not in suggestion
         assert "下一步可以" in suggestion
         assert "继续确认" in suggestion
+    finally:
+        subject.close()
+
+
+def test_saved_0497_candidate_completes_without_repair_or_fallback(tmp_path, monkeypatch):
+    subject = reviewer(tmp_path)
+    record = _price_record()
+    payload = _price_payload(subject, record)
+    calls = []
+
+    def request(*args, **kwargs):
+        lease = args[3]
+        calls.append(kwargs.get("repair", False))
+        try:
+            return deepcopy(payload), {}
+        finally:
+            lease.release()
+
+    monkeypatch.setattr(subject, "_request", request)
+    try:
+        before = record.model_dump(mode="json")
+        q33_before = score_q33(record)[0].model_dump()
+        result = subject.review_q34(record)
+        baseline = Q34SemanticFacts(
+            provider="llm-chat",
+            **payload["facts"],
+            sections=[
+                {key: value for key, value in section.items() if key != "advice_basis"}
+                for section in payload["sections"]
+            ],
+        )
+        assert result.status == "completed"
+        assert result.failure_reason is None
+        assert calls == [False]
+        assert result.model_attempts[0].failure_reason is None
+        assert record.model_dump(mode="json") == before
+        assert score_q33(record)[0].model_dump() == q33_before
+        assert score_q34(record, result)[0].model_dump() == score_q34(record, baseline)[0].model_dump()
+    finally:
+        subject.close()
+
+
+def test_saved_r12_0497_output_still_replays_through_the_post_gate(tmp_path):
+    subject = reviewer(tmp_path)
+    record = _price_record()
+    payload = _price_payload(
+        subject,
+        record,
+        suggestion=SAVED_R12_N_SUGGESTION,
+        reason=SAVED_R12_N_REASON,
+    )
+    try:
+        parsed, _ = subject._validate_observed(payload, subject._input(record, precheck=False))
+        section = next(item for item in parsed.sections if item.code == "N")
+        assert section.suggestion == SAVED_R12_N_SUGGESTION
+        assert section.reason == SAVED_R12_N_REASON
+    finally:
+        subject.close()
+
+
+def test_repair_chain_retains_initial_error_and_final_completed_state(tmp_path, monkeypatch):
+    subject = reviewer(tmp_path)
+    record = _price_record()
+    payload = _price_payload(
+        subject,
+        record,
+        suggestion="本次记录中我方已报价，请补充客户已同意采购。",
+    )
+
+    def request(*args, **kwargs):
+        lease = args[3]
+        try:
+            return deepcopy(payload), {}
+        finally:
+            lease.release()
+
+    monkeypatch.setattr(subject, "_request", request)
+    attempts = []
+    try:
+        parsed, _ = subject._analyze(record, False, attempts)
+        assert parsed
+        assert attempts[0].failure_reason == "post_advice_truthfulness_conflict"
+        assert [entry["stage"] for entry in attempts[0].repair_chain] == [
+            "initial_validation",
+            "targeted_repair",
+            "final",
+        ]
+        assert attempts[0].repair_chain[0]["hits"] == [{
+            "target": "N",
+            "quote": "请补充客户已同意采购",
+            "rule": "advice_requests_unproven_completed_fact",
+        }]
+        assert attempts[0].repair_chain[-1] == {
+            "stage": "final",
+            "status": "completed",
+            "failure_reason": None,
+        }
+    finally:
+        subject.close()
+
+
+def test_repair_chain_reports_a_preexisting_second_error_without_calling_it_repair_output(
+    tmp_path, monkeypatch,
+):
+    subject = reviewer(tmp_path)
+    record = _price_record()
+    unsafe_reason = "当前记录不足以证明客户已同意下一步安排，但客户承诺下周付款。"
+    payload = _price_payload(
+        subject,
+        record,
+        suggestion="本次记录中我方已报价，请补充客户已同意采购。",
+        reason=unsafe_reason,
+    )
+
+    def request(*args, **kwargs):
+        lease = args[3]
+        try:
+            return deepcopy(payload), {}
+        finally:
+            lease.release()
+
+    monkeypatch.setattr(subject, "_request", request)
+    attempts = []
+    try:
+        with pytest.raises(Exception, match="post_commitment_boundary_conflict"):
+            subject._analyze(record, False, attempts)
+        chain = attempts[0].repair_chain
+        assert [entry["stage"] for entry in chain] == [
+            "initial_validation",
+            "targeted_repair",
+            "revalidation",
+            "final",
+        ]
+        assert chain[2]["failure_reason"] == "post_commitment_boundary_conflict"
+        assert chain[2]["hits"][0]["quote"] == unsafe_reason.rstrip("。")
+        assert chain[-1]["status"] == "failed"
     finally:
         subject.close()
 

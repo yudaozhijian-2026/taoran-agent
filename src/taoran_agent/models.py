@@ -528,6 +528,7 @@ class ModelAttemptAudit(BaseModel):
     diagnostic_save_failed: bool = False
     timeout_phase: str | None = None
     repair_targets: list[str] = Field(default_factory=list)
+    repair_chain: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class Q34SemanticFacts(BaseModel):

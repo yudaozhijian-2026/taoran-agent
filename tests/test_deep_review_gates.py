@@ -39,6 +39,28 @@ def test_golden_advice_cannot_invent_confirmed_person():
     assert advice_truthfulness_hits(safe, source, "A2") == []
 
 
+@pytest.mark.parametrize(
+    ("text", "expected_quote"),
+    [
+        ("本次记录中销售方已按USD690/kg报价。", None),
+        ("根据记录，销售方已报价，客户尚未回应。", None),
+        ("请补充客户已接受USD690/kg报价。", "请补充客户已接受USD690/kg报价"),
+        (
+            "本次记录中我方已报价，请补充客户已同意采购。",
+            "请补充客户已同意采购",
+        ),
+        ("请记录客户是否接受报价；尚未回应则保持未确认。", None),
+        ("如客户已明确同意采购，请据实补充；若尚未确认则继续跟进。", None),
+    ],
+)
+def test_advice_truthfulness_binds_completion_to_a_local_writing_directive(text, expected_quote):
+    hits = advice_truthfulness_hits(text, "客户尚未接受报价。", "N")
+    if expected_quote is None:
+        assert hits == []
+    else:
+        assert [hit["quote"] for hit in hits] == [expected_quote]
+
+
 def test_golden_semantic_recommendation_cannot_be_company_rule():
     text = "联系时间应调整为客户评审日期当天或之后。"
     assert unsupported_requirement_hits(text, "semantic_recommendation", "N")
@@ -117,6 +139,75 @@ def test_golden_customer_commitment_is_progress_not_completion():
         source,
         "facts.reason",
     ) == []
+
+
+@pytest.mark.parametrize(
+    "candidate",
+    [
+        "当前记录不足以证明客户已同意下一步安排。",
+        "尚无证据表明客户已同意下周采购。",
+        "需要确认客户是否同意下周采购。",
+        "客户尚未接受报价。",
+    ],
+)
+def test_evidence_insufficiency_and_pending_state_are_not_positive_commitments(candidate):
+    assert commitment_boundary_hits(
+        candidate,
+        "客户希望价格USD650/kg，我方按USD690/kg报价。",
+        "N.reason",
+    ) == []
+
+
+def test_evidence_insufficiency_does_not_hide_a_separate_future_promise():
+    hits = commitment_boundary_hits(
+        "尚无证据表明客户已同意下周采购，但客户承诺下周付款。",
+        "客户希望价格USD650/kg，我方按USD690/kg报价。",
+        "facts.reason",
+    )
+    assert [hit["rule"] for hit in hits] == ["unsupported_future_customer_commitment"]
+    assert hits[0]["candidate_event"]["action"] == "付款"
+
+
+@pytest.mark.parametrize(
+    ("source", "candidate", "expected_rule"),
+    [
+        (
+            "客户承诺下周一提供三台设备清单。",
+            "客户承诺下周一提供三台设备清单。",
+            None,
+        ),
+        (
+            "客户承诺下周一提供三台设备清单。",
+            "客户承诺周五提供三台设备清单。",
+            "unsupported_future_customer_commitment",
+        ),
+        (
+            "客户承诺下周一提供三台设备清单。",
+            "客户承诺下周一提供五台设备清单。",
+            "unsupported_future_customer_commitment",
+        ),
+        (
+            "客户承诺下周一提供三台设备清单。",
+            "客户承诺下周一付款。",
+            "unsupported_future_customer_commitment",
+        ),
+        (
+            "客户表示审批通过后再安排采购。",
+            "客户承诺下周采购。",
+            "unsupported_future_customer_commitment",
+        ),
+        (
+            "客户希望价格USD650/kg，我方按USD690/kg报价。",
+            "客户已同意下周采购。",
+            "unsupported_future_customer_commitment",
+        ),
+    ],
+)
+def test_future_commitment_requires_same_action_object_time_and_condition(
+    source, candidate, expected_rule,
+):
+    hits = commitment_boundary_hits(candidate, source, "facts.reason")
+    assert (hits[0]["rule"] if hits else None) == expected_rule
 
 
 def test_completed_outcome_is_not_rewritten_as_future_commitment():

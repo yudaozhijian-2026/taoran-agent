@@ -246,6 +246,25 @@ def _failure_reason(exc: Exception) -> str:
     return "invalid_response_or_network_error"
 
 
+def _repair_chain_entry(stage: str, failure_reason: str, details: object) -> dict[str, Any]:
+    """Keep each validator result without replacing the first failure audit."""
+    raw_hits = details.get("hits", []) if isinstance(details, dict) else []
+    hits = [
+        {
+            key: hit.get(key)
+            for key in ("target", "quote", "rule")
+            if hit.get(key) is not None
+        }
+        for hit in raw_hits
+        if isinstance(hit, dict)
+    ]
+    return {
+        "stage": stage,
+        "failure_reason": failure_reason,
+        "hits": hits,
+    }
+
+
 def _model_request_id(response: httpx.Response, envelope: object) -> str | None:
     """Return a safe provider trace identifier without exposing response content."""
     candidates = (
@@ -1812,6 +1831,10 @@ class ChatModelReviewer(SemanticReviewer):
                     if deterministic is not None:
                         deterministic_feedback_repair_used = True
                         repaired_payload, repair_audit = deterministic
+                        attempts[-1].repair_chain.extend([
+                            _repair_chain_entry("initial_validation", _failure_reason(exc), getattr(exc, "details", {})),
+                            {"stage": "targeted_repair", **repair_audit},
+                        ])
                         repair_audits = [repair_audit]
                         seen_repairs = {
                             (repair_audit["violation_code"], tuple(repair_audit["targets"]))
@@ -1824,6 +1847,13 @@ class ChatModelReviewer(SemanticReviewer):
                             try:
                                 parsed, quoted = self._validate_observed(repaired_payload, data)
                             except (ModelCallError, ValueError, KeyError, TypeError) as repair_exc:
+                                attempts[-1].repair_chain.append(
+                                    _repair_chain_entry(
+                                        "revalidation",
+                                        _failure_reason(repair_exc),
+                                        getattr(repair_exc, "details", {}),
+                                    )
+                                )
                                 next_repair = repair_feedback_candidate(
                                     repaired_payload,
                                     _failure_reason(repair_exc),
@@ -1831,6 +1861,11 @@ class ChatModelReviewer(SemanticReviewer):
                                     data,
                                 )
                                 if next_repair is None:
+                                    attempts[-1].repair_chain.append({
+                                        "stage": "final",
+                                        "status": "failed",
+                                        "failure_reason": _failure_reason(repair_exc),
+                                    })
                                     raise
                                 repaired_payload, next_audit = next_repair
                                 repair_key = (
@@ -1842,6 +1877,11 @@ class ChatModelReviewer(SemanticReviewer):
                                 seen_repairs.add(repair_key)
                                 repair_audits.append(next_audit)
                             else:
+                                attempts[-1].repair_chain.append({
+                                    "stage": "final",
+                                    "status": "completed",
+                                    "failure_reason": None,
+                                })
                                 parsed._semantic_gate["targeted_repair"] = repair_audits[0]
                                 if len(repair_audits) > 1:
                                     parsed._semantic_gate["targeted_repairs"] = repair_audits
