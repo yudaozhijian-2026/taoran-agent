@@ -81,6 +81,13 @@
       "expected": "pass"
     },
     {
+      "case_id": "sales_advice_after_customer_response",
+      "classification": "CONDITIONAL_FUTURE",
+      "source": "过程记录客户暂未反馈，未形成客户未来承诺。",
+      "candidate": "建议在客户回复后确认其对后续沟通事项的回应，并将真实约定的联系时间补入下一次联系客户时间安排。",
+      "expected": "pass"
+    },
+    {
       "case_id": "rule_requires_customer_consensus",
       "classification": "CURRENT_STATE",
       "source": "本次记录未形成客户未来承诺。",
