@@ -167,13 +167,21 @@ def _supported_commitment(candidate: str, source: str) -> bool:
     if normalized_candidate in normalized_source:
         return True
     actions = [word for word in ("确认", "同意", "承诺", "完成", "下单", "签约") if word in candidate]
-    # A commitment remains a fact claim only when its action and at least one
-    # non-generic business term are present together in the source record.
-    terms = re.findall(r"[\u4e00-\u9fff]{2,}", candidate)
-    meaningful = [term for term in terms if term not in {"客户", "已经", "确认", "同意", "承诺", "完成"}]
-    return bool(actions) and any(action in source for action in actions) and any(
-        _normalize(term) in normalized_source for term in meaningful
+    # Confirmation, agreement, a promise and an explicit rescheduling are
+    # interchangeable only as the commitment frame.  The future action,
+    # object and time remain part of the payload and must still occur in the
+    # recorded source. Completion, an order and signing are never
+    # interchangeable with a future promise.
+    generic = re.compile(r"客户|已经|已|明确|取得|确认|同意|承诺|的")
+    candidate_core = generic.sub("", normalized_candidate)
+    source_core = generic.sub("", normalized_source)
+    completion_actions = {"完成", "下单", "签约"}
+    frame_supported = (
+        any(action in source for action in actions)
+        if completion_actions.intersection(actions)
+        else any(frame in source for frame in ("确认", "同意", "承诺", "改为"))
     )
+    return bool(actions) and frame_supported and len(candidate_core) >= 2 and candidate_core in source_core
 
 
 def _supported_calendar_date(token: str, source: str) -> bool:
