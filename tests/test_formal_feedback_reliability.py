@@ -382,7 +382,7 @@ def test_repair_chain_reports_a_preexisting_second_error_without_calling_it_repa
             "final",
         ]
         assert chain[2]["failure_reason"] == "post_commitment_boundary_conflict"
-        assert chain[2]["hits"][0]["quote"] == unsafe_reason.rstrip("。")
+        assert chain[2]["hits"][0]["quote"] == "但客户承诺下周付款"
         assert chain[-1]["status"] == "failed"
     finally:
         subject.close()

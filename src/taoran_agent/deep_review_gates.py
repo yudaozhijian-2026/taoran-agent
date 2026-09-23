@@ -10,21 +10,12 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from .semantic_roles import SemanticRole, semantic_scope, semantic_segments
+
 _UNFINISHED_END = re.compile(
     r"(?:[，；：、(（]\s*|(?:因此|并且|同时|其中|例如|包括|需要|建议|因为)\s*)$"
 )
 _STRONG_REQUIREMENT = re.compile(r"(?:必须|应当|不允许|严禁|要求|须要|应调整为|应改为|只能|不得)")
-_SAFE_CONDITIONAL = re.compile(
-    r"(?:如|若|如果)(?:实际|确实)?.{0,24}(?:已|已经|明确|同意|承诺|完成|确定)"
-    r".{0,48}(?:据实|若尚未|如果尚未|保持真实|继续跟进)"
-)
-_NEGATIVE_COMPLETION = re.compile(
-    r"(?:尚未|未|没有|尚无|无法|不能).{0,18}(?:确认|明确|同意|承诺|完成|确定)"
-)
-_POSITIVE_COMPLETION = re.compile(
-    r"(?:已|已经|明确)(?:.{0,14})?(?:确认|同意|承诺|完成|确定)"
-    r"|(?:确认|同意|承诺|完成|确定)(?:.{0,8})(?:完成|成功|妥当)"
-)
 _COMPLETED_CLAIM = re.compile(
     r"(?:已|已经)(?:接受|同意|承诺|确认|完成|取得|付款|支付|下单|采购|提供|交付|发货|收货|提交|"
     r"签约|安排|实施|回复|反馈|对接|形成|收到)"
@@ -34,10 +25,6 @@ _COMPLETED_CLAIM = re.compile(
 _ADVICE_ACTION = re.compile(r"(?:补充|补写|写明|完善|改写|补入|记录)")
 _ADVICE_DIRECTIVE_PREFIX = re.compile(
     r"^(?:请|建议|需(?:要)?|应(?:当)?|必须|可以|可|务必)(?:据实|再|进一步|完整|详细)?"
-)
-_EVIDENCE_INSUFFICIENT_PREFIX = re.compile(
-    r"(?:尚无|没有|未见|缺少|缺乏|无法|不能|尚不能|尚不足以|不足以)"
-    r".{0,12}(?:表明|证明|证实|确认|认定|判断|显示|说明)?$"
 )
 _UNRESOLVED_AS_FAILED = re.compile(
     r"(?:目标|关键结果|原定事项)[^。；\n]{0,120}"
@@ -49,7 +36,8 @@ _OUTCOME_DENIAL = re.compile(
     r"(?:没有|未|尚未)(?:取得|形成|获得).{0,12}(?:成果|结果|进展|信息)"
     r"|(?:本次|此次)拜访.{0,12}(?:没有|无)(?:成果|进展|价值)"
 )
-_SENTENCE = re.compile(r"[^。；\n]+")
+_SOURCE_SENTENCE = re.compile(r"[^。；\n]+")
+_WEAK_INTENT = re.compile(r"(?:考虑|意向|可能|希望|倾向|(?<!模)拟(?:于|在|采购|付款|测试|提供))")
 _FIRM_CUSTOMER_COMMITMENT = re.compile(r"客户[^，。；\n]{0,8}?(?:承诺|保证|同意|确认|约定)")
 _FUTURE_DIRECTION = re.compile(
     r"(?:将|(?<!展)会|后续|下一步|下周|下次|本周|周[一二三四五六日天]|月底|月末|之后|再|待|拟|预计|一定)"
@@ -57,25 +45,11 @@ _FUTURE_DIRECTION = re.compile(
 _SOURCE_CONDITIONAL_RESPONSE = re.compile(
     r"(?:客户|对方|他|她)[^。；\n]{0,24}?(?:可以|可|将|(?<!展)会|承诺|同意|答应|后续|下周|下次|待|预计|拟)"
 )
-_CONDITIONAL_FUTURE = re.compile(r"(?:如|如果|若).{0,36}(?:再|才|则|考虑|可能|推进)")
-_CUSTOMER_INTENT = re.compile(r"客户.{0,20}(?:表示|考虑|意向|希望|可能|拟)")
-_NON_FIRM_CUSTOMER_STATE = re.compile(
-    r"客户[^，,、。；\n]{0,12}(?:未|尚未|没有|无|缺少|待|可|需|应)[^，,、。；\n]{0,12}(?:承诺|保证|同意|确认|约定)"
-)
-_SALES_ACTION_PLAN = re.compile(
-    r"(?:销售|我方|业务员|下一步).{0,20}(?:联系|跟进|沟通|拜访).{0,12}客户"
-)
-_NON_SUBJECT_CUSTOMER_PREFIX = re.compile(
-    r"(?:需要|需|必须|应|要|与|和|联系|向|请|如|若|如果|建议|在|由|让|待|对|从|补充|明确|取得|核实|说明|填写|记录|确认|要求|将|把)\s*$"
-)
-_DESIRED_CUSTOMER_OUTCOME_PREFIX = re.compile(
-    r"(?:希望|期望|推动|争取|促使|力争|期待|拟推动|计划推动)\s*$"
-)
 _COMPLETED_ACTION = re.compile(
-    r"(?:已经|已)(?:同意|付款|支付|下单|采购|提供|交付|发货|完成|提交|安排|实施|确认完毕|发送|回复|测试|沟通|反馈|对接|签署|配合)|(?:已经|已)确认(?=的)"
+    r"(?:已经|已)(?:接受|确认|同意|付款|支付|下单|采购|提供|交付|发货|完成|提交|安排|实施|发送|回复|测试|沟通|反馈|对接|签署|配合)"
 )
 _ACTION = re.compile(
-    r"(?:付款|支付|下单|采购|提供|交付|发货|收货|提交|完成|安排|实施|测试|回复|反馈|沟通|对接|通知|签署|配合)"
+    r"(?:接受|确认|付款|支付|下单|采购|提供|交付|发货|收货|提交|完成|安排|实施|测试|回复|反馈|沟通|对接|通知|签署|配合)"
 )
 _ACTION_NOISE = re.compile(
     r"(?:将|会|后续|下一步|下周|下次|本周|月底|月末|之后|再|待|拟|预计|一定|已经|已|客户|承诺|保证|同意|确认|约定|明确|于|在)"
@@ -156,21 +130,65 @@ def advice_truthfulness_hits(text: str, source_text: str, target: str) -> list[d
     comma-bounded fragment.
     """
     hits = []
-    for match in re.finditer(r"[^。；\n]+", str(text or "")):
-        clause = match.group().strip()
-        for fragment in re.finditer(r"[^，,、：:]+", clause):
+    source_completed = _completed_actions(source_text)
+    source_future = _future_customer_commitments(source_text)
+    source_future += _conditional_source_future_actions(source_text)
+    for segment in semantic_segments(text):
+        for fragment in re.finditer(r"[^、：:]+", segment.text):
             requested = fragment.group().strip()
-            if not requested or _SAFE_CONDITIONAL.search(requested):
+            if not requested:
                 continue
             directive = _completion_writing_directive(requested)
-            if directive is None or not _COMPLETED_CLAIM.search(requested[directive.end() :]):
+            if directive is None:
                 continue
-            # A request to record a completed fact is allowed only when the
-            # formal record itself contains positive evidence and no conflicting
-            # negation.  The directive and claimed completion have already been
-            # bound to this local fragment above.
-            if _NEGATIVE_COMPLETION.search(source_text) or not _POSITIVE_COMPLETION.search(source_text):
-                start = match.start() + fragment.start()
+            requested_content = requested[directive.end() :]
+            future = _future_customer_commitments(requested_content)
+            claim = _COMPLETED_CLAIM.search(requested_content)
+            unsupported_future = [
+                event for event in future
+                if not any(_same_future_event(event, source) for source in source_future)
+            ]
+            if unsupported_future:
+                start = segment.start + fragment.start()
+                hits.append({
+                    "rule": (
+                        "advice_requests_unproven_completed_fact"
+                        if claim else "advice_requests_unproven_future_commitment"
+                    ),
+                    "target": target,
+                    "quote": requested,
+                    "start": start,
+                    "end": start + len(fragment.group()),
+                    "scanned_text": text,
+                })
+                continue
+            if claim is None:
+                continue
+            if future:
+                # "已承诺下周付款" confirms a future promise; it does not say
+                # that the payment has already happened.
+                continue
+            role = semantic_scope(requested, directive.end() + claim.start(), directive.end() + claim.end())
+            if role in {
+                SemanticRole.EXAMPLE_OR_HYPOTHETICAL,
+                SemanticRole.INSUFFICIENT_EVIDENCE,
+                SemanticRole.QUESTION_OR_PENDING_CONFIRMATION,
+                SemanticRole.NEGATED_FACT,
+                SemanticRole.CONDITIONAL_FUTURE,
+            }:
+                continue
+            # Evidence must describe the same actor/action/object.  A separate
+            # uncompleted payment cannot negate a documented material receipt.
+            requested_completed = _completed_actions(requested_content)
+            if not requested_completed or any(
+                not any(
+                    item["subject"] == evidence["subject"]
+                    and _same_action(item["action"], evidence["action"])
+                    for evidence in source_completed
+                )
+                for item in requested_completed
+            ):
+                start = segment.start + fragment.start()
                 hits.append(
                     {
                         "rule": "advice_requests_unproven_completed_fact",
@@ -392,9 +410,9 @@ def _future_customer_commitments(text: str) -> list[dict[str, str]]:
     to confirm something with a customer as the customer's confirmation.
     """
     result = []
-    for clause in _sentences(text):
-        for firm in _firm_customer_commitments(clause):
-            event = _customer_commitment_event(clause, firm)
+    for segment in semantic_segments(text):
+        for firm in _FIRM_CUSTOMER_COMMITMENT.finditer(segment.text):
+            event = _customer_commitment_event(segment.text, firm)
             if event["state"] != "future_commitment":
                 continue
             result.append(event)
@@ -409,42 +427,24 @@ def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, st
     ends = [clause.find(mark, firm.end()) for mark in ("，", ",", "、", "；", ";", "。")]
     end = min((value for value in ends if value >= 0), default=len(clause))
     window = clause[start:end].strip()
-    before = clause[start : firm.start()]
     tail = clause[firm.end() : end]
     action = _action_signature(clause, firm.end(), end)
-    condition = bool(_CONDITIONAL_FUTURE.search(window))
-    non_subject = bool(_NON_SUBJECT_CUSTOMER_PREFIX.search(before))
-    desired_outcome = bool(_DESIRED_CUSTOMER_OUTCOME_PREFIX.search(before))
-    evidence_insufficient = bool(_EVIDENCE_INSUFFICIENT_PREFIX.search(before))
-    negative_or_pending = bool(_NON_FIRM_CUSTOMER_STATE.search(window))
+    role = semantic_scope(clause, firm.start(), firm.end())
     completed = bool(_COMPLETED_ACTION.search(window))
-    future = bool(_FUTURE_DIRECTION.search(tail))
-    usage = "fact"
-    if non_subject:
-        usage = "sales_advice"
-    elif desired_outcome:
-        usage = "desired_outcome"
-    elif evidence_insufficient:
-        usage = "insufficient_evidence"
-    elif condition:
-        usage = "conditional"
-    elif negative_or_pending:
-        usage = "negative_or_pending"
-    elif completed and not future:
-        usage = "completed_fact"
-    state = (
-        "future_commitment"
-        if not (
-            non_subject
-            or desired_outcome
-            or evidence_insufficient
-            or condition
-            or negative_or_pending
-            or (completed and not future)
-        )
-        and future
-        else usage
+    # A promise to perform an action is future-facing even without a date:
+    # "客户同意采购" asserts agreement now, while procurement remains future.
+    # A separately completed tail ("确认安装已完成") is a past fact instead.
+    future = bool(_FUTURE_DIRECTION.search(tail)) or bool(
+        _ACTION.search(tail) and not _COMPLETED_ACTION.search(tail)
     )
+    usage = role.value.lower() if role != SemanticRole.ASSERTED_FACT else "fact"
+    if role != SemanticRole.ASSERTED_FACT:
+        state = usage
+    elif completed and not future:
+        state = "completed_fact"
+        usage = "completed_fact"
+    else:
+        state = "future_commitment" if future else "asserted_fact"
     return {
         "clause": clause,
         "event_window": window,
@@ -456,15 +456,6 @@ def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, st
     }
 
 
-def _firm_customer_commitments(clause: str) -> list[re.Match[str]]:
-    """Return matches where customer is the grammatical actor, not an object."""
-    return [
-        match
-        for match in _FIRM_CUSTOMER_COMMITMENT.finditer(clause)
-        if not _NON_SUBJECT_CUSTOMER_PREFIX.search(clause[: match.start()])
-    ]
-
-
 def _conditional_source_future_actions(text: str) -> list[dict[str, str]]:
     """Return source-only customer-response evidence for a future action.
 
@@ -474,34 +465,53 @@ def _conditional_source_future_actions(text: str) -> list[dict[str, str]]:
     expression; completed-action protection remains tied to firm commitments.
     """
     result = []
-    for clause in _sentences(text):
-        # A firm commitment is already represented with its full event window.
-        # Do not add a second, weaker conditional copy that would lose time or
-        # condition information during evidence matching.
-        if _firm_customer_commitments(clause):
-            continue
-        for match in _SOURCE_CONDITIONAL_RESPONSE.finditer(clause):
-            action = _action_signature(clause, match.start())
-            if action.partition(":")[0]:
-                result.append({
-                    "clause": clause,
-                    "action": action,
-                    "time_or_condition": _event_time_or_condition(clause),
-                })
+    for sentence in _SOURCE_SENTENCE.finditer(str(text or "")):
+        segments = semantic_segments(sentence.group())
+        for index, segment in enumerate(segments):
+            clause = segment.text
+            # Keep a source answer local.  An earlier promise in the same
+            # sentence must not lend its certainty to another action.
+            if any(
+                _customer_commitment_event(clause, match)["state"] == "future_commitment"
+                for match in _FIRM_CUSTOMER_COMMITMENT.finditer(clause)
+            ) or _WEAK_INTENT.search(clause):
+                continue
+            starts = [match.start() for match in _SOURCE_CONDITIONAL_RESPONSE.finditer(clause)]
+            # Chinese often leaves the actor in the preceding comma fragment:
+            # "他让物资关注情况，可以提了就通知我".
+            if (
+                not starts
+                and index
+                and re.match(r"(?:可以|可|待|后续|下周|下次|预计)", clause)
+                and re.search(r"(?:客户|对方|他|她)", segments[index - 1].text)
+            ):
+                starts = [0]
+            for start in starts:
+                action = _action_signature(clause, start)
+                if action.partition(":")[0]:
+                    result.append({
+                        "clause": clause,
+                        "action": action,
+                        "time_or_condition": _event_time_or_condition(clause),
+                    })
     return result
 
 
 def _completed_actions(text: str) -> list[dict[str, str]]:
     """Return candidate/source actions explicitly stated as already completed."""
     result = []
-    for clause in _sentences(text):
-        completed = _COMPLETED_ACTION.search(clause)
-        if completed:
+    for segment in semantic_segments(text):
+        clause = segment.text
+        for completed in _COMPLETED_ACTION.finditer(clause):
+            if semantic_scope(clause, completed.start(), completed.end()) != SemanticRole.ASSERTED_FACT:
+                continue
+            actors = list(re.finditer(r"客户|我方|销售|业务员", clause[: completed.start()]))
+            actor = actors[-1].group() if actors else ""
             result.append(
                 {
                     "clause": clause,
                     "event_window": clause,
-                    "subject": "customer" if "客户" in clause else "unknown",
+                    "subject": "customer" if actor == "客户" else "sales" if actor else "unknown",
                     "action": _action_signature(clause, completed.start()),
                     "state": "completed_fact",
                     "usage": "fact",
@@ -511,12 +521,31 @@ def _completed_actions(text: str) -> list[dict[str, str]]:
     return result
 
 
-def _sentences(text: str) -> list[str]:
-    return [
-        match.group().strip()
-        for match in _SENTENCE.finditer(str(text or ""))
-        if match.group().strip()
-    ]
+def classify_semantic_roles(text: str, source_text: str = "") -> list[dict[str, str]]:
+    """Expose event-local roles for deterministic boundary and stage replay."""
+    source_future = _future_customer_commitments(source_text)
+    source_future += _conditional_source_future_actions(source_text)
+    result = []
+    for segment in semantic_segments(text):
+        matches = list(_FIRM_CUSTOMER_COMMITMENT.finditer(segment.text))
+        if not matches:
+            role = semantic_scope(segment.text)
+            result.append({"clause": segment.text, "role": role.value, "subject": "customer" if "客户" in segment.text else "sales" if "我方" in segment.text or "销售" in segment.text else "unknown", "action": _action_signature(segment.text, 0)})
+            continue
+        for firm in matches:
+            event = _customer_commitment_event(segment.text, firm)
+            if event["state"] == "future_commitment":
+                role = (
+                    SemanticRole.SUPPORTED_CUSTOMER_COMMITMENT
+                    if any(_same_future_event(event, source) for source in source_future)
+                    else SemanticRole.UNSUPPORTED_CUSTOMER_COMMITMENT
+                )
+            elif event["state"] == "completed_fact":
+                role = SemanticRole.ASSERTED_FACT
+            else:
+                role = SemanticRole.__members__.get(event["state"].upper(), SemanticRole.ASSERTED_FACT)
+            result.append({"clause": segment.text, "role": role.value, "subject": event["subject"], "action": event["action"]})
+    return result
 
 
 def _action_signature(clause: str, start: int, end: int | None = None) -> str:
@@ -525,7 +554,7 @@ def _action_signature(clause: str, start: int, end: int | None = None) -> str:
     action = _ACTION.search(window)
     if action:
         verb = action.group()
-        tail = window[action.end() : action.end() + 16]
+        tail = re.split(r"(?:但|然而|不过|可是|而|并且|同时|，|,|；|;)", window[action.end() :], maxsplit=1)[0][:16]
     else:
         verb = ""
         tail = window[:24]

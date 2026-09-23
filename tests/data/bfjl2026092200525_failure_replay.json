@@ -1,0 +1,323 @@
+{
+  "record_code": "BFJL2026092200525",
+  "input_snapshot_hash": "38c4714b1a7286426d5ba2dbf73a0f459c5df196e496c098369e239b631ae5f7",
+  "visit_sha256": "070bbce9317cf2a53483030bd263823a8e406e8ab5f7ba340d9367fd33849cf3",
+  "visit": {
+    "visit_date": "2026-09-15",
+    "employee_id": "R-EevMSqxV",
+    "customer_id": "SCMT0171",
+    "customer_type_ii": "opportunity",
+    "opportunity_id": null,
+    "opportunity_stage": null,
+    "opportunities": [
+      {
+        "opportunity_id": "SJXM-20260831438",
+        "historical_stage": null,
+        "current_stage": "P5"
+      }
+    ],
+    "visit_method": "face_to_face",
+    "is_appointment": false,
+    "participants": [
+      {
+        "contact_id": "韩莉",
+        "role": null
+      }
+    ],
+    "purpose_code": "强化关系",
+    "other_purpose": null,
+    "expected_key_result": "客情维护",
+    "process_description": "拜访韩老师这边主要是日常拜访维护客情，韩老师这边订单都是随机不给分单供应商的。",
+    "customer_feedback": null,
+    "self_assessment": "achieved",
+    "deviation_reason": null,
+    "next_action_target_id": null,
+    "next_action_purpose": "收集信息",
+    "next_action_other_purpose": null,
+    "next_action_expected_result": "客情维护",
+    "next_contact_at": null,
+    "actual_start_at": "2026-09-15T14:13:02Z",
+    "actual_end_at": "2026-09-15T14:28:02Z",
+    "duration_minutes": 15,
+    "submitted_at": "2026-09-22T07:59:33.199000Z",
+    "evidence_ids": [],
+    "purpose_policy": null,
+    "metadata": {
+      "connector_source": "jiandaoyun",
+      "source_supplied_fields": [
+        "actual_end_at",
+        "actual_start_at",
+        "customer_id",
+        "customer_type_ii",
+        "duration_minutes",
+        "employee_id",
+        "evidence_ids",
+        "expected_key_result",
+        "is_appointment",
+        "next_action_expected_result",
+        "next_action_other_purpose",
+        "next_action_purpose",
+        "next_contact_at",
+        "opportunities",
+        "other_purpose",
+        "participants",
+        "process_description",
+        "purpose_code",
+        "self_assessment",
+        "submitted_at",
+        "visit_date",
+        "visit_method"
+      ],
+      "precheck_defaulted_fields": [],
+      "field_provenance": {
+        "participants": "jiandaoyun_subform",
+        "customer_id": "jiandaoyun_form_field",
+        "next_action_other_purpose": "jiandaoyun_form_field",
+        "other_purpose": "jiandaoyun_form_field",
+        "employee_id": "jiandaoyun_form_field",
+        "duration_minutes": "jiandaoyun_form_field",
+        "actual_start_at": "jiandaoyun_form_field",
+        "process_description": "jiandaoyun_form_field",
+        "self_assessment": "jiandaoyun_form_field",
+        "next_action_expected_result": "jiandaoyun_form_field",
+        "evidence_ids": "jiandaoyun_form_field",
+        "visit_method": "jiandaoyun_form_field",
+        "actual_end_at": "jiandaoyun_form_field",
+        "is_appointment": "jiandaoyun_form_field",
+        "opportunities": "jiandaoyun_subform",
+        "purpose_code": "jiandaoyun_form_field",
+        "expected_key_result": "jiandaoyun_form_field",
+        "submitted_at": "jiandaoyun_system_field",
+        "visit_date": "jiandaoyun_form_field",
+        "customer_type_ii": "jiandaoyun_form_field",
+        "next_action_purpose": "jiandaoyun_form_field",
+        "next_contact_at": "jiandaoyun_form_field"
+      },
+      "field_mapping_version": "visit-copy-ai-evaluation-xlsx-2026-08-18",
+      "field_mapping_status": "copy_widget_ids_synced",
+      "source_mapping_hash": "25e9f64e4ce807e064240fc09fc8a21975fd12eb2dc998715340adb06143ca00"
+    }
+  },
+  "original_candidate": {
+    "sections": [
+      {
+        "code": "T",
+        "verdict": "met",
+        "field_paths": [
+          "customer_type_ii",
+          "opportunities",
+          "purpose_code"
+        ],
+        "reason": "客户为商机客户，关联商机处于P5阶段，拜访目的选择强化关系，属于该阶段允许的目的范围，类型阶段与目的映射匹配。",
+        "suggestion": "",
+        "evidence": [
+          {
+            "evidence_id": "ev_T_customer_type_ii_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_T_opportunities_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_T_purpose_code_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": null
+      },
+      {
+        "code": "A1",
+        "verdict": "met",
+        "field_paths": [
+          "customer_type_ii",
+          "is_appointment",
+          "purpose_code",
+          "visit_method"
+        ],
+        "reason": "记录了拜访方式为面对面拜访，商机客户本次未预约，已如实填写预约状态，符合预约与方式的记录要求。",
+        "suggestion": "",
+        "evidence": [
+          {
+            "evidence_id": "ev_A1_customer_type_ii_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_A1_is_appointment_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_A1_visit_method_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": null
+      },
+      {
+        "code": "O_KR",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "expected_key_result",
+          "purpose_code"
+        ],
+        "reason": "拜访目的为强化关系，但想取得的关键结果仅填写客情维护，属于对活动性质的概括，缺少可检查的具体客户行为、承诺、认可或信息确认等关键结果，不满足SMART可验证要求。",
+        "suggestion": "建议将想取得的关键结果补充为具体可检查的内容，例如本次拜访希望客户确认的具体事项、客户对某项合作的具体反馈或客户同意的下一步行动，使关键结果能够依据客户事实判断是否达成。",
+        "evidence": [
+          {
+            "evidence_id": "ev_O_KR_expected_key_result_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_O_KR_purpose_code_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "expected_key_result"
+          ],
+          "existing_content": "客情维护",
+          "missing_detail": "缺少具体可检查的客户行为、承诺、认可或信息确认等关键结果描述，无法依据客户事实判断达成程度。",
+          "decision_impact": "关键结果不可验证，导致无法可靠判断本次拜访目标是否达成，也无法对达成评价进行有效核对。",
+          "gap_kind": "insufficient_specificity"
+        }
+      },
+      {
+        "code": "R",
+        "verdict": "met",
+        "field_paths": [
+          "process_description"
+        ],
+        "reason": "过程描述记录了拜访韩老师进行日常客情维护，并记录了客户订单随机且不给分单供应商的实际信息，有客户事实依据，观点与事实区分清楚。",
+        "suggestion": "",
+        "evidence": [
+          {
+            "evidence_id": "ev_R_process_description_1",
+            "category": "customer_fact"
+          }
+        ],
+        "advice_basis": null
+      },
+      {
+        "code": "A2",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "expected_key_result",
+          "process_description",
+          "self_assessment"
+        ],
+        "reason": "原定关键结果客情维护过于宽泛无法验证，过程描述记录了客户订单随机的信息但未体现具体可检查的达成事实，销售自评达到目的缺乏可对照的关键结果支撑，两者一致性无法确认。",
+        "suggestion": "如实际已取得客户具体反馈或确认事项，建议据实补充到过程详细描述中以便核对；若尚未取得具体成果，建议将评价调整为与实际过程相符的结论。",
+        "evidence": [
+          {
+            "evidence_id": "ev_A2_expected_key_result_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_A2_process_description_1",
+            "category": "customer_fact"
+          },
+          {
+            "evidence_id": "ev_A2_self_assessment_1",
+            "category": "sales_judgment"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "expected_key_result",
+            "self_assessment"
+          ],
+          "existing_content": "关键结果为客情维护，自评为达到目的，过程描述记录了客户订单随机的信息。",
+          "missing_detail": "关键结果不可验证，过程未体现具体可检查的达成事实，自评达到目的缺乏可对照依据。",
+          "decision_impact": "无法确认自评与实际达成是否一致，达成评价的可靠性受到影响。",
+          "gap_kind": "insufficient_specificity"
+        }
+      },
+      {
+        "code": "N",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "customer_type_ii",
+          "next_action_expected_result",
+          "next_action_purpose",
+          "next_contact_at",
+          "process_description"
+        ],
+        "reason": "下一步目的为收集信息、期望结果为客情维护，与本次客情维护事实有一定衔接但内容不够具体；过程描述中客户未对后续事项作出明确回应，缺少客户对下一步的共识；下一次联系客户时间安排未填写。",
+        "suggestion": "建议结合本次拜访中客户提到的订单随机情况，将下一步行动目的和期望结果补充为具体可执行的事项，例如了解客户近期采购需求或确认客户对某项合作的具体看法。同时，如已与客户约定后续联系时间请据实填入下一次联系客户时间安排，若尚未确定请与客户协商后补充。过程描述中未记录客户对后续事项的明确回应，如实际已有约定请据实补充，若尚未确认请保持真实状态并继续跟进。",
+        "evidence": [
+          {
+            "evidence_id": "ev_N_customer_type_ii_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_N_next_action_purpose_1",
+            "category": "planned_action"
+          },
+          {
+            "evidence_id": "ev_N_next_action_expected_result_1",
+            "category": "planned_action"
+          },
+          {
+            "evidence_id": "ev_N_process_description_1",
+            "category": "customer_fact"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "next_action_purpose",
+            "next_action_expected_result",
+            "next_contact_at"
+          ],
+          "existing_content": "下一步目的为收集信息，期望结果为客情维护，下一次联系客户时间安排未填写。",
+          "missing_detail": "下一步行动目的和期望结果不够具体，过程描述中缺少客户对后续事项的明确回应，下一次联系客户时间安排未填写。",
+          "decision_impact": "无法确认下一步行动与客户共识的衔接，也无法判断后续联系时间是否已约定，影响下一步安排的可靠性。",
+          "gap_kind": "insufficient_specificity"
+        }
+      }
+    ],
+    "facts": {
+      "key_result_quality_ok": false,
+      "process_fact_based": true,
+      "purpose_achievement": "not_achieved",
+      "next_action_logic_ok": false,
+      "customer_consensus_met": false,
+      "reason": "原定关键结果客情维护过于宽泛不可验证，无法可靠判断是否达成；过程描述记录了拜访韩老师维护客情及客户订单随机的实际信息，过程事实清楚但未体现具体可检查的成果。下一步目的收集信息与本次事实有一定联系但不够具体，过程描述中客户未对后续事项作出明确回应，缺少客户共识，下一次联系客户时间安排未填写。"
+    },
+    "goal_reviews": [
+      {
+        "goal_id": "G1",
+        "status": "not_assessable",
+        "evidence_ids": [
+          "ev_O_KR_expected_key_result_1",
+          "ev_R_process_description_1"
+        ],
+        "actor_ambiguity_material": false,
+        "reason": "原定关键结果客情维护过于宽泛，缺少可检查的具体客户行为或信息确认标准，无法据此判断是否达成。"
+      }
+    ]
+  },
+  "initial_failure": {
+    "reason": "post_commitment_boundary_conflict",
+    "field_error": {
+      "hits": [
+        {
+          "rule": "unsupported_future_customer_commitment",
+          "target": "O_KR",
+          "quote": "建议将想取得的关键结果补充为具体可检查的内容，例如本次拜访希望客户确认的具体事项、客户对某项合作的具体反馈或客户同意的下一步行动，使关键结果能够依据客户事实判断是否达成",
+          "scanned_text": "建议将想取得的关键结果补充为具体可检查的内容，例如本次拜访希望客户确认的具体事项、客户对某项合作的具体反馈或客户同意的下一步行动，使关键结果能够依据客户事实判断是否达成。",
+          "candidate_event": {
+            "clause": "建议将想取得的关键结果补充为具体可检查的内容，例如本次拜访希望客户确认的具体事项、客户对某项合作的具体反馈或客户同意的下一步行动，使关键结果能够依据客户事实判断是否达成",
+            "event_window": "客户对某项合作的具体反馈或客户同意的下一步行动",
+            "subject": "customer",
+            "action": ":的行动",
+            "state": "future_commitment",
+            "usage": "fact",
+            "time_or_condition": "的下一步行动"
+          },
+          "source_future_commitments": []
+        }
+      ]
+    }
+  }
+}

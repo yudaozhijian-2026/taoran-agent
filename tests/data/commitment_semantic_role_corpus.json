@@ -1,0 +1,159 @@
+{
+  "version": "r16-local",
+  "cases": [
+    {
+      "case_id": "BFJL2026092100353",
+      "source_fact": "【rc41空联系时间全流程20260920】客户张老师确认六台设备安装位置与电源准备均已完成，并发送现场照片；销售逐项核对无遗漏，双方尚未约定下一次联系日期。",
+      "source_text_sha256": "7aba973ddcb02bbeeee4efcf814580a33bc47cdd20b2b9b7e9b1ee66953fa911",
+      "candidate_clause": "客户张老师确认六台设备安装位置与电源准备均已完成，并发送现场照片。",
+      "target_fragment": "客户",
+      "expected_semantic_role": "ASSERTED_FACT",
+      "expected_validator_result": "PASS",
+      "validator": "commitment",
+      "provenance": "r68_real_failure_source"
+    },
+    {
+      "case_id": "BFJL2026092100355",
+      "source_fact": "【rc41空联系时间全流程20260920】客户张老师确认六台设备安装位置与电源准备均已完成，并发送现场照片；销售逐项核对无遗漏，双方尚未约定下一次联系日期。",
+      "source_text_sha256": "7aba973ddcb02bbeeee4efcf814580a33bc47cdd20b2b9b7e9b1ee66953fa911",
+      "candidate_clause": "客户确认安装位置和电源准备均已完成，销售已逐项核对。",
+      "target_fragment": "客户",
+      "expected_semantic_role": "ASSERTED_FACT",
+      "expected_validator_result": "PASS",
+      "validator": "commitment",
+      "provenance": "r68_real_failure_source"
+    },
+    {
+      "case_id": "BFJL2026092100367",
+      "source_fact": "客户确认下周一提供三台设备清单。",
+      "source_text_sha256": "92ade1963f01118ee877e6f953c2ca48269c204f6198de8fcdb9486a775404f5",
+      "candidate_clause": "客户承诺下周一提供三台设备清单，后续动作尚待发生。",
+      "target_fragment": "客户承诺",
+      "expected_semantic_role": "SUPPORTED_CUSTOMER_COMMITMENT",
+      "expected_validator_result": "PASS",
+      "validator": "commitment",
+      "provenance": "historical_preview_replay"
+    },
+    {
+      "case_id": "BFJL2026092100368",
+      "source_fact": "客户改为下周一提供两台设备清单。",
+      "source_text_sha256": "340327211a1745a49e046b15b3633aea60bdc046c630f889156e06e5fb3724a5",
+      "candidate_clause": "客户承诺下周一提供两台设备清单，后续动作尚待发生。",
+      "target_fragment": "客户承诺",
+      "expected_semantic_role": "SUPPORTED_CUSTOMER_COMMITMENT",
+      "expected_validator_result": "PASS",
+      "validator": "commitment",
+      "provenance": "historical_preview_replay"
+    },
+    {
+      "case_id": "BFJL2026092200473",
+      "source_fact": "跟进之前推荐的舌下片，感觉这个项目不在他们关注范围内，并且感觉竞争压力比较大，参比制剂的问题导致的不可控因素比较多，暂时不能立项。",
+      "source_text_sha256": "f266ece5c25dce05bede9b3c3ed1b0a8153186263e528920986059181fbbe4f6",
+      "candidate_clause": "建议将关键结果具体化，例如明确希望客户确认对舌下片项目的后续态度、取得立项障碍的具体反馈或约定下一步沟通事项，使其可检查。",
+      "target_fragment": "希望客户确认",
+      "expected_semantic_role": "EXAMPLE_OR_HYPOTHETICAL",
+      "expected_validator_result": "PASS",
+      "validator": "commitment",
+      "provenance": "frozen_original_candidate"
+    },
+    {
+      "case_id": "BFJL2026092200497_reason",
+      "source_fact": "客户希望价格USD650/kg，我方按USD690/kg报价，并说明没有降价空间。客户没有接受报价，也没有同意下一步安排。",
+      "source_text_sha256": "9ba13a0bedbca6a5fc97d6bf6d5c45efd1c4a7f0ffcfadddfaa04274683b4b46",
+      "candidate_clause": "商机客户要求客户共识，当前记录不足以证明客户已同意该下一步安排",
+      "target_fragment": "客户已同意",
+      "expected_semantic_role": "INSUFFICIENT_EVIDENCE",
+      "expected_validator_result": "PASS",
+      "validator": "commitment",
+      "provenance": "r12_r13_cross_replay_original"
+    },
+    {
+      "case_id": "BFJL2026092200497_suggestion",
+      "source_fact": "客户希望价格USD650/kg，我方按USD690/kg报价，并说明没有降价空间。客户没有接受报价，也没有同意下一步安排。",
+      "source_text_sha256": "9ba13a0bedbca6a5fc97d6bf6d5c45efd1c4a7f0ffcfadddfaa04274683b4b46",
+      "candidate_clause": "本次记录中客户提出期望价格USD650/kg，销售方已按USD690/kg报价并说明无降价空间，双方尚未就价格达成一致",
+      "target_fragment": "销售方已按",
+      "expected_semantic_role": "ASSERTED_FACT",
+      "expected_validator_result": "PASS",
+      "validator": "advice",
+      "provenance": "r12_r13_cross_replay_original"
+    },
+    {
+      "case_id": "BFJL2026092200525",
+      "source_fact": "拜访韩老师这边主要是日常拜访维护客情，韩老师这边订单都是随机不给分单供应商的。",
+      "source_text_sha256": "eb5e958dd4dcb1c4567e059306691e4c5d97f143a25d0a091db7ae4d2f9b4aa0",
+      "candidate_clause": "建议将想取得的关键结果补充为具体可检查的内容，例如本次拜访希望客户确认的具体事项、客户对某项合作的具体反馈或客户同意的下一步行动，使关键结果能够依据客户事实判断是否达成。",
+      "target_fragment": "客户同意的下一步行动",
+      "expected_semantic_role": "EXAMPLE_OR_HYPOTHETICAL",
+      "expected_validator_result": "PASS",
+      "validator": "commitment",
+      "provenance": "r15_fixed100_original_candidate"
+    },
+    {
+      "case_id": "unsupported_payment",
+      "source_fact": "客户尚未同意付款。",
+      "source_text_sha256": "5a7ac2363a24b435110a52d45689cd5df374bca0d6421e3378835b62cb72ba0a",
+      "candidate_clause": "客户承诺周五付款。",
+      "target_fragment": "客户承诺",
+      "expected_semantic_role": "UNSUPPORTED_CUSTOMER_COMMITMENT",
+      "expected_validator_result": "BLOCK",
+      "validator": "commitment",
+      "provenance": "historical_or_contrast"
+    },
+    {
+      "case_id": "mixed_example_and_payment",
+      "source_fact": "客户尚未同意付款。",
+      "source_text_sha256": "5a7ac2363a24b435110a52d45689cd5df374bca0d6421e3378835b62cb72ba0a",
+      "candidate_clause": "建议记录例如客户同意的下一步行动，但客户承诺周五付款。",
+      "target_fragment": "客户承诺",
+      "expected_semantic_role": "UNSUPPORTED_CUSTOMER_COMMITMENT",
+      "expected_validator_result": "BLOCK",
+      "validator": "commitment",
+      "provenance": "historical_or_contrast"
+    },
+    {
+      "case_id": "unsupported_completed_acceptance_instruction",
+      "source_fact": "客户尚未接受报价。",
+      "source_text_sha256": "4ed16d7ef67abb99dceda4fe20e08a85477f782c55d13160e4b13a10cba6c289",
+      "candidate_clause": "请补充客户已接受报价。",
+      "target_fragment": "客户已接受",
+      "expected_semantic_role": "SALES_RECOMMENDATION",
+      "expected_validator_result": "BLOCK",
+      "validator": "advice",
+      "provenance": "historical_or_contrast"
+    },
+    {
+      "case_id": "conditional_truthful_instruction",
+      "source_fact": "客户尚未接受报价。",
+      "source_text_sha256": "4ed16d7ef67abb99dceda4fe20e08a85477f782c55d13160e4b13a10cba6c289",
+      "candidate_clause": "如客户实际已接受报价，请据实补充；若尚未确认则继续跟进。",
+      "target_fragment": "客户实际已接受",
+      "expected_semantic_role": "CONDITIONAL_FUTURE",
+      "expected_validator_result": "PASS",
+      "validator": "advice",
+      "provenance": "historical_or_contrast"
+    },
+    {
+      "case_id": "unsupported_future_commitment_instruction",
+      "source_fact": "客户尚未承诺付款。",
+      "source_text_sha256": "90c4af3ad292e4c51827e9787ec74c695b0104de2bb423fd036e6c75acc66a54",
+      "candidate_clause": "请补充客户承诺周五付款。",
+      "target_fragment": "客户承诺",
+      "expected_semantic_role": "SALES_RECOMMENDATION",
+      "expected_validator_result": "BLOCK",
+      "validator": "advice",
+      "provenance": "truthfulness_contrast"
+    },
+    {
+      "case_id": "supported_future_commitment_instruction",
+      "source_fact": "客户承诺周五付款。",
+      "source_text_sha256": "660be30ca425a9858af33a9b7cf6dabe5acdd4f0b0d20be673e6178618bc1d72",
+      "candidate_clause": "请据实补充客户承诺周五付款。",
+      "target_fragment": "客户承诺",
+      "expected_semantic_role": "SALES_RECOMMENDATION",
+      "expected_validator_result": "PASS",
+      "validator": "advice",
+      "provenance": "truthfulness_contrast"
+    }
+  ]
+}

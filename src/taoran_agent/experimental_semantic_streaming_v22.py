@@ -38,12 +38,6 @@ _INTERACTIVE_COMMITMENT = re.compile(
     r"客户(?:已经|已)(?:确认|同意|承诺|完成|下单|签约)[^，,。！？；;\n]{0,45}"
     r"|客户(?:明确)?(?:同意|承诺)[^，,。！？；;\n]{0,45}"
 )
-_UNCERTAIN_PREFIX = re.compile(
-    r"(?:尚未|未曾|并未|没有|无法|不能|未|尚不足以|不足以)(?:明确)?"
-    r"(?:体现|记录|证实|确认|显示|表明|证明|看到|提及|认为|认定|视为|视作|当作|理解为)$"
-)
-
-
 def _normalize(value: str) -> str:
     return re.sub(r"[\s\u3000\"'“”‘’`，,。；;：:！!？?（）()【】\[\]、]", "", value).lower()
 
@@ -208,33 +202,46 @@ def detect_unsupported_specific_facts(
     source = _source_text(snapshot)
     unsupported: list[str] = []
     claim_count = 0
+    if interactive:
+        from .semantic_roles import SemanticRole, semantic_scope, semantic_segments
+
+        segments = semantic_segments(feedback)
     for match in [*_SPECIFIC_VALUE.finditer(feedback), *_SPECIFIC_DATE.finditer(feedback)]:
         token = match.group(0)
         # A proposed date (for example “建议下周联系”) is a suggestion, not a
         # claimed customer fact.  Only a concrete asserted value is checked.
-        context = feedback[max(0, match.start() - 8):match.start()]
-        if any(marker in context for marker in ("建议", "计划", "拟", "希望", "推动", "争取", "促使", "期待", "力争", "应", "需", "待")):
-            continue
+        if interactive:
+            segment = next((item for item in segments if item.start <= match.start() < item.end), None)
+            if segment is None or semantic_scope(
+                segment.text, match.start() - segment.start, match.end() - segment.start,
+            ) != SemanticRole.ASSERTED_FACT:
+                continue
+        else:
+            context = feedback[max(0, match.start() - 8):match.start()]
+            if any(marker in context for marker in ("建议", "计划", "拟", "希望", "推动", "争取", "促使", "期待", "力争", "应", "需", "待")):
+                continue
         claim_count += 1
         if _normalize(token) not in _normalize(source) and not (interactive and _supported_calendar_date(token, source)):
             unsupported.append("fabricated_specific_fact")
     commitments = _INTERACTIVE_COMMITMENT if interactive else _CUSTOMER_COMMITMENT
     for match in commitments.finditer(feedback):
         if interactive:
-            prefix = feedback[max(0, match.start() - 24):match.start()].rstrip(" \t\n“\"‘")
-            # Allow a coordinated nominal object under the same negation,
-            # never a new assertion after punctuation or an affirmative verb.
-            nominal_prefix = re.sub(r"客户(?:的)?(?:独立)?行动(?:或|和|及|、)$", "", prefix)
-            uncertain = _UNCERTAIN_PREFIX.search(nominal_prefix)
-            # "尚未体现客户同意" is absence of evidence, not a claim of consent.
-            # Keep each comma-delimited claim separate: a negative first clause
-            # must not hide a later unsupported affirmative commitment.
-            if uncertain and not re.search(r"(?:并非|不是|并不|不能说)$", nominal_prefix[:uncertain.start()]):
-                continue
-            if re.search(r"(?:例如|比如|如果|[，,：:]如)(?:希望|建议|拟|计划)?$|(?:希望|建议|计划|拟|争取|需要|待)$", prefix):
+            segment = next((item for item in segments if item.start <= match.start() < item.end), None)
+            if segment is None or semantic_scope(
+                segment.text, match.start() - segment.start, match.end() - segment.start,
+            ) != SemanticRole.ASSERTED_FACT:
                 continue
         candidate = match.group(0)
         claim_count += 1
+        if interactive:
+            from .deep_review_gates import classify_semantic_roles, commitment_boundary_hits
+
+            roles = {item["role"] for item in classify_semantic_roles(candidate, source)}
+            if "UNSUPPORTED_CUSTOMER_COMMITMENT" in roles or commitment_boundary_hits(candidate, source, "preview"):
+                unsupported.append("unsupported_customer_commitment")
+                continue
+            if "SUPPORTED_CUSTOMER_COMMITMENT" in roles:
+                continue
         if not _supported_commitment(candidate, source):
             unsupported.append("unsupported_customer_commitment")
     return {
