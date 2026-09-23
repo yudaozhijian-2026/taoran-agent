@@ -52,7 +52,10 @@ def test_actual_failed_wording(kind, text):
     hits = contact_policy_hits(payload, contact_policy(visit(kind)))
     assert len(hits) >= 5
     assert targets_for_error("post_feedback_conflict", {"hits": hits}) == ["N", "facts.reason"]
-    updated = merge_repair(payload, {"sections": [{"code": "N", "reason": "请补充联系时间"}],
+    updated = merge_repair(payload, {"sections": [{
+                                        "code": "N", "verdict": "needs_revision", "field_paths": [],
+                                        "reason": "请补充联系时间", "suggestion": "", "evidence": [],
+                                    }],
                                     "facts_reason": "已取得现场信息，联系时间未填写。"},
                            ["N", "facts.reason"])
     assert not contact_policy_hits(updated, contact_policy(visit(kind)))
@@ -97,7 +100,8 @@ def test_local_repair_only_changes_action_logic():
     original = {"facts": {"next_action_logic_ok": False, "process_fact_based": True,
                            "purpose_achievement": "partially_achieved", "reason": "旧"},
                 "sections": [{"code": "N"}, {"code": "R", "reason": "客户提供尺寸"}]}
-    patch = {"sections": [{"code": "N", "verdict": "needs_revision"}],
+    patch = {"sections": [{"code": "N", "verdict": "needs_revision", "field_paths": [],
+                            "reason": "行动衔接，日期未填写", "suggestion": "", "evidence": []}],
              "facts_reason": "行动衔接，日期未填写", "next_action_logic_ok": True}
     new = merge_repair(original, patch, ["N", "facts.reason", "facts.next_action_logic_ok"])
     assert new["facts"]["next_action_logic_ok"] is True

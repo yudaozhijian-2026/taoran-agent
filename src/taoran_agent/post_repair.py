@@ -7,6 +7,14 @@ from .post_quality import POST_EVIDENCE_GUIDANCE
 from .post_review_policy import POLICY
 
 
+class RepairContractError(ValueError):
+    """A targeted repair omitted a required replacement; the original stays intact."""
+
+    def __init__(self, missing_fields):
+        super().__init__("repair_contract_invalid")
+        self.missing_fields = sorted(set(missing_fields))
+
+
 def targets_for_error(code, details):
     if code in {
         "unsupported_company_requirement",
@@ -29,7 +37,14 @@ def targets_for_error(code, details):
 def merge_repair(original, patch, targets):
     action_repair = "facts.next_action_logic_ok" in targets
     keys = {"sections", "facts_reason"} | ({"next_action_logic_ok"} if action_repair else set())
-    if not isinstance(patch, dict) or set(patch) != keys:
+    if not isinstance(patch, dict):
+        raise ValueError("invalid_repair_patch")  # noqa: TRY004 - stable public error contract
+    missing = keys - set(patch)
+    if missing:
+        raise RepairContractError(
+            "facts.reason" if key == "facts_reason" else key for key in missing
+        )
+    if set(patch) != keys:
         raise ValueError("invalid_repair_patch")
     sections = patch["sections"]
     expected = set(targets) - {"facts.reason", "facts.next_action_logic_ok"}
@@ -38,10 +53,25 @@ def merge_repair(original, patch, targets):
     codes = [s.get("code") for s in sections]
     if len(codes) != len(expected) or set(codes) != expected:
         raise ValueError("invalid_repair_scope")
+    required_section_fields = {"code", "verdict", "field_paths", "reason", "suggestion", "evidence"}
+    missing_fields = [
+        f"sections.{section['code']}.{field}"
+        for section in sections
+        for field in required_section_fields - set(section)
+    ]
+    missing_fields.extend(
+        f"sections.{section['code']}.reason"
+        for section in sections
+        if isinstance(section.get("reason"), str) and not section["reason"].strip()
+    )
+    if missing_fields:
+        raise RepairContractError(missing_fields)
     if not isinstance(patch["facts_reason"], str):
         raise ValueError("invalid_repair_patch")  # noqa: TRY004 - stable public error contract
     if "facts.reason" not in targets and patch["facts_reason"]:
         raise ValueError("invalid_repair_scope")
+    if "facts.reason" in targets and not patch["facts_reason"].strip():
+        raise RepairContractError(["facts.reason"])
     result = deepcopy(original)
     if action_repair:
         if not isinstance(patch["next_action_logic_ok"], bool):
@@ -52,6 +82,28 @@ def merge_repair(original, patch, targets):
     if "facts.reason" in targets:
         result["facts"]["reason"] = patch["facts_reason"]
     return result
+
+
+def changed_repair_fields(original, patch):
+    """Describe raw repair changes without treating the patch as a valid result."""
+    if not isinstance(patch, dict):
+        return []
+    fields = []
+    prior = {item["code"]: item for item in original.get("sections", [])}
+    sections = patch.get("sections")
+    for section in sections if isinstance(sections, list) else []:
+        if not isinstance(section, dict) or section.get("code") not in prior:
+            continue
+        fields.extend(
+            f"sections.{section['code']}.{key}"
+            for key, value in section.items()
+            if key != "code" and value != prior[section["code"]].get(key)
+        )
+    if "facts_reason" in patch and patch["facts_reason"] != original.get("facts", {}).get("reason"):
+        fields.append("facts.reason")
+    if "next_action_logic_ok" in patch and patch["next_action_logic_ok"] != original.get("facts", {}).get("next_action_logic_ok"):
+        fields.append("facts.next_action_logic_ok")
+    return sorted(set(fields))
 
 
 def repair_messages(original_messages, original, targets, details):

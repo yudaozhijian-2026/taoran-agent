@@ -213,7 +213,7 @@ def detect_unsupported_specific_facts(
         # A proposed date (for example “建议下周联系”) is a suggestion, not a
         # claimed customer fact.  Only a concrete asserted value is checked.
         context = feedback[max(0, match.start() - 8):match.start()]
-        if any(marker in context for marker in ("建议", "计划", "拟", "希望", "应", "需", "待")):
+        if any(marker in context for marker in ("建议", "计划", "拟", "希望", "推动", "争取", "促使", "期待", "力争", "应", "需", "待")):
             continue
         claim_count += 1
         if _normalize(token) not in _normalize(source) and not (interactive and _supported_calendar_date(token, source)):

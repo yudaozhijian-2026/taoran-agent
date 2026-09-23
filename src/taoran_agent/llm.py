@@ -90,7 +90,13 @@ from .post_quality import (
     quality_context,
     quality_hits,
 )
-from .post_repair import merge_repair, repair_messages, targets_for_error
+from .post_repair import (
+    RepairContractError,
+    changed_repair_fields,
+    merge_repair,
+    repair_messages,
+    targets_for_error,
+)
 from .post_review_policy import POLICY, requirement_hits
 from .post_trace import PostStreamTrace
 from .recommendation_repairs import repair_r_recommendation
@@ -1702,6 +1708,7 @@ class ChatModelReviewer(SemanticReviewer):
         original_messages = messages
         repair_original = None
         repair_targets = []
+        repair_context = None
         grounding_repair = False
         deterministic_feedback_repair_used = False
         format_repairs = 0
@@ -1747,6 +1754,8 @@ class ChatModelReviewer(SemanticReviewer):
                 "cached_input_tokens": 0,
             }
             payload = None
+            raw_repair = None
+            repair_changed_fields = []
             progress = PostStreamTrace(self.settings) if not precheck else None
             try:
                 try:
@@ -1767,8 +1776,18 @@ class ChatModelReviewer(SemanticReviewer):
                     # Running calls retain the slot until the actual HTTP operation exits.
                     raise ModelCallError("timeout") from None
                 if repair_targets:
+                    raw_repair = payload
+                    repair_changed_fields = changed_repair_fields(repair_original, raw_repair)
                     try:
                         payload = merge_repair(repair_original, payload, repair_targets)
+                    except RepairContractError as exc:
+                        raise ModelCallError("repair_contract_invalid", details={
+                            "missing_fields": exc.missing_fields,
+                            "changed_fields": repair_changed_fields,
+                            "revalidation_result": "not_run",
+                            "original_candidate": repair_original,
+                            "repair_candidate": raw_repair,
+                        }) from None
                     except ValueError as exc:
                         raise ModelCallError(str(exc)) from None
                 parsed, quoted = (
@@ -1787,6 +1806,18 @@ class ChatModelReviewer(SemanticReviewer):
                     stream_evidence_id=(progress.evidence_id if progress and not progress.save_error else None),
                     diagnostic_save_failed=bool(progress and progress.save_error),
                     repair_targets=repair_targets,
+                    repair_chain=([
+                        _repair_chain_entry(
+                            "initial_validation",
+                            repair_context["failure_reason"],
+                            repair_context["details"],
+                        ),
+                        {"stage": "targeted_repair", "repair_type": "model",
+                         "targets": repair_targets, "changed_fields": repair_changed_fields,
+                         "repair_output_contract_status": "valid"},
+                        {"stage": "revalidation", "status": "passed"},
+                        {"stage": "final", "status": "completed"},
+                    ] if repair_context else []),
                 ))
                 return parsed, quoted
             except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as exc:
@@ -1800,6 +1831,13 @@ class ChatModelReviewer(SemanticReviewer):
                     candidate=payload, details={"attempt": attempt, "failure_reason": _failure_reason(exc),
                         "validation_errors": [e.model_dump() for e in errors],
                         "field_error": getattr(exc, "details", {}), "model_request_id": telemetry.get("model_request_id"),
+                        **({"initial_failure": repair_context,
+                            "original_candidate": repair_original,
+                            "repair_candidate": raw_repair,
+                            "changed_fields": repair_changed_fields,
+                            "revalidation_result": (
+                                "not_run" if _failure_reason(exc) == "repair_contract_invalid" else "failed"
+                            )} if repair_context else {}),
                         **({"input_snapshot": data, "stream_evidence_id": progress.evidence_id,
                             "repair_targets": repair_targets} if progress else {})})
                 attempts.append(ModelAttemptAudit(
@@ -1810,6 +1848,23 @@ class ChatModelReviewer(SemanticReviewer):
                     diagnostic_save_failed=evidence_id is None or bool(progress and progress.save_error),
                     timeout_phase=observed.get("phase") if _failure_reason(exc) == "timeout" else None,
                     repair_targets=repair_targets,
+                    repair_chain=([
+                        _repair_chain_entry(
+                            "initial_validation",
+                            repair_context["failure_reason"],
+                            repair_context["details"],
+                        ),
+                        {"stage": "targeted_repair", "repair_type": "model",
+                         "targets": repair_targets, "changed_fields": repair_changed_fields,
+                         "missing_fields": getattr(exc, "details", {}).get("missing_fields", []),
+                         "repair_output_contract_status": (
+                             "invalid" if _failure_reason(exc) == "repair_contract_invalid" else "valid"
+                         )},
+                        _repair_chain_entry("revalidation", _failure_reason(exc), getattr(exc, "details", {}))
+                        if _failure_reason(exc) != "repair_contract_invalid"
+                        else {"stage": "revalidation", "status": "not_run"},
+                        {"stage": "final", "status": "failed", "failure_reason": _failure_reason(exc)},
+                    ] if repair_context else []),
                     **telemetry,
                 ))
                 # Advice-strength, completed-fact and unresolved-boundary
@@ -1893,6 +1948,7 @@ class ChatModelReviewer(SemanticReviewer):
                     transient_repairs += 1
                     messages = original_messages
                     repair_original=None;repair_targets=[]
+                    repair_context = None
                     sleep(transient_repairs)
                     continue
                 grounding = not precheck and _failure_reason(exc) == "post_fact_grounding_conflict"
@@ -1913,6 +1969,7 @@ class ChatModelReviewer(SemanticReviewer):
                     grounding_repair = True
                     repair_original = None
                     repair_targets = []
+                    repair_context = None
                     messages = [*original_messages, {"role":"user", "content":(
                         "本次是事实冲突的唯一一次受控重核。按最初原始记录与原定目标独立重新计算所有判断，"
                         "不沿用首次候选或历史评分；仅对影响具体结论的主体歧义提出核实建议。"
@@ -1937,11 +1994,19 @@ class ChatModelReviewer(SemanticReviewer):
                 if targets and isinstance(payload, dict) and isinstance(payload.get("sections"), list) and isinstance(payload.get("facts"), dict):
                     repair_original = payload
                     repair_targets = targets
+                    repair_context = {
+                        "failure_reason": _failure_reason(exc),
+                        "details": details,
+                        "diagnostic_evidence_id": evidence_id,
+                    }
                     messages = repair_messages(original_messages, payload, targets, details)
                     if sum(len(m["content"]) for m in messages) > self.settings.llm_max_input_chars:
                         raise ModelCallError("input_too_large") from None
                     continue
                 # Re-generate from the original facts, without replaying untrusted bad output.
+                repair_original = None
+                repair_targets = []
+                repair_context = None
                 messages = [*messages, {"role": "user", "content": (
                     "上次输出未通过程序校验。请仅根据原始业务输入和证据目录重新生成完整结果，"
                     "若错误为unsupported_company_requirement，不得强制下一步行动对象填写具体联系人；"

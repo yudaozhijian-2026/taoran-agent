@@ -1,0 +1,380 @@
+{
+  "record_code": "BFJL2026092200473",
+  "source_hash": "64eb26fd3d707e5cca30faf7f2726f1d391579f075c4bbce1953f0830673a5c8",
+  "dossier_sha256": "da6e855c398a48f7c53c8b5cdad3149a3a637dd6784f274558a90d9e3d47e150",
+  "commit": "5ba4d5e0fc2f437f46a53053d43fec5a617eac8c",
+  "knowledge_hash": "d5bef9187df9c9bb182e01c1a7c95c4976313938807c2ae3263a9178be76cd68",
+  "visit": {
+    "visit_date": "2026-09-15",
+    "employee_id": "R-wtTWqzib",
+    "customer_id": "KH2504240007",
+    "customer_type_ii": "potential",
+    "opportunity_id": null,
+    "opportunity_stage": null,
+    "opportunities": [],
+    "visit_method": "asynchronous_message",
+    "is_appointment": false,
+    "participants": [
+      {
+        "contact_id": "施顺东",
+        "role": null
+      }
+    ],
+    "purpose_code": "保持关系",
+    "other_purpose": null,
+    "expected_key_result": "跟进",
+    "process_description": "跟进之前推荐的舌下片，感觉这个项目不在他们关注范围内，并且感觉竞争压力比较大，参比制剂的问题导致的不可控因素比较多，暂时不能立项。",
+    "customer_feedback": null,
+    "self_assessment": "achieved",
+    "deviation_reason": null,
+    "next_action_target_id": null,
+    "next_action_purpose": "保持关系",
+    "next_action_other_purpose": null,
+    "next_action_expected_result": "跟进",
+    "next_contact_at": null,
+    "actual_start_at": null,
+    "actual_end_at": null,
+    "duration_minutes": null,
+    "submitted_at": "2026-09-22T06:56:36.810000Z",
+    "evidence_ids": [],
+    "purpose_policy": null,
+    "metadata": {
+      "connector_source": "jiandaoyun",
+      "source_supplied_fields": [
+        "actual_end_at",
+        "actual_start_at",
+        "customer_id",
+        "customer_type_ii",
+        "duration_minutes",
+        "employee_id",
+        "evidence_ids",
+        "expected_key_result",
+        "is_appointment",
+        "next_action_expected_result",
+        "next_action_other_purpose",
+        "next_action_purpose",
+        "next_contact_at",
+        "opportunities",
+        "other_purpose",
+        "participants",
+        "process_description",
+        "purpose_code",
+        "self_assessment",
+        "submitted_at",
+        "visit_date",
+        "visit_method"
+      ],
+      "precheck_defaulted_fields": [],
+      "field_provenance": {
+        "actual_start_at": "jiandaoyun_form_field",
+        "next_contact_at": "jiandaoyun_form_field",
+        "customer_type_ii": "jiandaoyun_form_field",
+        "duration_minutes": "jiandaoyun_form_field",
+        "submitted_at": "jiandaoyun_system_field",
+        "visit_date": "jiandaoyun_form_field",
+        "other_purpose": "jiandaoyun_form_field",
+        "next_action_purpose": "jiandaoyun_form_field",
+        "actual_end_at": "jiandaoyun_form_field",
+        "self_assessment": "jiandaoyun_form_field",
+        "customer_id": "jiandaoyun_form_field",
+        "next_action_other_purpose": "jiandaoyun_form_field",
+        "participants": "jiandaoyun_subform",
+        "is_appointment": "jiandaoyun_form_field",
+        "next_action_expected_result": "jiandaoyun_form_field",
+        "visit_method": "jiandaoyun_form_field",
+        "opportunities": "jiandaoyun_subform",
+        "expected_key_result": "jiandaoyun_form_field",
+        "process_description": "jiandaoyun_form_field",
+        "purpose_code": "jiandaoyun_form_field",
+        "evidence_ids": "jiandaoyun_form_field",
+        "employee_id": "jiandaoyun_form_field"
+      },
+      "field_mapping_version": "visit-copy-ai-evaluation-xlsx-2026-08-18",
+      "field_mapping_status": "copy_widget_ids_synced",
+      "source_mapping_hash": "25e9f64e4ce807e064240fc09fc8a21975fd12eb2dc998715340adb06143ca00"
+    }
+  },
+  "original_candidate": {
+    "sections": [
+      {
+        "code": "T",
+        "verdict": "met",
+        "field_paths": [
+          "customer_type_ii",
+          "purpose_code"
+        ],
+        "reason": "客户类型为潜力客户，拜访目的为保持关系，属于该客户类型允许的目的范围，类型与目的匹配。",
+        "suggestion": "",
+        "evidence": [
+          {
+            "evidence_id": "ev_T_customer_type_ii_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_T_purpose_code_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": null
+      },
+      {
+        "code": "A1",
+        "verdict": "met",
+        "field_paths": [
+          "customer_type_ii",
+          "is_appointment",
+          "visit_method",
+          "purpose_code"
+        ],
+        "reason": "潜力客户通过微信/邮件/QQ沟通进行拜访，未预约但该客户类型不强制预约，拜访方式与预约状态已如实记录。",
+        "suggestion": "",
+        "evidence": [
+          {
+            "evidence_id": "ev_A1_customer_type_ii_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_A1_is_appointment_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_A1_visit_method_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_A1_purpose_code_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": null
+      },
+      {
+        "code": "O_KR",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "expected_key_result",
+          "purpose_code"
+        ],
+        "reason": "原定关键结果仅为“跟进”，缺乏具体可检查的客户行为、承诺、认可或信息确认标准，无法验证是否达成。",
+        "suggestion": "建议将关键结果具体化，例如明确希望客户确认对舌下片项目的后续态度、取得立项障碍的具体反馈或约定下一步沟通事项，使其可检查。",
+        "evidence": [
+          {
+            "evidence_id": "ev_O_KR_expected_key_result_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_O_KR_purpose_code_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "expected_key_result"
+          ],
+          "existing_content": "关键结果填写为“跟进”，未说明具体希望取得的客户反馈或可检查结果。",
+          "missing_detail": "缺少具体的客户行为、承诺、认可或信息确认等可验证标准。",
+          "decision_impact": "关键结果过于宽泛导致无法判断本次拜访是否达成原定目标。",
+          "gap_kind": "insufficient_specificity"
+        }
+      },
+      {
+        "code": "R",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "process_description"
+        ],
+        "reason": "过程描述中“感觉”一词反复使用，未区分客户实际表达与销售个人判断，且缺少客户明确反馈的来源依据。",
+        "suggestion": "建议据实区分客户表达的事实与销售判断，例如注明客户明确表示项目不在关注范围、竞争压力或参比制剂问题，还是销售自行推测的结论。",
+        "evidence": [
+          {
+            "evidence_id": "ev_R_process_description_1",
+            "category": "sales_judgment"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "process_description"
+          ],
+          "existing_content": "过程描述为“跟进之前推荐的舌下片，感觉这个项目不在他们关注范围内，并且感觉竞争压力比较大，参比制剂的问题导致的不可控因素比较多，暂时不能立项”。",
+          "missing_detail": "未区分客户实际表达与销售个人判断，缺少客户明确反馈的具体来源。",
+          "decision_impact": "事实与判断混同导致无法可靠核对客户真实态度和项目实际状态。",
+          "gap_kind": "fact_source_unclear"
+        }
+      },
+      {
+        "code": "A2",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "expected_key_result",
+          "process_description",
+          "self_assessment"
+        ],
+        "reason": "原定关键结果“跟进”过于宽泛无法评估达成程度，过程描述中客户暂时不能立项属于明确反馈但关键结果未设定可验证标准，销售自评“达到目的”缺乏对照依据。",
+        "suggestion": "原定关键结果不具体导致无法判断是否完全达成。如实际已取得明确客户反馈，建议据实补充关键结果的具体标准；自评应与可验证的关键结果对照。",
+        "evidence": [
+          {
+            "evidence_id": "ev_A2_expected_key_result_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_A2_process_description_1",
+            "category": "sales_judgment"
+          },
+          {
+            "evidence_id": "ev_A2_self_assessment_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "expected_key_result",
+            "self_assessment"
+          ],
+          "existing_content": "关键结果为“跟进”，自评为“达到目的”，过程描述提到客户暂时不能立项。",
+          "missing_detail": "关键结果无可验证标准，自评缺乏对照依据，无法确认达成程度。",
+          "decision_impact": "无法判断销售自评与实际达成是否一致。",
+          "gap_kind": "insufficient_specificity"
+        }
+      },
+      {
+        "code": "N",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "customer_type_ii",
+          "next_action_purpose",
+          "next_action_expected_result",
+          "next_contact_at",
+          "process_description",
+          "visit_date"
+        ],
+        "reason": "下一步目的和期望结果均为“跟进”和“保持关系”，不具体且未承接本次客户暂时不能立项的明确反馈；下一次联系客户时间安排未填写，潜力客户需跨自然季度。",
+        "suggestion": "建议将下一步目的和期望结果具体化，例如针对参比制剂问题或竞争压力约定具体跟进事项。同时请填写下一次联系客户时间安排，该日期需晚于本次拜访日期并跨自然季度。",
+        "evidence": [
+          {
+            "evidence_id": "ev_N_customer_type_ii_1",
+            "category": "system_fact"
+          },
+          {
+            "evidence_id": "ev_N_next_action_expected_result_1",
+            "category": "planned_action"
+          },
+          {
+            "evidence_id": "ev_N_next_action_purpose_1",
+            "category": "planned_action"
+          },
+          {
+            "evidence_id": "ev_N_process_description_1",
+            "category": "sales_judgment"
+          },
+          {
+            "evidence_id": "ev_N_visit_date_1",
+            "category": "system_fact"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "next_action_expected_result",
+            "next_action_purpose",
+            "next_contact_at"
+          ],
+          "existing_content": "下一步目的为保持关系，期望结果为跟进，下一次联系客户时间安排未填写。",
+          "missing_detail": "行动内容不具体且未承接本次客户反馈，日期未填写导致无法判断是否跨自然季度。",
+          "decision_impact": "无法确认下一步行动与本次事实的衔接及时间安排是否符合潜力客户要求。",
+          "gap_kind": "insufficient_specificity"
+        }
+      }
+    ],
+    "facts": {
+      "key_result_quality_ok": false,
+      "process_fact_based": false,
+      "purpose_achievement": "not_achieved",
+      "next_action_logic_ok": false,
+      "customer_consensus_met": false,
+      "reason": "原定关键结果“跟进”过于宽泛，无法验证是否达成，因此目的达成程度不可评估。过程描述中多次使用“感觉”，客户实际表达与销售判断未区分，事实依据不充分。下一步行动目的和期望结果均为“跟进”和“保持关系”，不具体且未承接本次客户暂时不能立项的反馈，下一次联系客户时间安排未填写，潜力客户需跨自然季度。潜力客户不适用客户共识要求，customer_consensus_met为false。"
+    },
+    "goal_reviews": [
+      {
+        "goal_id": "G1",
+        "status": "not_assessable",
+        "evidence_ids": [
+          "ev_O_KR_expected_key_result_1",
+          "ev_R_process_description_1"
+        ],
+        "actor_ambiguity_material": false,
+        "reason": "原定关键结果仅为“跟进”，缺乏具体可检查标准，无法评估是否达成。"
+      }
+    ]
+  },
+  "initial_failure": {
+    "reason": "post_commitment_boundary_conflict",
+    "field_error": {
+      "hits": [
+        {
+          "rule": "unsupported_future_customer_commitment",
+          "target": "O_KR",
+          "quote": "建议将关键结果具体化，例如明确希望客户确认对舌下片项目的后续态度、取得立项障碍的具体反馈或约定下一步沟通事项，使其可检查",
+          "scanned_text": "建议将关键结果具体化，例如明确希望客户确认对舌下片项目的后续态度、取得立项障碍的具体反馈或约定下一步沟通事项，使其可检查。",
+          "candidate_event": {
+            "clause": "建议将关键结果具体化，例如明确希望客户确认对舌下片项目的后续态度、取得立项障碍的具体反馈或约定下一步沟通事项，使其可检查",
+            "event_window": "例如明确希望客户确认对舌下片项目的后续态度",
+            "subject": "customer",
+            "action": ":对舌下片项目的态度",
+            "state": "future_commitment",
+            "usage": "fact",
+            "time_or_condition": "对舌下片项目的后续态度"
+          },
+          "source_future_commitments": []
+        }
+      ]
+    }
+  },
+  "repair_targets": [
+    "O_KR",
+    "facts.reason"
+  ],
+  "repair_candidate": {
+    "sections": [
+      {
+        "code": "O_KR",
+        "verdict": "needs_revision",
+        "field_paths": [
+          "expected_key_result"
+        ],
+        "reason": "原定关键结果仅填写为“跟进”，未说明具体希望取得的客户反馈或可检查结果，缺乏可验证的检查标准。",
+        "suggestion": "建议将关键结果具体化，例如明确希望取得客户对舌下片项目是否继续推进的明确答复，或取得参比制剂问题及竞争压力方面的具体反馈，使其可检查。",
+        "evidence": [
+          {
+            "evidence_id": "ev_O_KR_expected_key_result_1",
+            "field": "expected_key_result",
+            "quote": "跟进"
+          },
+          {
+            "evidence_id": "ev_O_KR_purpose_code_1",
+            "field": "purpose_code",
+            "quote": "保持关系"
+          }
+        ],
+        "advice_basis": {
+          "fields": [
+            "expected_key_result"
+          ],
+          "existing_content": "关键结果填写为“跟进”，未说明具体希望取得的客户反馈或可检查结果。",
+          "missing_detail": "缺少具体的客户答复、反馈内容或信息确认等可验证标准。",
+          "decision_impact": "关键结果过于宽泛导致无法判断本次拜访是否达成原定目标。",
+          "gap_kind": "insufficient_specificity"
+        }
+      }
+    ],
+    "facts_reason": ""
+  },
+  "revalidation_failure": {
+    "reason": "invalid_contract",
+    "validation_errors": [
+      {
+        "location": "facts.reason",
+        "code": "string_too_short"
+      }
+    ]
+  },
+  "final_status": "completed"
+}

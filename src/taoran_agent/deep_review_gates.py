@@ -68,6 +68,9 @@ _SALES_ACTION_PLAN = re.compile(
 _NON_SUBJECT_CUSTOMER_PREFIX = re.compile(
     r"(?:需要|需|必须|应|要|与|和|联系|向|请|如|若|如果|建议|在|由|让|待|对|从|补充|明确|取得|核实|说明|填写|记录|确认|要求|将|把)\s*$"
 )
+_DESIRED_CUSTOMER_OUTCOME_PREFIX = re.compile(
+    r"(?:希望|期望|推动|争取|促使|力争|期待|拟推动|计划推动)\s*$"
+)
 _COMPLETED_ACTION = re.compile(
     r"(?:已经|已)(?:同意|付款|支付|下单|采购|提供|交付|发货|完成|提交|安排|实施|确认完毕|发送|回复|测试|沟通|反馈|对接|签署|配合)|(?:已经|已)确认(?=的)"
 )
@@ -411,6 +414,7 @@ def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, st
     action = _action_signature(clause, firm.end(), end)
     condition = bool(_CONDITIONAL_FUTURE.search(window))
     non_subject = bool(_NON_SUBJECT_CUSTOMER_PREFIX.search(before))
+    desired_outcome = bool(_DESIRED_CUSTOMER_OUTCOME_PREFIX.search(before))
     evidence_insufficient = bool(_EVIDENCE_INSUFFICIENT_PREFIX.search(before))
     negative_or_pending = bool(_NON_FIRM_CUSTOMER_STATE.search(window))
     completed = bool(_COMPLETED_ACTION.search(window))
@@ -418,6 +422,8 @@ def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, st
     usage = "fact"
     if non_subject:
         usage = "sales_advice"
+    elif desired_outcome:
+        usage = "desired_outcome"
     elif evidence_insufficient:
         usage = "insufficient_evidence"
     elif condition:
@@ -430,6 +436,7 @@ def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, st
         "future_commitment"
         if not (
             non_subject
+            or desired_outcome
             or evidence_insufficient
             or condition
             or negative_or_pending
