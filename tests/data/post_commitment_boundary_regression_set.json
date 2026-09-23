@@ -81,6 +81,13 @@
       "expected": "pass"
     },
     {
+      "case_id": "sales_advice_for_customer_confirmed_items",
+      "classification": "CURRENT_STATE",
+      "source": "过程未记录客户未来承诺。",
+      "candidate": "建议在下一次联系前确认客户对邮件的反馈，并将客户已确认的后续事项据实补充到记录中。",
+      "expected": "pass"
+    },
+    {
       "case_id": "sales_advice_after_customer_response",
       "classification": "CONDITIONAL_FUTURE",
       "source": "过程记录客户暂未反馈，未形成客户未来承诺。",
