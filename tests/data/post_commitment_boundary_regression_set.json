@@ -1,0 +1,135 @@
+{
+  "schema_version": "TAORAN-post-commitment-boundary-regression-v1",
+  "cases": [
+    {
+      "case_id": "BFJL2026092100353",
+      "data_id": "6ab0bd64e841474a6c3a4966",
+      "classification": "PAST_OR_COMPLETED_FACT",
+      "source": "【rc41空联系时间全流程20260920】客户张老师确认六台设备安装位置与电源准备均已完成，并发送现场照片；销售逐项核对无遗漏，双方尚未约定下一次联系日期。",
+      "candidate": "客户张老师确认六台设备安装位置与电源准备均已完成，并发送现场照片。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "BFJL2026092100355",
+      "data_id": "6ab0bd65647107708463e49b",
+      "classification": "PAST_OR_COMPLETED_FACT",
+      "source": "【rc41空联系时间全流程20260920】客户张老师确认六台设备安装位置与电源准备均已完成，并发送现场照片；销售逐项核对无遗漏，双方尚未约定下一次联系日期。",
+      "candidate": "客户确认安装位置和电源准备均已完成，销售已逐项核对。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "completed_confirmation",
+      "classification": "PAST_OR_COMPLETED_FACT",
+      "source": "客户确认已经完成设备验收。",
+      "candidate": "客户确认已经完成设备验收。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "completed_provided_material",
+      "classification": "PAST_OR_COMPLETED_FACT",
+      "source": "客户已提供报价所需资料。",
+      "candidate": "客户已提供报价所需资料。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "completed_reply",
+      "classification": "PAST_OR_COMPLETED_FACT",
+      "source": "客户已回复设备规格确认意见。",
+      "candidate": "客户已回复设备规格确认意见。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "established_current_state",
+      "classification": "CURRENT_STATE",
+      "source": "本次未形成客户未来承诺。",
+      "candidate": "客户已同意周五收货，请据实补充双方约定的联系时间。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "conditional_future",
+      "classification": "CONDITIONAL_FUTURE",
+      "source": "客户表示如测试通过再考虑采购。",
+      "candidate": "客户表示如测试通过再考虑采购。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "customer_intent",
+      "classification": "CUSTOMER_INTENT",
+      "source": "客户表示后续考虑采购。",
+      "candidate": "客户表示后续考虑采购。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "sales_action_plan",
+      "classification": "SALES_ACTION_PLAN",
+      "source": "本次未形成客户未来承诺。",
+      "candidate": "下一步销售将再次联系客户，了解设备运行情况。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "customer_feedback_and_later_confirmation",
+      "classification": "CURRENT_STATE",
+      "source": "客户张老师确认六台设备安装位置与电源准备均已完成，并发送现场照片。",
+      "candidate": "下一步期望结果为确认设备运行情况和客户使用反馈，与本次安装确认事实衔接合理。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "sales_advice_customer_not_subject",
+      "classification": "SALES_ACTION_PLAN",
+      "source": "过程未体现客户对后续事项的未来承诺。",
+      "candidate": "建议明确需要客户确认付款流程当前审批节点；如已与客户约定后续安排请据实补充客户确认事项，下一次沟通中与客户确认联系事项及时间。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "rule_requires_customer_consensus",
+      "classification": "CURRENT_STATE",
+      "source": "本次记录未形成客户未来承诺。",
+      "candidate": "商机客户下一步需客户明确共识，当前只有我方计划，缺少客户对具体后续安排的确认。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "unqualified_commitment_mention",
+      "classification": "CURRENT_STATE",
+      "source": "过程记录客户表示可以在有进展时通知销售。",
+      "candidate": "客户承诺通知但未约定具体联系时间，下一次联系客户时间安排未填写。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "exhibition_is_not_future_modal",
+      "classification": "SALES_ACTION_PLAN",
+      "source": "邀请客户展会见面沟通。",
+      "candidate": "建议将关键结果改写为客户确认接受展会邀请或客户同意展会见面时间。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "supported_future_customer_commitment",
+      "classification": "SUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户明确承诺下周付款。",
+      "candidate": "客户承诺下周付款。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "supported_conditional_customer_response",
+      "classification": "CONDITIONAL_FUTURE",
+      "source": "他让物资随时关注着情况，可以提了就通知我。",
+      "candidate": "客户承诺可以提了就通知我。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "unsupported_future_customer_commitment",
+      "classification": "UNSUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户已完成设备验收。",
+      "candidate": "客户承诺下周付款。",
+      "expected": "block",
+      "rule": "unsupported_future_customer_commitment"
+    },
+    {
+      "case_id": "future_commitment_presented_as_completed",
+      "classification": "UNSUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户明确承诺下周付款。",
+      "candidate": "客户已付款。",
+      "expected": "block",
+      "rule": "future_commitment_presented_as_completed"
+    }
+  ]
+}

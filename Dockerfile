@@ -19,9 +19,9 @@ EXPOSE 8030
 CMD ["uvicorn", "taoran_agent.api:app", "--host", "0.0.0.0", "--port", "8030", "--workers", "1", "--limit-concurrency", "48", "--timeout-graceful-shutdown", "75", "--no-access-log"]
 
 ARG GIT_COMMIT
-ARG IMAGE_VERSION=1.0.6rc68
+ARG IMAGE_VERSION=1.0.6rc69
 ARG IMAGE_CREATED
-ARG RELEASE_NAME=1.0.6rc68-knowledge-safe-fallback-20260923
+ARG RELEASE_NAME=1.0.6rc69-post-commitment-boundary-fix-20260923
 LABEL org.opencontainers.image.revision=$GIT_COMMIT \
       org.opencontainers.image.version=$IMAGE_VERSION \
       org.opencontainers.image.created=$IMAGE_CREATED \

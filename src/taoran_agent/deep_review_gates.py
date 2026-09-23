@@ -39,12 +39,32 @@ _OUTCOME_DENIAL = re.compile(
     r"(?:没有|未|尚未)(?:取得|形成|获得).{0,12}(?:成果|结果|进展|信息)"
     r"|(?:本次|此次)拜访.{0,12}(?:没有|无)(?:成果|进展|价值)"
 )
-_COMMITMENT = re.compile(
-    r"客户.{0,16}(?:承诺|同意|确认|约定).{0,36}(?:将|会|后续|下一步|下周|下次|提供|完成|安排)"
+_SENTENCE = re.compile(r"[^。；\n]+")
+_FIRM_CUSTOMER_COMMITMENT = re.compile(
+    r"客户[^，。；\n]{0,8}?(?:承诺|保证|同意|确认|约定)"
 )
-_COMMITMENT_AS_COMPLETE = re.compile(
-    r"(?:客户.{0,18}(?:承诺|同意|确认|约定).{0,30})?"
-    r"(?:已经|已)(?:提供|交付|完成|提交|安排|实施|确认完毕)"
+_FUTURE_DIRECTION = re.compile(
+    r"(?:将|(?<!展)会|后续|下一步|下周|下次|本周|月底|月末|之后|再|待|拟|预计|一定)"
+)
+_SOURCE_CONDITIONAL_RESPONSE = re.compile(
+    r"(?:客户|对方|他|她)[^。；\n]{0,24}?(?:可以|可|将|(?<!展)会|承诺|同意|答应|后续|下周|下次|待|预计|拟)"
+)
+_CONDITIONAL_FUTURE = re.compile(r"(?:如|如果|若).{0,36}(?:再|才|则|考虑|可能|推进)")
+_CUSTOMER_INTENT = re.compile(r"客户.{0,20}(?:表示|考虑|意向|希望|可能|拟)")
+_SALES_ACTION_PLAN = re.compile(
+    r"(?:销售|我方|业务员|下一步).{0,20}(?:联系|跟进|沟通|拜访).{0,12}客户"
+)
+_NON_SUBJECT_CUSTOMER_PREFIX = re.compile(
+    r"(?:需要|需|必须|应|要|与|和|联系|向|请|如|若|如果|建议|由|让|待|对|从|补充|明确|取得|核实|说明|填写|记录|确认|要求)\s*$"
+)
+_COMPLETED_ACTION = re.compile(
+    r"(?:已经|已)(?:同意|付款|支付|下单|采购|提供|交付|完成|提交|安排|实施|确认完毕|发送|回复|测试|沟通|反馈|对接|签署|配合)"
+)
+_ACTION = re.compile(
+    r"(?:付款|支付|下单|采购|提供|交付|提交|完成|安排|实施|测试|回复|反馈|沟通|对接|通知|签署|配合)"
+)
+_ACTION_NOISE = re.compile(
+    r"(?:将|会|后续|下一步|下周|下次|本周|月底|月末|之后|再|待|拟|预计|一定|已经|已|客户|承诺|保证|同意|确认|约定|明确|于|在)"
 )
 _FUTURE_OUTCOME = re.compile(
     r"(?:承诺|约定|计划|预计|拟于|将|会|后续|下一步|下周|下次|待)"
@@ -211,14 +231,152 @@ def outcome_preservation_hits(
 def commitment_boundary_hits(
     text: str, source_text: str, target: str,
 ) -> list[dict[str, Any]]:
-    if not _COMMITMENT.search(source_text) or not _COMMITMENT_AS_COMPLETE.search(str(text or "")):
-        return []
-    return [{
-        "rule": "future_commitment_presented_as_completed",
-        "target": target,
-        "quote": _COMMITMENT_AS_COMPLETE.search(str(text)).group(),
-        "scanned_text": text,
-    }]
+    """Protect future customer commitments without rejecting completed facts.
+
+    A customer saying that a state *has already happened* is evidence, not a
+    commitment.  The previous gate paired any source ``客户确认 ... 完成`` with
+    any candidate ``已完成`` and therefore rejected faithful summaries of the
+    record.  This gate instead compares events: a firm, explicit future
+    commitment must be present in the source for that same action; a source
+    future action may not be promoted to a completed action without separate
+    completion evidence.
+    """
+    source_future = _future_customer_commitments(source_text)
+    source_future_evidence = source_future + _conditional_source_future_actions(source_text)
+    source_completed = _completed_actions(source_text)
+    candidate_future = _future_customer_commitments(text)
+    candidate_completed = _completed_actions(text)
+    hits = []
+
+    for event in candidate_future:
+        if any(_same_action(event["action"], source["action"]) for source in source_future_evidence):
+            continue
+        hits.append({
+            "rule": "unsupported_future_customer_commitment",
+            "target": target,
+            "quote": event["clause"],
+            "scanned_text": text,
+            "source_future_commitments": [item["clause"] for item in source_future_evidence],
+        })
+
+    for event in candidate_completed:
+        matching_future = [
+            source for source in source_future
+            if _same_action(event["action"], source["action"])
+        ]
+        if not matching_future:
+            continue
+        if any(_same_action(event["action"], source["action"]) for source in source_completed):
+            continue
+        hits.append({
+            "rule": "future_commitment_presented_as_completed",
+            "target": target,
+            "quote": event["clause"],
+            "scanned_text": text,
+            "source_future_commitments": [item["clause"] for item in matching_future],
+        })
+    return hits
+
+
+def _future_customer_commitments(text: str) -> list[dict[str, str]]:
+    """Return only firm, unconditional customer actions directed to the future."""
+    result = []
+    for clause in _sentences(text):
+        firm = _firm_customer_commitment(clause)
+        if not firm:
+            continue
+        # A conditional scenario and an expression of consideration remain a
+        # future possibility, not a deterministic customer commitment.
+        if (
+            _CONDITIONAL_FUTURE.search(clause)
+            or _CUSTOMER_INTENT.search(clause)
+            or _SALES_ACTION_PLAN.search(clause)
+        ):
+            continue
+        # ``客户确认已经完成`` and ``客户已同意`` describe an already
+        # established fact/state. A time-direction marker is mandatory for a
+        # future commitment; words such as 完成/提供 alone are deliberately
+        # not treated as future direction.
+        commitment_tail = re.split(r"[，,]", clause[firm.end():], maxsplit=1)[0]
+        if _COMPLETED_ACTION.search(clause) or not _FUTURE_DIRECTION.search(commitment_tail):
+            continue
+        result.append({
+            "clause": clause,
+            "action": _action_signature(clause, firm.end()),
+        })
+    return result
+
+
+def _firm_customer_commitment(clause: str) -> re.Match[str] | None:
+    """Find a commitment where the customer is the grammatical actor.
+
+    ``需要客户确认`` and ``与客户约定`` describe a salesperson's request or
+    conditional advice. They are not assertions that the customer made a
+    promise. A candidate can contain both usages in one sentence, so inspect
+    every local match rather than accepting the first textual occurrence.
+    """
+    for match in _FIRM_CUSTOMER_COMMITMENT.finditer(clause):
+        if not _NON_SUBJECT_CUSTOMER_PREFIX.search(clause[:match.start()]):
+            return match
+    return None
+
+
+def _conditional_source_future_actions(text: str) -> list[dict[str, str]]:
+    """Return source-only customer-response evidence for a future action.
+
+    A source record can use a pronoun or a conditional response (for example,
+    ``他…可以提了就通知我``). It supports the same future action but does not
+    prove completion, so callers may use it only to support a candidate future
+    expression; completed-action protection remains tied to firm commitments.
+    """
+    result = []
+    for clause in _sentences(text):
+        for match in _SOURCE_CONDITIONAL_RESPONSE.finditer(clause):
+            action = _action_signature(clause, match.start())
+            if action:
+                result.append({"clause": clause, "action": action})
+    return result
+
+
+def _completed_actions(text: str) -> list[dict[str, str]]:
+    """Return candidate/source actions explicitly stated as already completed."""
+    result = []
+    for clause in _sentences(text):
+        completed = _COMPLETED_ACTION.search(clause)
+        if completed:
+            result.append({
+                "clause": clause,
+                "action": _action_signature(clause, completed.start()),
+            })
+    return result
+
+
+def _sentences(text: str) -> list[str]:
+    return [match.group().strip() for match in _SENTENCE.finditer(str(text or "")) if match.group().strip()]
+
+
+def _action_signature(clause: str, start: int) -> str:
+    """Create a small, evidence-local action signature for event comparison."""
+    action = _ACTION.search(clause, start)
+    if action:
+        verb = action.group()
+        tail = clause[action.end():action.end() + 16]
+    else:
+        verb = ""
+        tail = clause[start:start + 24]
+    compact = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", _ACTION_NOISE.sub("", tail))
+    return f"{verb}:{compact}".rstrip(":")
+
+
+def _same_action(left: str, right: str) -> bool:
+    """Require the action verb and, when available, its object to agree."""
+    left_verb, _, left_object = left.partition(":")
+    right_verb, _, right_object = right.partition(":")
+    if not left_verb or left_verb != right_verb:
+        return False
+    if not left_object or not right_object:
+        return True
+    return left_object in right_object or right_object in left_object
 
 
 def preserve_outcomes(
