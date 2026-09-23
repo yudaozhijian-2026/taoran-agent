@@ -32,3 +32,24 @@ def test_deterministic_n_repair_for_0353_keeps_completed_source_fact():
         "销售已逐项核对现场照片。双方尚未约定下一次联系日期。"
     )
     assert commitment_boundary_hits(repaired_reason, case["source"], "facts.reason") == []
+
+
+def test_commitment_hit_retains_event_level_diagnostics():
+    hits = commitment_boundary_hits(
+        "客户已经发货。",
+        "客户已确认下周发货，发货尚待发生。",
+        "facts.reason",
+    )
+    assert len(hits) == 1
+    assert hits[0]["rule"] == "future_commitment_presented_as_completed"
+    assert hits[0]["candidate_event"] == {
+        "clause": "客户已经发货",
+        "event_window": "客户已经发货",
+        "subject": "customer",
+        "action": "发货",
+        "state": "completed_fact",
+        "usage": "fact",
+        "time_or_condition": "",
+    }
+    assert hits[0]["source_future_commitments"][0]["action"] == "发货"
+    assert hits[0]["source_future_commitments"][0]["state"] == "future_commitment"
