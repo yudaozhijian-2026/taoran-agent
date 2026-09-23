@@ -95,6 +95,13 @@
       "expected": "pass"
     },
     {
+      "case_id": "customer_completed_fact_with_later_pending_action",
+      "classification": "PAST_OR_COMPLETED_FACT",
+      "source": "俞经理同意说服终端延期至10月中旬，收到客户采购合同走审批，客户询价事项待回复。",
+      "candidate": "过程已记录客户同意说服终端延期、收到采购合同走审批、客户询价事项待回复等实际信息收集成果。",
+      "expected": "pass"
+    },
+    {
       "case_id": "unqualified_commitment_mention",
       "classification": "CURRENT_STATE",
       "source": "过程记录客户表示可以在有进展时通知销售。",

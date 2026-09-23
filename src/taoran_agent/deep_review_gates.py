@@ -297,7 +297,7 @@ def _future_customer_commitments(text: str) -> list[dict[str, str]]:
         # established fact/state. A time-direction marker is mandatory for a
         # future commitment; words such as 完成/提供 alone are deliberately
         # not treated as future direction.
-        commitment_tail = re.split(r"[，,]", clause[firm.end():], maxsplit=1)[0]
+        commitment_tail = re.split(r"[，,、]", clause[firm.end():], maxsplit=1)[0]
         if _COMPLETED_ACTION.search(clause) or not _FUTURE_DIRECTION.search(commitment_tail):
             continue
         result.append({
