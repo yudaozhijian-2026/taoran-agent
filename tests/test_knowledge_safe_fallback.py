@@ -140,12 +140,13 @@ def test_approved_fallback_provenance_and_hash_are_valid() -> None:
 
 def test_runtime_prompt_projection_uses_only_taoran_records_from_selected_snapshot() -> None:
     fallback = load_taoran_knowledge_snapshot()
-    assert [record.id for record in taoran_runtime_records(fallback)] == [
-        "DSM-BS-000",
+    runtime_records = taoran_runtime_records(fallback)
+    assert [record.id for record in runtime_records] == [
         "DSM-BS-01-06",
         "DSM-BS-01-07",
         "DSM-MP-01",
     ]
+    assert sum(len(record.content) for record in runtime_records) < 5_000
 
 
 def test_remote_recovery_switches_back_to_remote_source() -> None:

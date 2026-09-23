@@ -15,7 +15,6 @@ ACTIVE_KNOWLEDGE_STATUSES = {"已批准", "已确认"}
 DEFAULT_QUERY = "TAORAN"
 REQUIRED_KNOWLEDGE_IDS = ("DSM-BS-01-06", "DSM-BS-01-07", "DSM-MP-01")
 TAORAN_RUNTIME_KNOWLEDGE_IDS = (
-    "DSM-BS-000",
     "DSM-BS-01-06",
     "DSM-BS-01-07",
     "DSM-MP-01",
@@ -113,7 +112,7 @@ class KnowledgeUnavailableError(RuntimeError):
 def taoran_runtime_records(
     snapshot: TaoranKnowledgeSnapshot,
 ) -> list[KnowledgeRecord]:
-    """Return TAORAN's approved prompt projection from one selected snapshot."""
+    """Return the three required records from one selected complete snapshot."""
     records_by_id = {record.id: record for record in snapshot.records}
     return [
         records_by_id[record_id]
