@@ -130,6 +130,109 @@
       "expected": "pass"
     },
     {
+      "case_id": "punctuation_variant_supported_promise",
+      "classification": "SUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户承诺下周付款；客户已完成设备准备。",
+      "candidate": "客户承诺下周付款，尚待发生。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "punctuation_variant_unsupported_promise",
+      "classification": "UNSUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户已完成设备准备；客户已提供照片。",
+      "candidate": "客户承诺下周付款，尚待发生。",
+      "expected": "block",
+      "rule": "unsupported_future_customer_commitment"
+    },
+    {
+      "case_id": "completed_fact_does_not_pollute_other_event",
+      "classification": "UNSUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户已完成安装A，但尚未确认付款B。",
+      "candidate": "客户已完成安装A，客户承诺下周付款B。",
+      "expected": "block",
+      "rule": "unsupported_future_customer_commitment"
+    },
+    {
+      "case_id": "customer_not_yet_committed",
+      "classification": "NEGATIVE",
+      "source": "客户尚未承诺完成安装。",
+      "candidate": "客户尚未承诺完成安装，当前没有明确客户确认。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "salesperson_confirms_customer_not_completed",
+      "classification": "NEGATIVE",
+      "source": "客户尚未完成安装。",
+      "candidate": "销售确认客户尚未完成安装，需继续跟进。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "conditional_record_if_already_agreed",
+      "classification": "CONDITIONAL_FUTURE",
+      "source": "客户未说明后续安排。",
+      "candidate": "如客户已有约定，请据实补充，不得把待确认事项写成已约定。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "conditional_purchase_not_strengthened",
+      "classification": "CONDITIONAL_FUTURE",
+      "source": "客户表示审批通过后再安排采购。",
+      "candidate": "采购安排以审批通过为条件，当前尚待确认。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "conditional_purchase_strengthened",
+      "classification": "UNSUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户表示审批通过后再安排采购。",
+      "candidate": "客户承诺下周采购。",
+      "expected": "block",
+      "rule": "unsupported_future_customer_commitment"
+    },
+    {
+      "case_id": "customer_intent_not_promise",
+      "classification": "CUSTOMER_INTENT",
+      "source": "客户考虑后续试用。",
+      "candidate": "客户表达后续试用意向，尚待进一步确认。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "sales_plan_not_customer_promise",
+      "classification": "SALES_ACTION_PLAN",
+      "source": "客户未确认下次会面。",
+      "candidate": "我方计划下周联系客户，继续跟进。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "confirmed_future_delivery_supported",
+      "classification": "SUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户已确认下周发货，发货尚待发生。",
+      "candidate": "客户已确认下周发货，发货尚待发生。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "confirmed_future_delivery_not_completed",
+      "classification": "UNSUPPORTED_FUTURE_COMMITMENT",
+      "source": "客户已确认下周发货，发货尚待发生。",
+      "candidate": "客户已经发货。",
+      "expected": "block",
+      "rule": "future_commitment_presented_as_completed"
+    },
+    {
+      "case_id": "submitted_material_payment_pending",
+      "classification": "PAST_OR_COMPLETED_FACT",
+      "source": "客户已提交资料，但付款尚待审批。",
+      "candidate": "资料已提交，付款待审批。",
+      "expected": "pass"
+    },
+    {
+      "case_id": "third_party_not_customer_evidence",
+      "classification": "UNSUPPORTED_FUTURE_COMMITMENT",
+      "source": "供应商承诺下周提供资料。",
+      "candidate": "客户承诺下周提供资料。",
+      "expected": "block",
+      "rule": "unsupported_future_customer_commitment"
+    },
+    {
       "case_id": "supported_future_customer_commitment",
       "classification": "SUPPORTED_FUTURE_COMMITMENT",
       "source": "客户明确承诺下周付款。",

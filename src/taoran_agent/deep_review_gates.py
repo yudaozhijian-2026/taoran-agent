@@ -4,6 +4,7 @@ These helpers never score a visit.  They reject or conservatively normalize
 wording that is incomplete, invents a completed fact, or promotes a semantic
 recommendation into a company requirement.
 """
+
 from __future__ import annotations
 
 import re
@@ -12,9 +13,7 @@ from typing import Any
 _UNFINISHED_END = re.compile(
     r"(?:[，；：、(（]\s*|(?:因此|并且|同时|其中|例如|包括|需要|建议|因为)\s*)$"
 )
-_STRONG_REQUIREMENT = re.compile(
-    r"(?:必须|应当|不允许|严禁|要求|须要|应调整为|应改为|只能|不得)"
-)
+_STRONG_REQUIREMENT = re.compile(r"(?:必须|应当|不允许|严禁|要求|须要|应调整为|应改为|只能|不得)")
 _SUPPLEMENT_COMPLETED = re.compile(
     r"(?:补充|补写|写明|记录|完善).{0,30}(?:已|已经|明确|同意|承诺|完成|确定)"
 )
@@ -40,9 +39,7 @@ _OUTCOME_DENIAL = re.compile(
     r"|(?:本次|此次)拜访.{0,12}(?:没有|无)(?:成果|进展|价值)"
 )
 _SENTENCE = re.compile(r"[^。；\n]+")
-_FIRM_CUSTOMER_COMMITMENT = re.compile(
-    r"客户[^，。；\n]{0,8}?(?:承诺|保证|同意|确认|约定)"
-)
+_FIRM_CUSTOMER_COMMITMENT = re.compile(r"客户[^，。；\n]{0,8}?(?:承诺|保证|同意|确认|约定)")
 _FUTURE_DIRECTION = re.compile(
     r"(?:将|(?<!展)会|后续|下一步|下周|下次|本周|月底|月末|之后|再|待|拟|预计|一定)"
 )
@@ -58,23 +55,19 @@ _SALES_ACTION_PLAN = re.compile(
     r"(?:销售|我方|业务员|下一步).{0,20}(?:联系|跟进|沟通|拜访).{0,12}客户"
 )
 _NON_SUBJECT_CUSTOMER_PREFIX = re.compile(
-    r"(?:需要|需|必须|应|要|与|和|联系|向|请|如|若|如果|建议|在|由|让|待|对|从|补充|明确|取得|核实|说明|填写|记录|确认|要求)\s*$"
+    r"(?:需要|需|必须|应|要|与|和|联系|向|请|如|若|如果|建议|在|由|让|待|对|从|补充|明确|取得|核实|说明|填写|记录|确认|要求|将|把)\s*$"
 )
 _COMPLETED_ACTION = re.compile(
-    r"(?:已经|已)(?:同意|付款|支付|下单|采购|提供|交付|完成|提交|安排|实施|确认完毕|发送|回复|测试|沟通|反馈|对接|签署|配合)|(?:已经|已)确认(?=的)"
+    r"(?:已经|已)(?:同意|付款|支付|下单|采购|提供|交付|发货|完成|提交|安排|实施|确认完毕|发送|回复|测试|沟通|反馈|对接|签署|配合)|(?:已经|已)确认(?=的)"
 )
 _ACTION = re.compile(
-    r"(?:付款|支付|下单|采购|提供|交付|提交|完成|安排|实施|测试|回复|反馈|沟通|对接|通知|签署|配合)"
+    r"(?:付款|支付|下单|采购|提供|交付|发货|提交|完成|安排|实施|测试|回复|反馈|沟通|对接|通知|签署|配合)"
 )
 _ACTION_NOISE = re.compile(
     r"(?:将|会|后续|下一步|下周|下次|本周|月底|月末|之后|再|待|拟|预计|一定|已经|已|客户|承诺|保证|同意|确认|约定|明确|于|在)"
 )
-_FUTURE_OUTCOME = re.compile(
-    r"(?:承诺|约定|计划|预计|拟于|将|会|后续|下一步|下周|下次|待)"
-)
-_COMPLETED_OUTCOME = re.compile(
-    r"(?:已|已经|完成|取得|收到|发来|补发|签署|核对无遗漏)"
-)
+_FUTURE_OUTCOME = re.compile(r"(?:承诺|约定|计划|预计|拟于|将|会|后续|下一步|下周|下次|待)")
+_COMPLETED_OUTCOME = re.compile(r"(?:已|已经|完成|取得|收到|发来|补发|签署|核对无遗漏)")
 
 
 class FinalFeedbackIncomplete(ValueError):
@@ -140,19 +133,23 @@ def advice_truthfulness_hits(text: str, source_text: str, target: str) -> list[d
         # A request to record a completed fact is allowed only when the formal
         # record itself contains positive evidence and no conflicting negation.
         if _NEGATIVE_COMPLETION.search(source_text) or not _POSITIVE_COMPLETION.search(source_text):
-            hits.append({
-                "rule": "advice_requests_unproven_completed_fact",
-                "target": target,
-                "quote": clause,
-                "start": match.start(),
-                "end": match.end(),
-                "scanned_text": text,
-            })
+            hits.append(
+                {
+                    "rule": "advice_requests_unproven_completed_fact",
+                    "target": target,
+                    "quote": clause,
+                    "start": match.start(),
+                    "end": match.end(),
+                    "scanned_text": text,
+                }
+            )
     return hits
 
 
 def unsupported_requirement_hits(
-    text: str, provenance: str, target: str,
+    text: str,
+    provenance: str,
+    target: str,
 ) -> list[dict[str, Any]]:
     if provenance in {"deterministic_rule", "knowledge_policy"}:
         return []
@@ -161,15 +158,17 @@ def unsupported_requirement_hits(
         clause = match.group().strip()
         found = _STRONG_REQUIREMENT.search(clause)
         if found:
-            hits.append({
-                "rule": "semantic_recommendation_presented_as_requirement",
-                "target": target,
-                "quote": clause,
-                "provenance": provenance,
-                "start": match.start(),
-                "end": match.end(),
-                "scanned_text": text,
-            })
+            hits.append(
+                {
+                    "rule": "semantic_recommendation_presented_as_requirement",
+                    "target": target,
+                    "quote": clause,
+                    "provenance": provenance,
+                    "start": match.start(),
+                    "end": match.end(),
+                    "scanned_text": text,
+                }
+            )
     return hits
 
 
@@ -181,7 +180,10 @@ def formal_achievement_status(goal_reviews: list[Any], fallback: str) -> str:
 
 
 def achievement_boundary_hits(
-    text: str, *, achievement_status: str, target: str,
+    text: str,
+    *,
+    achievement_status: str,
+    target: str,
 ) -> list[dict[str, Any]]:
     if achievement_status != "unresolved":
         return []
@@ -207,32 +209,40 @@ def actual_outcome_evidence(data: dict[str, Any]) -> list[dict[str, str]]:
             text = part.strip(" ，,;；")
             if not text:
                 continue
-            detailed = bool(re.search(
-                r"\d|[一二三四五六七八九十]+(?:个|张|台|套|份|项)|"
-                r"(?:规格|型号|预算|数量|尺寸|负责人|流程|清单|时间|条件|异议|承诺|同意|确认|约定)",
-                text,
-            ))
+            detailed = bool(
+                re.search(
+                    r"\d|[一二三四五六七八九十]+(?:个|张|台|套|份|项)|"
+                    r"(?:规格|型号|预算|数量|尺寸|负责人|流程|清单|时间|条件|异议|承诺|同意|确认|约定)",
+                    text,
+                )
+            )
             if detailed:
                 selected.append({"field": field, "quote": text[:160]})
     return selected[:3]
 
 
 def outcome_preservation_hits(
-    text: str, outcomes: list[dict[str, str]], target: str,
+    text: str,
+    outcomes: list[dict[str, str]],
+    target: str,
 ) -> list[dict[str, Any]]:
     if not outcomes or not _OUTCOME_DENIAL.search(str(text or "")):
         return []
-    return [{
-        "rule": "explicit_outcome_erased",
-        "target": target,
-        "quote": _OUTCOME_DENIAL.search(str(text)).group(),
-        "evidence": outcomes,
-        "scanned_text": text,
-    }]
+    return [
+        {
+            "rule": "explicit_outcome_erased",
+            "target": target,
+            "quote": _OUTCOME_DENIAL.search(str(text)).group(),
+            "evidence": outcomes,
+            "scanned_text": text,
+        }
+    ]
 
 
 def commitment_boundary_hits(
-    text: str, source_text: str, target: str,
+    text: str,
+    source_text: str,
+    target: str,
 ) -> list[dict[str, Any]]:
     """Protect future customer commitments without rejecting completed facts.
 
@@ -252,77 +262,137 @@ def commitment_boundary_hits(
     hits = []
 
     for event in candidate_future:
-        if any(_same_action(event["action"], source["action"]) for source in source_future_evidence):
+        if any(
+            _same_action(event["action"], source["action"]) for source in source_future_evidence
+        ):
             continue
-        hits.append({
-            "rule": "unsupported_future_customer_commitment",
-            "target": target,
-            "quote": event["clause"],
-            "scanned_text": text,
-            "source_future_commitments": [item["clause"] for item in source_future_evidence],
-        })
+        hits.append(
+            {
+                "rule": "unsupported_future_customer_commitment",
+                "target": target,
+                "quote": event["clause"],
+                "scanned_text": text,
+                "candidate_event": event,
+                "source_future_commitments": [
+                    {
+                        key: item.get(key)
+                        for key in (
+                            "clause",
+                            "event_window",
+                            "subject",
+                            "action",
+                            "state",
+                            "usage",
+                            "time_or_condition",
+                        )
+                    }
+                    for item in source_future_evidence
+                ],
+            }
+        )
 
     for event in candidate_completed:
         matching_future = [
-            source for source in source_future
-            if _same_action(event["action"], source["action"])
+            source for source in source_future if _same_action(event["action"], source["action"])
         ]
         if not matching_future:
             continue
         if any(_same_action(event["action"], source["action"]) for source in source_completed):
             continue
-        hits.append({
-            "rule": "future_commitment_presented_as_completed",
-            "target": target,
-            "quote": event["clause"],
-            "scanned_text": text,
-            "source_future_commitments": [item["clause"] for item in matching_future],
-        })
+        hits.append(
+            {
+                "rule": "future_commitment_presented_as_completed",
+                "target": target,
+                "quote": event["clause"],
+                "scanned_text": text,
+                "candidate_event": event,
+                "source_future_commitments": [
+                    {
+                        key: item.get(key)
+                        for key in (
+                            "clause",
+                            "event_window",
+                            "subject",
+                            "action",
+                            "state",
+                            "usage",
+                            "time_or_condition",
+                        )
+                    }
+                    for item in matching_future
+                ],
+            }
+        )
     return hits
 
 
 def _future_customer_commitments(text: str) -> list[dict[str, str]]:
-    """Return only firm, unconditional customer actions directed to the future."""
+    """Return unsupported-prone customer future events, one event at a time.
+
+    The gate deliberately parses a small punctuation-bounded event window.  It
+    does not let a later ``待回复`` or ``下一步`` turn an earlier completed fact
+    into a future promise, and it does not treat a salesperson's instruction
+    to confirm something with a customer as the customer's confirmation.
+    """
     result = []
     for clause in _sentences(text):
-        firm = _firm_customer_commitment(clause)
-        if not firm:
-            continue
-        # A conditional scenario and an expression of consideration remain a
-        # future possibility, not a deterministic customer commitment.
-        if (
-            _CONDITIONAL_FUTURE.search(clause)
-            or _CUSTOMER_INTENT.search(clause)
-            or _NON_FIRM_CUSTOMER_STATE.search(clause)
-            or _SALES_ACTION_PLAN.search(clause)
-        ):
-            continue
-        # ``客户确认已经完成`` and ``客户已同意`` describe an already
-        # established fact/state. A time-direction marker is mandatory for a
-        # future commitment; words such as 完成/提供 alone are deliberately
-        # not treated as future direction.
-        commitment_tail = re.split(r"[，,、]", clause[firm.end():], maxsplit=1)[0]
-        if _COMPLETED_ACTION.search(clause) or not _FUTURE_DIRECTION.search(commitment_tail):
-            continue
-        result.append({
-            "clause": clause,
-            "action": _action_signature(clause, firm.end()),
-        })
+        for firm in _firm_customer_commitments(clause):
+            event = _customer_commitment_event(clause, firm)
+            if event["state"] != "future_commitment":
+                continue
+            result.append(event)
     return result
 
 
-def _firm_customer_commitment(clause: str) -> re.Match[str] | None:
-    """Find a commitment where the customer is the grammatical actor.
+def _customer_commitment_event(clause: str, firm: re.Match[str]) -> dict[str, str]:
+    """Classify one candidate customer commitment without inferring proof."""
+    start = (
+        max(clause.rfind(mark, 0, firm.start()) for mark in ("，", ",", "、", "；", ";", "。")) + 1
+    )
+    ends = [clause.find(mark, firm.end()) for mark in ("，", ",", "、", "；", ";", "。")]
+    end = min((value for value in ends if value >= 0), default=len(clause))
+    window = clause[start:end].strip()
+    before = clause[start : firm.start()]
+    tail = clause[firm.end() : end]
+    action = _action_signature(clause, firm.end(), end)
+    condition = bool(_CONDITIONAL_FUTURE.search(window))
+    non_subject = bool(_NON_SUBJECT_CUSTOMER_PREFIX.search(before))
+    negative_or_pending = bool(_NON_FIRM_CUSTOMER_STATE.search(window))
+    completed = bool(_COMPLETED_ACTION.search(window))
+    future = bool(_FUTURE_DIRECTION.search(tail))
+    usage = "fact"
+    if non_subject:
+        usage = "sales_advice"
+    elif condition:
+        usage = "conditional"
+    elif negative_or_pending:
+        usage = "negative_or_pending"
+    elif completed and not future:
+        usage = "completed_fact"
+    state = (
+        "future_commitment"
+        if not (non_subject or condition or negative_or_pending or (completed and not future))
+        and future
+        else usage
+    )
+    return {
+        "clause": clause,
+        "event_window": window,
+        "subject": "customer",
+        "action": action,
+        "state": state,
+        "usage": usage,
+        "time_or_condition": tail.strip(),
+    }
 
-    ``需要客户确认`` and ``与客户约定`` describe a salesperson's request or
-    conditional advice. They are not assertions that the customer made a
-    promise. A candidate can contain both usages in one sentence, so inspect
-    every local match rather than accepting the first textual occurrence.
-    """
-    for match in _FIRM_CUSTOMER_COMMITMENT.finditer(clause):
-        if not _NON_SUBJECT_CUSTOMER_PREFIX.search(clause[:match.start()]):
-            return match
-    return None
+
+def _firm_customer_commitments(clause: str) -> list[re.Match[str]]:
+    """Return matches where customer is the grammatical actor, not an object."""
+    return [
+        match
+        for match in _FIRM_CUSTOMER_COMMITMENT.finditer(clause)
+        if not _NON_SUBJECT_CUSTOMER_PREFIX.search(clause[: match.start()])
+    ]
 
 
 def _conditional_source_future_actions(text: str) -> list[dict[str, str]]:
@@ -348,26 +418,33 @@ def _completed_actions(text: str) -> list[dict[str, str]]:
     for clause in _sentences(text):
         completed = _COMPLETED_ACTION.search(clause)
         if completed:
-            result.append({
-                "clause": clause,
-                "action": _action_signature(clause, completed.start()),
-            })
+            result.append(
+                {
+                    "clause": clause,
+                    "action": _action_signature(clause, completed.start()),
+                }
+            )
     return result
 
 
 def _sentences(text: str) -> list[str]:
-    return [match.group().strip() for match in _SENTENCE.finditer(str(text or "")) if match.group().strip()]
+    return [
+        match.group().strip()
+        for match in _SENTENCE.finditer(str(text or ""))
+        if match.group().strip()
+    ]
 
 
-def _action_signature(clause: str, start: int) -> str:
-    """Create a small, evidence-local action signature for event comparison."""
-    action = _ACTION.search(clause, start)
+def _action_signature(clause: str, start: int, end: int | None = None) -> str:
+    """Create a small, event-local action signature for evidence comparison."""
+    window = clause[start:end]
+    action = _ACTION.search(window)
     if action:
         verb = action.group()
-        tail = clause[action.end():action.end() + 16]
+        tail = window[action.end() : action.end() + 16]
     else:
         verb = ""
-        tail = clause[start:start + 24]
+        tail = window[:24]
     compact = re.sub(r"[^\u4e00-\u9fffA-Za-z0-9]", "", _ACTION_NOISE.sub("", tail))
     return f"{verb}:{compact}".rstrip(":")
 
@@ -414,7 +491,9 @@ def preserve_outcomes(
             _COMPLETED_OUTCOME.search(quote)
         )
         if is_future:
-            result += f"本次已记录客户的后续承诺“{quote}”，这是有效进展，但承诺事项尚待后续实际完成。"
+            result += (
+                f"本次已记录客户的后续承诺“{quote}”，这是有效进展，但承诺事项尚待后续实际完成。"
+            )
         else:
             result += f"同时，本次已明确记录“{quote}”这一具体成果。"
     return result
