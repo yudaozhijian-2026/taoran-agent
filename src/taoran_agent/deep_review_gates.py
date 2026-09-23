@@ -421,7 +421,12 @@ def _completed_actions(text: str) -> list[dict[str, str]]:
             result.append(
                 {
                     "clause": clause,
+                    "event_window": clause,
+                    "subject": "customer" if "客户" in clause else "unknown",
                     "action": _action_signature(clause, completed.start()),
+                    "state": "completed_fact",
+                    "usage": "fact",
+                    "time_or_condition": "",
                 }
             )
     return result
