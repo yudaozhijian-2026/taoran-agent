@@ -88,6 +88,13 @@
       "expected": "pass"
     },
     {
+      "case_id": "customer_missing_confirmable_consensus",
+      "classification": "CURRENT_STATE",
+      "source": "过程未记录客户未来承诺。",
+      "candidate": "过程描述中无客户对后续联系事项的明确回应，商机客户未形成可确认的下一步共识。",
+      "expected": "pass"
+    },
+    {
       "case_id": "rule_requires_customer_consensus",
       "classification": "CURRENT_STATE",
       "source": "本次记录未形成客户未来承诺。",

@@ -51,6 +51,9 @@ _SOURCE_CONDITIONAL_RESPONSE = re.compile(
 )
 _CONDITIONAL_FUTURE = re.compile(r"(?:如|如果|若).{0,36}(?:再|才|则|考虑|可能|推进)")
 _CUSTOMER_INTENT = re.compile(r"客户.{0,20}(?:表示|考虑|意向|希望|可能|拟)")
+_NON_FIRM_CUSTOMER_STATE = re.compile(
+    r"客户[^，,、。；\n]{0,12}(?:未|尚未|没有|无|缺少|待|可|需|应)[^，,、。；\n]{0,12}(?:承诺|保证|同意|确认|约定)"
+)
 _SALES_ACTION_PLAN = re.compile(
     r"(?:销售|我方|业务员|下一步).{0,20}(?:联系|跟进|沟通|拜访).{0,12}客户"
 )
@@ -290,6 +293,7 @@ def _future_customer_commitments(text: str) -> list[dict[str, str]]:
         if (
             _CONDITIONAL_FUTURE.search(clause)
             or _CUSTOMER_INTENT.search(clause)
+            or _NON_FIRM_CUSTOMER_STATE.search(clause)
             or _SALES_ACTION_PLAN.search(clause)
         ):
             continue
