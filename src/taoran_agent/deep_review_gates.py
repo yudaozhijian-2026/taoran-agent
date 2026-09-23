@@ -41,7 +41,7 @@ _OUTCOME_DENIAL = re.compile(
 _SENTENCE = re.compile(r"[^。；\n]+")
 _FIRM_CUSTOMER_COMMITMENT = re.compile(r"客户[^，。；\n]{0,8}?(?:承诺|保证|同意|确认|约定)")
 _FUTURE_DIRECTION = re.compile(
-    r"(?:将|(?<!展)会|后续|下一步|下周|下次|本周|月底|月末|之后|再|待|拟|预计|一定)"
+    r"(?:将|(?<!展)会|后续|下一步|下周|下次|本周|周[一二三四五六日天]|月底|月末|之后|再|待|拟|预计|一定)"
 )
 _SOURCE_CONDITIONAL_RESPONSE = re.compile(
     r"(?:客户|对方|他|她)[^。；\n]{0,24}?(?:可以|可|将|(?<!展)会|承诺|同意|答应|后续|下周|下次|待|预计|拟)"
@@ -61,7 +61,7 @@ _COMPLETED_ACTION = re.compile(
     r"(?:已经|已)(?:同意|付款|支付|下单|采购|提供|交付|发货|完成|提交|安排|实施|确认完毕|发送|回复|测试|沟通|反馈|对接|签署|配合)|(?:已经|已)确认(?=的)"
 )
 _ACTION = re.compile(
-    r"(?:付款|支付|下单|采购|提供|交付|发货|提交|完成|安排|实施|测试|回复|反馈|沟通|对接|通知|签署|配合)"
+    r"(?:付款|支付|下单|采购|提供|交付|发货|收货|提交|完成|安排|实施|测试|回复|反馈|沟通|对接|通知|签署|配合)"
 )
 _ACTION_NOISE = re.compile(
     r"(?:将|会|后续|下一步|下周|下次|本周|月底|月末|之后|再|待|拟|预计|一定|已经|已|客户|承诺|保证|同意|确认|约定|明确|于|在)"
@@ -407,7 +407,7 @@ def _conditional_source_future_actions(text: str) -> list[dict[str, str]]:
     for clause in _sentences(text):
         for match in _SOURCE_CONDITIONAL_RESPONSE.finditer(clause):
             action = _action_signature(clause, match.start())
-            if action:
+            if action.partition(":")[0]:
                 result.append({"clause": clause, "action": action})
     return result
 

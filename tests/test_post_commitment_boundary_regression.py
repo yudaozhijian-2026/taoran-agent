@@ -53,3 +53,14 @@ def test_commitment_hit_retains_event_level_diagnostics():
     }
     assert hits[0]["source_future_commitments"][0]["action"] == "发货"
     assert hits[0]["source_future_commitments"][0]["state"] == "future_commitment"
+
+
+def test_weekday_commitment_without_source_evidence_is_blocked_cleanly():
+    hits = commitment_boundary_hits(
+        "客户已同意周五收货，请据实补充双方约定的联系时间。",
+        "本次未形成客户未来承诺。",
+        "facts.reason",
+    )
+    assert [hit["rule"] for hit in hits] == ["unsupported_future_customer_commitment"]
+    assert hits[0]["candidate_event"]["action"] == "收货"
+    assert hits[0]["source_future_commitments"] == []

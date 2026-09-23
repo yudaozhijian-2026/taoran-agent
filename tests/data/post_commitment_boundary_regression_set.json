@@ -40,10 +40,11 @@
     },
     {
       "case_id": "established_current_state",
-      "classification": "CURRENT_STATE",
+      "classification": "UNSUPPORTED_FUTURE_CUSTOMER_COMMITMENT",
       "source": "本次未形成客户未来承诺。",
       "candidate": "客户已同意周五收货，请据实补充双方约定的联系时间。",
-      "expected": "pass"
+      "expected": "block",
+      "rule": "unsupported_future_customer_commitment"
     },
     {
       "case_id": "conditional_future",
